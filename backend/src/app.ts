@@ -5,6 +5,9 @@ import { env } from "./config/env";
 import { errorHandler } from "./middleware/errorHandler.middleware";
 import { rateLimiterMiddleware } from "./middleware/rateLimiter.middleware";
 import { authRouter } from "./modules/auth/auth.controller";
+import { deviceAudiencesRouter } from "./modules/devices/deviceAudiences.controller";
+import { deviceCatalogRouter } from "./modules/devices/deviceCatalog.controller";
+import { devicesRouter } from "./modules/devices/devices.controller";
 import { healthRouter } from "./modules/health/health.controller";
 import { rolesRouter } from "./modules/roles/roles.controller";
 
@@ -21,9 +24,12 @@ export function createApp() {
   app.use(healthRouter);
   app.use(authRouter);
   app.use(rolesRouter);
+  app.use(devicesRouter);
+  app.use(deviceCatalogRouter);
+  app.use(deviceAudiencesRouter);
 
-  // Phase 2+ modules mount their routers here as they're built:
-  // app.use(devicesRouter); app.use(complianceRouter); ...
+  // Phase 3+ modules mount their routers here as they're built:
+  // app.use(complianceRouter); app.use(workflowsRouter); ...
 
   // Static frontend serving, mirroring the original single-image pattern
   // (ARCHITECTURE.md §2.1): serve Vue's built dist/, catch-all to
