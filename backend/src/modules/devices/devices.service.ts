@@ -387,15 +387,17 @@ export async function updateDevicePolicies(authorization: string, workspaceSlug:
 /**
  * Port of `bulk_reattest_devices` (main.py:7942). The original pushes the
  * security-attestation reporter script to each selected Windows/macOS
- * device via the Workflow engine's script-run dispatch
- * (`_ensure_reattest_library_entry` + `_execute_mdm_action('runScript', ...)`)
- * — both are Phase 4 (Workflows/Action Library) surface that doesn't exist
+ * device via `_ensure_reattest_library_entry` (auto-provisions a script
+ * Asset via multipart upload the first time it's needed) +
+ * `_execute_mdm_action('runScript', ...)`. The MDM action dispatch itself
+ * now exists (workflows/mdmActionExecutor.ts, Phase 4a), but the Action
+ * Library auto-provisioning flow is Phase 4b surface that doesn't exist
  * yet. Rather than silently dropping the endpoint (a real feature the
  * Devices view's bulk-select bar calls), this returns the SAME per-device
  * result shape the original does, with an honest "not wired up yet" detail
  * instead of a fabricated success — so the frontend's existing
- * success/failure UI works unmodified once Phase 4 fills this in for real.
- * TODO(Phase4): replace the stub below with the real
+ * success/failure UI works unmodified once Phase 4b fills this in for real.
+ * TODO(Phase4b): replace the stub below with the real
  * ensureReattestLibraryEntry + executeMdmAction('runScript') dispatch.
  */
 export async function bulkReattestDevices(authorization: string, workspaceSlug: string, payload: BulkReattestPayload, actorEmail: string) {

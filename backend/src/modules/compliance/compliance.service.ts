@@ -4,10 +4,11 @@ import { recordAuditEvent } from "../../services/auditLog";
 import { appliveryClient } from "../../services/appliveryClient";
 import { resolveOrgBase } from "../auth/rbac.service";
 import { platformPathSegment, type NormalizedDevice } from "../devices/deviceNormalize";
-import { MDM_ACTIONS } from "../devices/mdmActions";
 import { policyViolated, type AppListsContext } from "./complianceEvaluate";
 import { loadAppListsContext } from "../appLists/appCatalog.service";
 import { appListScopedDeviceIds, readInstalledAppsFromStore } from "../appLists/installedApps.service";
+import { getWorkflowRun, launchWorkflowRun, workflowHasDestructiveStep } from "../workflows/workflows.service";
+import type { WorkflowDeviceRefPayload } from "../workflows/workflows.schemas";
 import type { CompliancePolicyPayload } from "./compliance.schemas";
 
 /**
@@ -45,18 +46,6 @@ function resolveAutoRunBatchCap(policy: { autoRunBatchCap: number | null }): num
   const raw = policy.autoRunBatchCap;
   if (raw === null || raw === undefined) return null;
   return raw > 0 ? raw : 15;
-}
-
-/** Port of `_workflow_has_destructive_step` (main.py:10658). */
-function workflowHasDestructiveStep(workflow: { steps: any } | null | undefined): boolean {
-  if (!workflow) return false;
-  for (const step of (workflow.steps as any[]) ?? []) {
-    if (step?.type === "mdm_action") {
-      const actionKey = step?.config?.action;
-      if (actionKey && MDM_ACTIONS[actionKey]?.destructive) return true;
-    }
-  }
-  return false;
 }
 
 // ── CRUD (main.py:10828-10957) ──
@@ -213,24 +202,25 @@ export async function getPolicyViolatingDeviceIds(workspaceSlug: string, policyI
 
 // ── autoRun circuit breaker (main.py:10959-11018) ──
 
+/** Port of `_lookup_workflow_run` (main.py:10974) — checks the in-memory active-run table first, falling back to persisted history; see workflows.service.ts's `getWorkflowRun`, the same two-source lookup `_gather_workflow_runs` merges. */
 async function lookupWorkflowRun(workspaceSlug: string, runId: string) {
-  return prisma.workflowRun.findFirst({ where: { workspaceSlug, id: runId } });
+  try {
+    return await getWorkflowRun(workspaceSlug, runId);
+  } catch {
+    return null;
+  }
 }
 
 /**
- * True only if EVERY device this run targeted ended in a non-success,
- * non-partial state. Port of `_run_fully_failed` (main.py:10987) — adapted
- * to this schema's per-(device,step) WorkflowRunResult rows (Phase 4 isn't
- * built yet, so this always sees zero rows and returns false, matching the
- * original's own "no results -> False" case; the real per-device-final-
- * status shape gets validated once Phase 4 actually populates this table).
+ * True only if EVERY device result in this run failed outright — a
+ * 'partial' or any 'success' means autoRun is at least doing something
+ * real, so it shouldn't count toward the failure streak. Port of
+ * `_run_fully_failed` (main.py:10987).
  */
-async function runFullyFailed(runId: string): Promise<boolean> {
-  const results = await prisma.workflowRunResult.findMany({ where: { runId }, orderBy: { recordedAt: "asc" } });
+function runFullyFailed(run: { results: Array<{ finalStatus: string }> }): boolean {
+  const results = run.results ?? [];
   if (!results.length) return false;
-  const finalByDevice = new Map<string, string>();
-  for (const r of results) finalByDevice.set(r.deviceId, r.status);
-  return ![...finalByDevice.values()].some((s) => s === "success" || s === "partial");
+  return !results.some((r) => r.finalStatus === "success" || r.finalStatus === "partial");
 }
 
 /** Port of `_autorun_circuit_breaker_check` (main.py:10996). `violations` is this policy's own violation rows, most-recent-first. */
@@ -245,8 +235,7 @@ async function autorunCircuitBreakerCheck(
     const run = await lookupWorkflowRun(workspaceSlug, v.workflowRunId);
     if (!run || run.status === "running" || run.status === "waiting") continue;
     checked += 1;
-    const fullyFailed = await runFullyFailed(v.workflowRunId);
-    if (!fullyFailed) return null;
+    if (!runFullyFailed(run)) return null;
     if (checked >= AUTORUN_CIRCUIT_BREAKER_THRESHOLD) {
       return `Last ${AUTORUN_CIRCUIT_BREAKER_THRESHOLD} auto-run workflow executions for this policy failed on every targeted device`;
     }
@@ -455,20 +444,34 @@ export async function runComplianceEvaluation(
           message: `${device.displayName} violated "${policy.name}" — autoRun batch cap (${autorunBatchCap}) reached this pass, queued for manual review`,
         });
       } else if (policy.autoRun && workflow && effectiveWorkflow) {
-        // TODO(Phase4): no real workflow execution engine exists yet — the
-        // Workflow table is currently always empty for a fresh workspace,
-        // so this branch is unreachable in practice until Phase 4 lands.
-        // Kept faithful to the original's shape (launch -> auto_fired /
-        // workflow_unavailable) rather than collapsed, so wiring in the
-        // real launcher later is a one-line swap, not a rewrite.
         policyAutofiredCount += 1;
-        status = "workflow_unavailable";
         const escalationNote = escalated ? ` — escalated (device risk tier: ${device.riskTier ?? "low"})` : "";
-        auditEvents.push({
-          category: "violation", action: "violation_detected", actor: actor ?? "system", severity: "critical",
-          targetType: "device", targetId: device.id, targetName: device.displayName,
-          message: `${device.displayName} violated "${policy.name}" — workflow "${effectiveWorkflow.name}" could not run (workflow execution engine not available yet)${escalationNote}`,
-        });
+        const deviceRef: WorkflowDeviceRefPayload = {
+          id: device.id, displayName: device.displayName, platform: device.platform, platformDeviceId: device.platformDeviceId,
+          osLifecycleStatus: (device as any).osLifecycleStatus ?? null,
+        };
+        const runRecord = await launchWorkflowRun(effectiveWorkflow, [deviceRef], authorization, workspaceSlug);
+        if (runRecord === null) {
+          // Workflow has a 'wait'/'run_script_wait' step — needs the durable
+          // engine (Phase 4b). Log it clearly instead of crashing the
+          // evaluation pass or silently dropping the violation.
+          status = "workflow_unavailable";
+          auditEvents.push({
+            category: "violation", action: "violation_detected", actor: actor ?? "system", severity: "critical",
+            targetType: "device", targetId: device.id, targetName: device.displayName,
+            message: `${device.displayName} violated "${policy.name}" — workflow "${effectiveWorkflow.name}" could not run (durable storage not configured)${escalationNote}`,
+          });
+        } else {
+          status = "auto_fired";
+          workflowRunId = runRecord.id;
+          summary.autoFired += 1;
+          auditEvents.push({
+            category: "violation", action: "violation_auto_fired", actor: actor ?? "system", severity: "warning",
+            targetType: "device", targetId: device.id, targetName: device.displayName,
+            message: `${device.displayName} violated "${policy.name}" — auto-ran "${effectiveWorkflow.name}"${escalationNote}`,
+          });
+          // TODO(Phase5): Case timeline linking isn't wired yet — Cases don't exist.
+        }
       } else if (!workflow) {
         status = "no_workflow";
         auditEvents.push({
@@ -606,7 +609,7 @@ export async function exportComplianceViolationsCsv(workspaceSlug: string, statu
  * needs the actor for its audit event), so wiring that in later is a
  * one-line change here, not a signature change at every call site.
  */
-export async function approveViolationCore(violationId: string, workspaceSlug: string, _authorization: string, _actorEmail: string) {
+export async function approveViolationCore(violationId: string, workspaceSlug: string, authorization: string, actorEmail: string) {
   const violation = await prisma.complianceViolation.findFirst({ where: { workspaceSlug, id: violationId } });
   if (!violation) throw new HttpError(404, "Violation not found");
   if (violation.status !== "pending") throw new HttpError(400, `Violation already '${violation.status}'`);
@@ -614,10 +617,32 @@ export async function approveViolationCore(violationId: string, workspaceSlug: s
   const workflow = violation.workflowId ? await prisma.workflow.findFirst({ where: { workspaceSlug, id: violation.workflowId } }) : null;
   if (!workflow) throw new HttpError(400, "Linked workflow no longer exists");
 
-  // TODO(Phase4): no real workflow launcher exists yet — once it does, this
-  // replaces the 400 below with an actual launch + workflowRunId, same as
-  // the original's `_launch_workflow_run` call.
-  throw new HttpError(400, "This workflow requires the workflow execution engine, which isn't available yet.");
+  const deviceRef: WorkflowDeviceRefPayload = {
+    id: violation.deviceId, displayName: violation.deviceName, platform: violation.platform ?? "", platformDeviceId: violation.platformDeviceId ?? "",
+  };
+  const runRecord = await launchWorkflowRun(workflow, [deviceRef], authorization, workspaceSlug);
+  if (runRecord === null) {
+    throw new HttpError(400, "This workflow includes a 'wait' or 'run script and wait for result' step, which requires durable storage (Phase 4b).");
+  }
+
+  const updated = await prisma.complianceViolation.update({
+    where: { id: violationId },
+    data: { status: "approved", resolvedAt: new Date(), workflowRunId: runRecord.id },
+  });
+  await recordAuditEvent(workspaceSlug, {
+    category: "violation", action: "violation_approved", actor: actorEmail,
+    targetType: "device", targetId: violation.deviceId, targetName: violation.deviceName ?? undefined,
+    message: `${violation.deviceName} violation of "${violation.policyName}" approved — running "${workflow.name}"`,
+  });
+
+  const state = await loadComplianceState(workspaceSlug);
+  const key = `${violation.policyId}:${violation.deviceId}`;
+  if (state[key]) {
+    state[key].status = "approved";
+    await saveComplianceState(workspaceSlug, state);
+  }
+  // TODO(Phase5): Cases don't exist yet — the original notes the remediation run on the linked Case's timeline here.
+  return updated;
 }
 
 export async function bulkApproveViolations(violationIds: string[], workspaceSlug: string, authorization: string, actorEmail: string) {

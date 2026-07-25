@@ -14,9 +14,10 @@ const router = createRouter({
     { path: "/", name: "overview", component: () => import("../views/OverviewView.vue") },
     { path: "/devices", name: "devices", component: () => import("../views/DevicesView.vue") },
     { path: "/compliance", name: "compliance", component: () => import("../views/ComplianceView.vue") },
-    // Phase 4+ adds: /workflows, /cases, /audit-logs, /playground,
-    // /reporting — one route per top-level view in the original app's top
-    // nav (ARCHITECTURE.md §1.4).
+    { path: "/workflows", name: "workflows", component: () => import("../views/WorkflowsView.vue") },
+    // Phase 4b+ adds: /cases, /audit-logs, /playground, /reporting — one
+    // route per top-level view in the original app's top nav
+    // (ARCHITECTURE.md §1.4).
   ],
 });
 

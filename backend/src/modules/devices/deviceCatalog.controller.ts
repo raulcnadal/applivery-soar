@@ -14,6 +14,7 @@ import {
   getSmartAttributes,
 } from "./deviceCatalog.service";
 import { MDM_ACTIONS } from "./mdmActions";
+import { UNCONFIRMED_API_ACTIONS } from "../workflows/mdmActionExecutor";
 
 export const deviceCatalogRouter = Router();
 
@@ -117,14 +118,17 @@ deviceCatalogRouter.get(
 );
 
 // GET /api/mdm-actions — exposes the MDM_ACTIONS registry (main.py:4357) for
-// the workflow builder's action picker (Phase 4 builds the builder itself;
-// this just serves the static catalog now, single source of truth for
-// whichever frontend consumes it first).
+// the Phase 4 workflow builder's action picker. Port of `get_mdm_actions`
+// (main.py:4295): an ARRAY (not the raw keyed dict) — each entry carries its
+// own `key` plus an `unconfirmed` flag (main.py's `UNCONFIRMED_API_ACTIONS`)
+// so the builder can flag actions not yet wired to a verified Applivery API
+// call (e.g. deviceLocation).
 deviceCatalogRouter.get(
   "/api/mdm-actions",
   verifyDashboardToken,
   asyncHandler(async (_req, res) => {
-    res.json({ items: MDM_ACTIONS });
+    const items = Object.entries(MDM_ACTIONS).map(([key, def]) => ({ key, unconfirmed: UNCONFIRMED_API_ACTIONS.has(key), ...def }));
+    res.json({ items });
   }),
 );
 

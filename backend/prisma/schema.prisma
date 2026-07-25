@@ -147,15 +147,22 @@ model ComplianceViolation {
   @@index([workspaceSlug, status])
 }
 
+// Port of `_load_policy_quarantine`/`_save_policy_quarantine`'s per-workspace
+// dict, keyed by deviceId -> {platform, policies, snapshotAt, workflowId}
+// (main.py:6653 `_snapshot_policies_if_needed`). One row per (workspaceSlug,
+// deviceId) — a later escalation tier touching an already-quarantined device
+// must never clobber the original pre-quarantine baseline, so writes are a
+// create-if-absent, not an upsert-overwrite.
 model PolicyQuarantineEntry {
   id            String   @id @default(uuid())
   workspaceSlug String
-  policyId      String
   deviceId      String
-  reason        String
-  createdAt     DateTime @default(now())
+  platform      String?
+  policies      Json // snapshot of activePolicies at quarantine time — [{id, name, ...}]
+  workflowId    String?
+  snapshotAt    DateTime @default(now())
 
-  @@index([workspaceSlug, policyId])
+  @@unique([workspaceSlug, deviceId])
 }
 
 // Per-workspace suppression map — port of the original's `_compliance_state`
@@ -196,8 +203,10 @@ model Workflow {
 model WorkflowVersion {
   id         String   @id @default(uuid())
   workflowId String
-  workflow   Workflow @relation(fields: [workflowId], references: [id])
-  snapshot   Json
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  reason     String // 'update' | 'restore'
+  createdBy  String?
+  snapshot   Json // { name, description, steps, targetPlatform, targetDeploymentModel, recovery }
   createdAt  DateTime @default(now())
 
   @@index([workflowId])
@@ -486,6 +495,12 @@ model FirewallRuleSet {
   defaultInboundAction  String   @default("notConfigured")
   defaultOutboundAction String   @default("notConfigured")
   rules                 Json
+  // Auto-provisioned Action Library script entry ids (Phase 4b builds the
+  // provisioning flow itself) that the Workflow engine's applyFirewallRuleSet/
+  // restoreFirewallRuleSet MDM actions delegate to via 'runScript' — see
+  // main.py's "FIREWALL RULE SETS" section. Null until provisioned.
+  applyLibraryId        String?
+  restoreLibraryId      String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
