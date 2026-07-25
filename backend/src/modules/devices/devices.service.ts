@@ -191,7 +191,7 @@ export async function getDevicesFull(
   const policyViolationsByDevice: Record<string, Array<Record<string, any>>> = {};
   try {
     const stateRow = await prisma.complianceEvaluationState.findUnique({ where: { workspaceSlug: slugKey } });
-    const state = (stateRow?.state as Record<string, { status: string; lastDetectedAt: string }>) ?? {};
+    const state = (stateRow?.state as unknown as Record<string, { status: string; lastDetectedAt: string }>) ?? {};
     if (Object.keys(state).length) {
       const policies = await prisma.compliancePolicy.findMany({ where: { workspaceSlug: slugKey } });
       const policiesById = new Map(policies.map((p) => [p.id, p]));

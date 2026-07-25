@@ -248,7 +248,7 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
     data: {
       lastRefreshAt: new Date(),
       lastRefreshError: osErrors === 0 && appsErrors === 0 ? null : `${osErrors} OS + ${appsErrors} app quer${osErrors + appsErrors === 1 ? "y" : "ies"} failed`,
-      lastRefreshStats: stats,
+      lastRefreshStats: stats as any,
     },
   });
   return stats;

@@ -92,7 +92,7 @@ export async function createCompliancePolicy(workspaceSlug: string, payload: Com
       autoRun: payload.autoRun,
       severity: payload.severity,
       conditionLogic: payload.conditionLogic,
-      conditions: payload.conditions,
+      conditions: payload.conditions as any,
       workflowId: payload.workflowId ?? null,
       nonComplianceTag: payload.nonComplianceTag ?? null,
       nonComplianceSmartAttributeId: payload.nonComplianceSmartAttributeId ?? null,
@@ -133,7 +133,7 @@ export async function updateCompliancePolicy(workspaceSlug: string, policyId: st
       autoRun: payload.autoRun,
       severity: payload.severity,
       conditionLogic: payload.conditionLogic,
-      conditions: payload.conditions,
+      conditions: payload.conditions as any,
       workflowId: payload.workflowId ?? null,
       nonComplianceTag: payload.nonComplianceTag ?? null,
       nonComplianceSmartAttributeId: payload.nonComplianceSmartAttributeId ?? null,
@@ -193,14 +193,14 @@ interface SuppressionEntry {
 
 async function loadComplianceState(workspaceSlug: string): Promise<Record<string, SuppressionEntry>> {
   const row = await prisma.complianceEvaluationState.findUnique({ where: { workspaceSlug } });
-  return (row?.state as Record<string, SuppressionEntry>) ?? {};
+  return (row?.state as unknown as Record<string, SuppressionEntry>) ?? {};
 }
 
 async function saveComplianceState(workspaceSlug: string, state: Record<string, SuppressionEntry>): Promise<void> {
   await prisma.complianceEvaluationState.upsert({
     where: { workspaceSlug },
-    create: { workspaceSlug, state },
-    update: { state },
+    create: { workspaceSlug, state: state as any },
+    update: { state: state as any },
   });
 }
 
