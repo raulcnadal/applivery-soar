@@ -12,7 +12,13 @@ WORKDIR /app
 # The frontend depends on the vendored BlueSky Vue component library via a
 # relative path alias (frontend/vite.config.ts -> ../packages/bluesky-vue),
 # so both trees need to be present at the same relative layout as the repo.
+# bluesky-vue's own node_modules (vue, clsx, tailwind-merge, etc.) are
+# gitignored, so they need installing here too — vue-tsc resolves each
+# .vue file's imports relative to its own directory, and without this the
+# build fails with "Cannot find module 'vue'" for every vendored component.
 COPY packages/bluesky-vue ./packages/bluesky-vue
+RUN cd packages/bluesky-vue && npm install
+
 COPY frontend/package*.json ./frontend/
 WORKDIR /app/frontend
 RUN npm install
