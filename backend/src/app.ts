@@ -2,8 +2,11 @@ import cors from "cors";
 import express from "express";
 import path from "path";
 import { env } from "./config/env";
+import { errorHandler } from "./middleware/errorHandler.middleware";
 import { rateLimiterMiddleware } from "./middleware/rateLimiter.middleware";
+import { authRouter } from "./modules/auth/auth.controller";
 import { healthRouter } from "./modules/health/health.controller";
+import { rolesRouter } from "./modules/roles/roles.controller";
 
 export function createApp() {
   const app = express();
@@ -16,9 +19,11 @@ export function createApp() {
   app.use(rateLimiterMiddleware);
 
   app.use(healthRouter);
+  app.use(authRouter);
+  app.use(rolesRouter);
 
-  // Phase 1+ modules mount their routers here as they're built:
-  // app.use(authRouter); app.use(rolesRouter); app.use(devicesRouter); ...
+  // Phase 2+ modules mount their routers here as they're built:
+  // app.use(devicesRouter); app.use(complianceRouter); ...
 
   // Static frontend serving, mirroring the original single-image pattern
   // (ARCHITECTURE.md §2.1): serve Vue's built dist/, catch-all to
@@ -31,6 +36,10 @@ export function createApp() {
       if (err) res.status(404).send("Frontend build not found — run `npm run build` in /frontend");
     });
   });
+
+  // Must be registered last — catches errors thrown/forwarded by every
+  // asyncHandler-wrapped route above.
+  app.use(errorHandler);
 
   return app;
 }

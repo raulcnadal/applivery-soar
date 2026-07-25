@@ -21,8 +21,9 @@ export const env = {
   // Postgres connection string, consumed directly by Prisma too.
   databaseUrl: required("DATABASE_URL"),
 
-  // Applivery outbound API.
-  appliveryApiUrl: process.env.APPLIVERY_API_URL ?? "https://api.applivery.com",
+  // Applivery outbound API — confirmed base from main.py's APPLIVERY_API_BASE
+  // ("https://api.applivery.io/v1"), not the guessed .com host from Phase 0.
+  appliveryApiUrl: process.env.APPLIVERY_API_URL ?? "https://api.applivery.io/v1",
 
   // Secret used by the two external, secret-in-URL-path receivers
   // (/api/applivery-webhook/receive/:secret is per-workspace and DB-stored;

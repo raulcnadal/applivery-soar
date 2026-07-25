@@ -4,6 +4,7 @@ big-picture-api/venv/
 
 # Build output
 dist/
+dist.old.*/
 *.tsbuildinfo
 
 # Environment / secrets

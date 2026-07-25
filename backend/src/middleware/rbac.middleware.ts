@@ -1,67 +1,100 @@
 import type { NextFunction, Request, Response } from "express";
 
 /**
- * RBAC layer — ported from ARCHITECTURE.md §2.4. Scaffolded in Phase 0,
- * populated in Phase 1 alongside /api/auth/resolve-access.
+ * RBAC layer — ported verbatim from main.py lines 1033-1291 (module comment
+ * reproduced below since it's the actual design spec, not just a summary).
  *
- * Precedence (unchanged from the original app):
- *   1. Applivery role === "owner" for the current org → Super Admin, bypasses everything.
- *   2. Otherwise, the collaborator's Applivery `tags` are matched against a Role's
- *      configured tag values.
- *   3. No match → denied outright. There is no default-read fallback.
+ * This app has no local user database — every "user" is an Applivery
+ * Collaborator, and Applivery's own Collaborator role is a fixed 5-value
+ * enum (Owner/Admin/Editor/Viewer/Unassigned) with no per-org fine-grained
+ * permission model of its own. So RBAC here is entirely this app's own
+ * layer, resolved fresh at login/workspace-switch and cached briefly
+ * server-side (not just trusted from the client) for the endpoints that
+ * actually need real enforcement.
  *
- * The cache below is deliberately in-process/in-memory only (never persisted
- * to Postgres) with a 12-hour TTL, fail-closed if absent — same trade-off the
- * original app makes: a caller who hasn't triggered resolve-access for this
- * workspace this session is denied, rather than the server re-resolving live
- * inline on every request.
+ * Precedence, in order:
+ *   1. Applivery Collaborator role === "owner" -> Super Admin. Unconditional
+ *      full access, bypasses every check below.
+ *   2. Anyone else: resolved by a "role tag" read off the raw Collaborator
+ *      record, matched against the tag values a SOAR Role has been
+ *      configured to accept (see modules/roles).
+ *   3. No confirmed tag match -> DENIED. Not a default-read-only fallback.
+ *
+ * The cache below is in-process/in-memory only (never persisted to
+ * Postgres), 12h TTL, fail-closed if absent: a caller who hasn't triggered
+ * POST /api/auth/resolve-access for this workspace this session is denied,
+ * rather than the server re-resolving live inline on every request. A
+ * restart or evicted entry can only ever be MORE restrictive, never less.
  */
 
-export type FeatureLevel = "none" | "read" | "manage";
-export type FeatureArea =
-  | "devices"
-  | "compliance"
-  | "workflows"
-  | "cases"
-  | "integrations"
-  | "settings"
-  | "reporting" // declared, not currently gated by any endpoint — matches original
-  | "auditLog"; // declared, not currently gated by any endpoint — matches original
+export const SOAR_FEATURE_AREAS = [
+  "devices",
+  "compliance",
+  "workflows",
+  "cases",
+  "integrations",
+  "reporting",
+  "settings",
+  "auditLog",
+] as const;
+export type FeatureArea = (typeof SOAR_FEATURE_AREAS)[number];
 
-export type RiskyAction =
-  | "canDeletePolicyOrWorkflow"
-  | "canRunDestructiveWorkflow"
-  | "canEditIntegrationSecrets"
-  | "canExportOrImportConfig"
-  | "canBulkTriage";
+export type FeatureLevel = "none" | "read" | "manage";
+const FEATURE_ACCESS_LEVELS: Record<FeatureLevel, number> = { none: 0, read: 1, manage: 2 };
+
+// Curated list (5, not 50) of endpoints that are destructive, leak/move
+// plaintext secrets, or fire a real-world side effect — everything else
+// (viewing, routine CRUD) is covered by the feature-area level alone.
+export const SOAR_RISKY_ACTIONS = [
+  "canDeletePolicyOrWorkflow",
+  "canRunDestructiveWorkflow",
+  "canEditIntegrationSecrets",
+  "canExportOrImportConfig",
+  "canBulkTriage",
+] as const;
+export type RiskyAction = (typeof SOAR_RISKY_ACTIONS)[number];
+
+export interface SoarRoleRecord {
+  id: string;
+  name: string;
+  description?: string | null;
+  featureAccess: Partial<Record<FeatureArea, FeatureLevel>>;
+  riskyActions: Partial<Record<RiskyAction, boolean>>;
+  appliveryTagValues: string[];
+  segmentIds: string[];
+}
 
 export interface ResolvedAccess {
+  allowed: boolean;
   isSuperAdmin: boolean;
-  featureAccess: Record<FeatureArea, FeatureLevel>;
-  riskyActions: Record<RiskyAction, boolean>;
-  cachedAt: number;
+  role: SoarRoleRecord | null;
+  collaboratorRole: string | null;
+  matchedTagValue: string | null;
+  deniedReason: string | null;
 }
 
 const ACCESS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
-const accessCache = new Map<string, ResolvedAccess>(); // key: `${workspaceSlug}:${lowercasedEmail}`
+const accessCache = new Map<string, { resolvedAtMs: number; access: ResolvedAccess }>();
 
-export function cacheKey(workspaceSlug: string, email: string): string {
-  return `${workspaceSlug}:${email.toLowerCase()}`;
+function cacheKey(workspaceSlug: string, email: string): string {
+  return `${workspaceSlug}:${(email || "").toLowerCase()}`;
 }
 
 export function getCachedAccess(workspaceSlug: string, email: string): ResolvedAccess | null {
-  const key = cacheKey(workspaceSlug, email);
-  const entry = accessCache.get(key);
+  const entry = accessCache.get(cacheKey(workspaceSlug, email));
   if (!entry) return null;
-  if (Date.now() - entry.cachedAt > ACCESS_CACHE_TTL_MS) {
-    accessCache.delete(key);
+  if (Date.now() - entry.resolvedAtMs > ACCESS_CACHE_TTL_MS) {
     return null;
   }
-  return entry;
+  return entry.access;
 }
 
-export function setCachedAccess(workspaceSlug: string, email: string, access: Omit<ResolvedAccess, "cachedAt">) {
-  accessCache.set(cacheKey(workspaceSlug, email), { ...access, cachedAt: Date.now() });
+export function setCachedAccess(workspaceSlug: string, email: string, access: ResolvedAccess): void {
+  accessCache.set(cacheKey(workspaceSlug, email), { resolvedAtMs: Date.now(), access });
+}
+
+function roleFeatureLevel(role: SoarRoleRecord | null, area: FeatureArea): FeatureLevel {
+  return role?.featureAccess?.[area] ?? "none";
 }
 
 export interface RequirePermissionOptions {
@@ -72,48 +105,49 @@ export interface RequirePermissionOptions {
 }
 
 /**
- * FastAPI's `Depends(require_permission(...))` equivalent as an Express
- * middleware factory. Reads dashboard-token claims (set by
- * verifyDashboardToken) plus the X-Workspace-Slug header to look up the
- * cached resolved access — never re-resolves live inline.
- *
- * Phase 1 TODO: wire /api/auth/resolve-access to actually populate the cache
- * via a live Applivery collaborator lookup + Role matching. Until then this
- * fails closed (403) for every request, which is the correct default.
+ * Express equivalent of `require_permission(area=None, level="read",
+ * action=None, super_admin_only=False)` — a dependency FACTORY, so call it
+ * with options to get the actual middleware: `requirePermission({ area:
+ * "workflows", level: "manage", action: "canRunDestructiveWorkflow" })`.
+ * Consults the cache populated by POST /api/auth/resolve-access ONLY —
+ * never re-resolves live inline.
  */
 export function requirePermission(options: RequirePermissionOptions = {}) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const workspaceSlug = req.header("X-Workspace-Slug");
-    const email = req.dashboardUser?.sub;
+    const workspaceSlug = req.header("X-Workspace-Slug") || "global";
+    const email = req.dashboardUser?.sub ?? "";
 
-    if (!workspaceSlug || !email) {
-      return res.status(400).json({ detail: "Missing workspace context" });
+    const cached = getCachedAccess(workspaceSlug, email);
+    if (cached === null) {
+      return res.status(403).json({
+        detail: "Access not resolved for this workspace yet — switch workspace or sign in again to refresh permissions.",
+      });
     }
-
-    const access = getCachedAccess(workspaceSlug, email);
-    if (!access) {
-      return res.status(403).json({ detail: "No resolved access for this workspace — call resolve-access first" });
+    if (!cached.allowed) {
+      return res.status(403).json({ detail: cached.deniedReason ?? "No SOAR role assigned for this workspace." });
     }
-
-    if (access.isSuperAdmin) return next();
-
+    if (cached.isSuperAdmin) {
+      return next();
+    }
     if (options.superAdminOnly) {
-      return res.status(403).json({ detail: "Super admin required" });
+      return res
+        .status(403)
+        .json({ detail: "This action is restricted to the workspace Super Admin (the Applivery workspace Owner)." });
     }
 
+    const role = cached.role;
     if (options.area) {
-      const level = access.featureAccess[options.area] ?? "none";
-      const required = options.level ?? "read";
-      const rank: Record<FeatureLevel, number> = { none: 0, read: 1, manage: 2 };
-      if (rank[level] < rank[required]) {
-        return res.status(403).json({ detail: `Missing ${required} access to ${options.area}` });
+      const have = FEATURE_ACCESS_LEVELS[roleFeatureLevel(role, options.area)];
+      const need = FEATURE_ACCESS_LEVELS[options.level ?? "read"];
+      if (have < need) {
+        return res.status(403).json({ detail: `Your role doesn't have ${options.level ?? "read"} access to ${options.area}.` });
       }
     }
-
-    if (options.action && !access.riskyActions[options.action]) {
-      return res.status(403).json({ detail: `Missing risky-action permission: ${options.action}` });
+    if (options.action) {
+      if (!role?.riskyActions?.[options.action]) {
+        return res.status(403).json({ detail: `Your role isn't permitted to perform this action (${options.action}).` });
+      }
     }
-
     return next();
   };
 }

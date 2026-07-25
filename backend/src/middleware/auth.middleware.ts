@@ -28,15 +28,21 @@ export function verifyDashboardToken(req: Request, res: Response, next: NextFunc
   const token = req.header("X-Dashboard-Token") ?? req.header("Authorization-Dashboard");
 
   if (!token) {
-    return res.status(401).json({ detail: "Missing dashboard session" });
+    return res.status(401).json({ detail: "Missing X-Dashboard-Token header" });
   }
 
+  // Original app strips a "Bearer " prefix defensively even though the
+  // frontend never sends one on this specific header (verify_dashboard_token,
+  // main.py:1017-1031) — kept for parity.
+  const cleanToken = token.replace("Bearer ", "").trim();
+
   try {
-    const claims = jwt.verify(token, env.dashboardSecret) as DashboardTokenClaims;
+    // 60s clock-skew tolerance, same as the original's {"leeway": 60}.
+    const claims = jwt.verify(cleanToken, env.dashboardSecret, { clockTolerance: 60 }) as DashboardTokenClaims;
     req.dashboardUser = claims;
     return next();
-  } catch {
-    return res.status(401).json({ detail: "Invalid or expired dashboard session" });
+  } catch (error: any) {
+    return res.status(401).json({ detail: `Invalid session: ${error?.message ?? "unknown error"}` });
   }
 }
 
