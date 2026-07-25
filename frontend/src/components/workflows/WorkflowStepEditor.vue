@@ -7,6 +7,8 @@ import { Button, Input } from "@applivery/bluesky-vue";
 import { computed, onMounted } from "vue";
 import { useComplianceStore } from "../../stores/compliance";
 import { useWorkflowsStore, type MdmActionDef, type WorkflowStep } from "../../stores/workflows";
+import { useActionLibraryStore } from "../../stores/actionLibrary";
+import { useFirewallRuleSetsStore } from "../../stores/firewallRuleSets";
 
 const props = defineProps<{
   step: WorkflowStep;
@@ -24,10 +26,14 @@ const emit = defineEmits<{
 
 const store = useWorkflowsStore();
 const complianceStore = useComplianceStore();
+const actionLibraryStore = useActionLibraryStore();
+const firewallStore = useFirewallRuleSetsStore();
 
 onMounted(async () => {
   if (store.mdmActions.length === 0) await store.fetchMdmActions();
   if (complianceStore.policies.length === 0) await complianceStore.fetchPolicies();
+  if (actionLibraryStore.entries.length === 0) await actionLibraryStore.fetchEntries();
+  if (firewallStore.ruleSets.length === 0) await firewallStore.fetchRuleSets();
 });
 
 const STEP_TYPES = [
@@ -38,9 +44,11 @@ const STEP_TYPES = [
   { value: "policy_add", label: "Quarantine — add policy" },
   { value: "policy_restore", label: "Restore previous policies" },
   { value: "monitor", label: "Monitor compliance" },
-  { value: "wait", label: "Wait (Phase 4b)" },
-  { value: "run_script_wait", label: "Run script & wait for result (Phase 4b)" },
+  { value: "wait", label: "Wait (durable — survives a restart)" },
+  { value: "run_script_wait", label: "Run script & wait for its actual result" },
 ];
+
+const scriptLibraryEntries = computed(() => actionLibraryStore.entries.filter((e) => e.type === "script"));
 
 const availableActions = computed<MdmActionDef[]>(() => {
   if (!props.targetPlatform) return store.mdmActions;
@@ -107,8 +115,24 @@ const branchOptions = computed(() => [
             :placeholder="f.placeholder"
             @update:model-value="setFieldValue(f.key, $event)"
           />
-          <div v-else-if="['script_library_select', 'firewall_ruleset_select', 'app_select'].includes(f.type)">
-            <Input :model-value="fieldValue(f.key)" :label="`${f.label} (id)`" placeholder="Paste id — full picker lands with Phase 4b" @update:model-value="setFieldValue(f.key, $event)" />
+          <Input
+            v-else-if="f.type === 'script_library_select'"
+            :model-value="fieldValue(f.key)"
+            type="select"
+            :options="scriptLibraryEntries.map((e) => ({ value: e.id, label: `${e.name} (${e.platform})` }))"
+            :label="f.label"
+            @update:model-value="setFieldValue(f.key, $event)"
+          />
+          <Input
+            v-else-if="f.type === 'firewall_ruleset_select'"
+            :model-value="fieldValue(f.key)"
+            type="select"
+            :options="firewallStore.ruleSets.map((r) => ({ value: r.id, label: r.name }))"
+            :label="f.label"
+            @update:model-value="setFieldValue(f.key, $event)"
+          />
+          <div v-else-if="f.type === 'app_select'">
+            <Input :model-value="fieldValue(f.key)" :label="`${f.label} (id)`" placeholder="Paste app id" @update:model-value="setFieldValue(f.key, $event)" />
           </div>
           <Input v-else :model-value="fieldValue(f.key)" :label="f.label" :placeholder="f.placeholder" @update:model-value="setFieldValue(f.key, $event)" />
         </template>
@@ -203,7 +227,7 @@ const branchOptions = computed(() => [
 
     <!-- wait / run_script_wait -->
     <div v-else-if="step.type === 'wait'" class="space-y-2 pl-8">
-      <p class="text-xs text-amber-600">Wait steps require the durable engine (Phase 4b) — this step can be built and dry-run previewed now, but won't execute until then.</p>
+      <p class="text-xs text-gray-500">Persists to durable storage and resumes on its own schedule — survives an API restart mid-wait.</p>
       <div class="grid grid-cols-2 gap-2">
         <Input v-model.number="step.config.amount" type="number" label="Amount" />
         <Input
@@ -216,8 +240,15 @@ const branchOptions = computed(() => [
       </div>
     </div>
     <div v-else-if="step.type === 'run_script_wait'" class="space-y-2 pl-8">
-      <p class="text-xs text-amber-600">Run-script-and-wait steps require the durable engine (Phase 4b) — buildable/previewable now, not yet executable.</p>
-      <Input v-model="step.config.scriptName" label="Script name (label only)" />
+      <p class="text-xs text-gray-500">Dispatches the script, then parks this device's chain until the agent's actual result is known (resolved early by the script log reconciler, or by the timeout below as a fallback).</p>
+      <Input
+        :model-value="step.config.libraryId || ''"
+        type="select"
+        :options="scriptLibraryEntries.map((e) => ({ value: e.id, label: `${e.name} (${e.platform})` }))"
+        label="Script"
+        @update:model-value="step.config.libraryId = $event"
+      />
+      <Input v-model.number="step.config.timeoutMinutes" type="number" label="Timeout (minutes, default 30)" placeholder="30" />
     </div>
 
     <div v-if="showBranching" class="grid grid-cols-2 gap-2 pl-8 pt-1 border-t border-gray-200">

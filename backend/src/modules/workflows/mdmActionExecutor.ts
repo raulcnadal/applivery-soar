@@ -3,6 +3,7 @@ import { prisma } from "../../services/prisma";
 import { platformPathSegment } from "../devices/deviceNormalize";
 import { MDM_ACTIONS } from "../devices/mdmActions";
 import { renderTemplate } from "./templateRender";
+import { fetchScriptLogSummaryEntry } from "./scriptLogApi";
 
 /**
  * Faithful port of `_execute_mdm_action` (main.py:5518-5999) — dispatches one
@@ -45,6 +46,11 @@ export interface MdmActionResult {
   detail: string;
 }
 
+export interface WorkflowResumeRef {
+  pendingToken: string;
+  slugKey: string;
+}
+
 /**
  * `deploymentModel` is the WORKFLOW's own declared deployment model (set in
  * the builder), not something read off the real device — a defensive
@@ -53,7 +59,11 @@ export interface MdmActionResult {
  * http_request/notification steps template against, passed through here so
  * 'customOmaUri'/'scheduleOsUpdate' can template their own fields the same
  * way. `deviceId` is Applivery's own internal device id (NOT
- * platformDeviceId) — only needed by 'runScript' for tracking.
+ * platformDeviceId) — only needed by 'runScript' for tracking. `workflowResume`
+ * is set only when this dispatch comes from a durable engine 'run_script_wait'
+ * step (main.py's `workflow_resume` kwarg on `_execute_mdm_action`) — stashed
+ * onto the ScriptRunTracking row so script_log_reconciler_loop can resume the
+ * parked chain the moment the real result is known.
  */
 export async function executeMdmAction(
   headers: Record<string, string>,
@@ -66,6 +76,7 @@ export async function executeMdmAction(
   params: Record<string, any> | null | undefined,
   deviceId?: string | null,
   deviceContext?: Record<string, unknown>,
+  workflowResume?: WorkflowResumeRef | null,
 ): Promise<MdmActionResult> {
   const p = params ?? {};
   const action = MDM_ACTIONS[actionKey];
@@ -96,7 +107,7 @@ export async function executeMdmAction(
 
   try {
     if (actionKey === "runScript") {
-      return await executeRunScript(headers, orgBase, workspaceSlug, platform, platformPath, platformDeviceId, p, deviceId);
+      return await executeRunScript(headers, orgBase, workspaceSlug, platform, platformPath, platformDeviceId, p, deviceId, deviceContext, workflowResume);
     }
 
     if (actionKey === "applyFirewallRuleSet" || actionKey === "restoreFirewallRuleSet") {
@@ -316,6 +327,8 @@ async function executeRunScript(
   platformDeviceId: string,
   params: Record<string, any>,
   deviceId: string | null | undefined,
+  deviceContext?: Record<string, unknown>,
+  workflowResume?: WorkflowResumeRef | null,
 ): Promise<MdmActionResult> {
   const libraryId = params.libraryId;
   if (!libraryId) return { ok: false, detail: "No script selected from the Library" };
@@ -356,16 +369,41 @@ async function executeRunScript(
   const newEntry = { id: assetId, type: "once", resetDate, arguments: scriptArguments, scope };
   const merged = [...currentScripts.filter((s) => s.id !== assetId), newEntry];
 
+  // Snapshot this script's current success/error counts BEFORE dispatch —
+  // script_log_reconciler_loop compares against this baseline to detect the
+  // NEW execution our PUT below causes, since Applivery's script-logs/summary
+  // only exposes rolling totals per (device, script), never "just the latest
+  // run". Best-effort: a failure here just skips tracking, never blocks the
+  // actual script run. Port of main.py:5639-5654.
+  let baselineSuccess = 0;
+  let baselineError = 0;
+  try {
+    const baselineEntry = await fetchScriptLogSummaryEntry(headers, orgBase, platformPath, platformDeviceId, assetId);
+    if (baselineEntry) {
+      baselineSuccess = baselineEntry.status?.success ?? 0;
+      baselineError = baselineEntry.status?.error ?? 0;
+    }
+  } catch {
+    /* best-effort — see comment above */
+  }
+
   const res = await appliveryClient.put(deviceUrl, { scripts: merged }, { headers });
   if (res.status >= 300) return { ok: false, detail: `API returned ${res.status}: ${String(JSON.stringify(res.data ?? "")).slice(0, 200)}` };
 
-  // Best-effort dispatch record for later Audit Log follow-up — the full
-  // baseline-diff reconciler (script_log_reconciler_loop) is Phase 4b
-  // (Action Library) territory; this row is enough for the Devices view to
-  // show "dispatched" state in the meantime.
+  // Best-effort dispatch record for later Audit Log follow-up —
+  // script_log_reconciler_loop (scriptLogReconciler.ts) polls these rows
+  // until the counts move past the baseline above, then writes the outcome
+  // to the Audit Log (and, if `workflowResume` is set, resumes the durable
+  // engine's parked 'run_script_wait' chain). Port of main.py:5660-5676.
   try {
+    const deviceName = ((deviceContext as any)?.device as any)?.displayName ?? null;
     await prisma.scriptRunTracking.create({
-      data: { workspaceSlug, deviceId: deviceId ?? "", scriptId: assetId, status: "dispatched" },
+      data: {
+        workspaceSlug, deviceId: deviceId ?? "", deviceName,
+        platformPath, platformDeviceId, assetId, scriptName: entry.name || assetId,
+        baselineSuccess, baselineError, attempts: 0,
+        workflowResume: workflowResume ? (workflowResume as any) : undefined,
+      },
     });
   } catch (e) {
     console.warn(`[runScript] Failed to record dispatch for Audit Log follow-up: ${e}`);

@@ -46,6 +46,9 @@ model AutomationCredential {
   refreshToken         String // encrypted at rest
   apiTokenExpireAt     DateTime?
   refreshTokenExpireAt DateTime?
+  configuredBy         String?
+  configuredAt         DateTime?
+  lastRefreshedAt      DateTime?
   updatedAt            DateTime  @updatedAt
 }
 
@@ -216,9 +219,19 @@ model WorkflowRun {
   id                String    @id @default(uuid())
   workspaceSlug     String
   workflowId        String
+  // `workflowName`/`total` are set at launch time for BOTH engines (Phase 4b
+  // addition); `log` is only populated once the run is fully done — a live
+  // "waiting"/"running" durable run is instead reconstructed on read from
+  // the `results` relation (see workflows.service.ts's runView-equivalent,
+  // porting main.py's `_pg_run_view`). This keeps the pre-existing in-memory
+  // engine's write-once-at-completion behavior (Phase 4a) completely
+  // unchanged: it still just writes `log` once and never touches
+  // total/workflowName in the meantime.
+  workflowName      String?
   targetDescription String?
   status            String
-  log               Json
+  total             Int?
+  log               Json?
   startedAt         DateTime  @default(now())
   completedAt       DateTime?
 
@@ -228,30 +241,55 @@ model WorkflowRun {
   @@index([workspaceSlug, workflowId])
 }
 
+/**
+ * Port of Postgres table `workflow_pending_steps` (main.py:501-536) — one row
+ * per device currently parked in a 'wait' or 'run_script_wait' step, with
+ * everything needed to resume it. `stepKind` 'timer' is a plain 'wait'
+ * (resumeAt is exactly when to fire, always down nextStepId). 'script' is a
+ * 'run_script_wait' (resumeAt is a TIMEOUT safety net — the fast path is
+ * script_log_reconciler_loop resolving `pendingToken` early and deleting this
+ * row itself; if the timer-based resumer claims a 'script' row instead, that
+ * always means "timed out", so it follows onFailureStepId, never nextStepId).
+ */
 model WorkflowPendingStep {
-  id        String   @id @default(uuid())
-  runId     String
-  run       WorkflowRun @relation(fields: [runId], references: [id])
-  deviceId  String
-  stepId    String
-  resumeAt  DateTime
-  context   Json
-  createdAt DateTime @default(now())
+  id              String    @id @default(uuid())
+  runId           String
+  run             WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  deviceSnapshot  Json
+  workflowId      String
+  slugKey         String
+  nextStepId      String
+  log             Json
+  resumeAt        DateTime
+  stepKind        String    @default("timer") // 'timer' | 'script'
+  onFailureStepId String?
+  pendingToken    String?   @unique
+  claimedAt       DateTime?
+  createdAt       DateTime  @default(now())
 
   @@index([resumeAt])
   @@index([runId])
 }
 
+/**
+ * Port of Postgres table `workflow_run_results` (main.py:488-499) — one row
+ * PER DEVICE in a run (not per-step; `steps` holds that device's full log so
+ * far as one JSON array), upserted via ON CONFLICT (runId, deviceId). `status`
+ * is 'waiting' | 'done'; `finalStatus` ('success'|'partial'|'failed') is only
+ * set once `status` is 'done'.
+ */
 model WorkflowRunResult {
-  id         String   @id @default(uuid())
-  runId      String
-  run        WorkflowRun @relation(fields: [runId], references: [id])
-  deviceId   String
-  stepId     String
-  status     String
-  detail     Json?
-  recordedAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  runId       String
+  run         WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  deviceId    String
+  deviceName  String?
+  steps       Json
+  status      String // 'waiting' | 'done'
+  finalStatus String?
+  updatedAt   DateTime @updatedAt
 
+  @@unique([runId, deviceId])
   @@index([runId])
 }
 
@@ -260,18 +298,20 @@ model WorkflowRunResult {
 // ────────────────────────────────────────────────────────────────
 
 model Trigger {
-  id                String   @id @default(uuid())
+  id                String    @id @default(uuid())
   workspaceSlug     String
   name              String
   description       String?
   workflowId        String
-  enabled           Boolean  @default(true)
-  openCase          Boolean  @default(false)
-  caseSeverity      String   @default("medium")
+  enabled           Boolean   @default(true)
+  openCase          Boolean   @default(false)
+  caseSeverity      String    @default("medium")
   deviceLookupField String?
   secret            String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  lastFiredAt       DateTime?
+  fireCount         Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([workspaceSlug])
 }
@@ -474,16 +514,35 @@ model DeviceReportSecret {
   updatedAt     DateTime @updatedAt
 }
 
+/**
+ * Port of the `script_run_tracking/{slug}.json` dict-of-entries store
+ * (main.py:8891-8907) — one row per in-flight script dispatch, deleted the
+ * moment script_log_reconciler_loop resolves it (success/failure/give-up) or
+ * (for a `run_script_wait` dispatch) the durable engine's resumer claims it
+ * via `workflowResume.pendingToken` first. `baselineSuccess`/`baselineError`
+ * are the script's rolling success/error counts on Applivery's
+ * script-logs/summary endpoint AT DISPATCH TIME — the reconciler diffs
+ * against these since that endpoint only exposes rolling totals, never "just
+ * the latest run". `workflowResume` is set only when this dispatch came from
+ * a workflow's 'run_script_wait' step (as opposed to a plain 'Run script'
+ * mdm_action or a manual dispatch) — `{pendingToken, slugKey}`.
+ */
 model ScriptRunTracking {
-  id            String    @id @default(uuid())
-  workspaceSlug String
-  deviceId      String
-  scriptId      String
-  status        String
-  requestedAt   DateTime  @default(now())
-  resolvedAt    DateTime?
+  id               String    @id @default(uuid())
+  workspaceSlug    String
+  deviceId         String
+  deviceName       String?
+  platformPath     String
+  platformDeviceId String
+  assetId          String
+  scriptName       String?
+  dispatchedAt     DateTime  @default(now())
+  baselineSuccess  Int       @default(0)
+  baselineError    Int       @default(0)
+  attempts         Int       @default(0)
+  workflowResume   Json?
 
-  @@index([workspaceSlug, status])
+  @@index([workspaceSlug])
 }
 
 model FirewallRuleSet {

@@ -14,6 +14,12 @@ import { appListsRouter } from "./modules/appLists/appLists.controller";
 import { catalogsRouter } from "./modules/catalogs/catalogs.controller";
 import { complianceRouter } from "./modules/compliance/compliance.controller";
 import { workflowsRouter } from "./modules/workflows/workflows.controller";
+import { settingsRouter } from "./modules/settings/settings.controller";
+import { actionLibraryRouter } from "./modules/workflows/actionLibrary.controller";
+import { scriptAssetsRouter } from "./modules/workflows/scriptAssets.controller";
+import { scriptReposRouter } from "./modules/workflows/scriptRepos.controller";
+import { firewallRuleSetsRouter } from "./modules/workflows/firewallRuleSets.controller";
+import { triggersRouter } from "./modules/workflows/triggers.controller";
 
 export function createApp() {
   const app = express();
@@ -35,9 +41,15 @@ export function createApp() {
   app.use(catalogsRouter);
   app.use(complianceRouter);
   app.use(workflowsRouter);
+  app.use(settingsRouter);
+  app.use(actionLibraryRouter);
+  app.use(scriptAssetsRouter);
+  app.use(scriptReposRouter);
+  app.use(firewallRuleSetsRouter);
+  app.use(triggersRouter);
 
-  // Phase 4b+ modules mount their routers here as they're built:
-  // app.use(actionLibraryRouter); app.use(triggersRouter); app.use(casesRouter); ...
+  // Phase 5+ modules mount their routers here as they're built:
+  // app.use(casesRouter); ...
 
   // Static frontend serving, mirroring the original single-image pattern
   // (ARCHITECTURE.md §2.1): serve Vue's built dist/, catch-all to

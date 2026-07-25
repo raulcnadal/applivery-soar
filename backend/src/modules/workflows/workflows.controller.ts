@@ -140,7 +140,7 @@ workflowsRouter.post("/api/workflows/:workflowId/run", ...manageWorkflows, async
 
   const runRecord = await launchWorkflowRun(workflow, payload.devices, authorization, workspaceSlug, payload.targetDescription);
   if (runRecord === null) {
-    throw new HttpError(400, "This workflow includes a 'wait' or 'run script and wait for result' step, which requires durable storage. Phase 4b adds this.");
+    throw new HttpError(400, "This workflow includes a 'wait' or 'run script and wait for result' step, which requires durable storage (DATABASE_URL) not configured on this server.");
   }
   const targetSuffix = payload.targetDescription ? ` (${payload.targetDescription})` : "";
   await recordAuditEvent(workspaceSlug, {

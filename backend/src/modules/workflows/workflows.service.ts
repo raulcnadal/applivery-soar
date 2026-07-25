@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
 import { HttpError } from "../../utils/httpError";
@@ -22,12 +23,14 @@ import {
 } from "./workflowSteps";
 import { renderTemplate } from "./templateRender";
 import type { WorkflowDeviceRefPayload, WorkflowPayload, WorkflowStepPayload } from "./workflows.schemas";
+import { executeWorkflowRunDurable, runView as durableRunView, listOpenRuns, type DurableRunView } from "./durableEngine";
 
 /**
  * Workflow CRUD + version history/restore + dry-run + the in-memory
- * (synchronous, no Postgres wait-state) execution engine — Phase 4a. Port of
- * main.py:6113-6962 and 7360-7412/7576-7611 (the durable-engine machinery at
- * 6964-7574 is Phase 4b — see workflows.execution's dispatcher note below).
+ * (synchronous, no Postgres wait-state) execution engine — Phase 4a — plus
+ * the durable-engine dispatch wiring — Phase 4b. Port of main.py:6113-6962,
+ * 7360-7412/7576-7611, and the `_execute_workflow_run` dispatcher
+ * (main.py:7360-7369).
  */
 
 // ── Shared helper (also used by compliance.service.ts's autoRun destructive-ack gate) ──
@@ -374,13 +377,22 @@ interface WorkflowRow {
   targetDeploymentModel: string | null;
 }
 
+function durableViewToPublicRun(view: DurableRunView, targetDescriptionOverride?: string | null): PublicRunView {
+  return {
+    id: view.id, workflowId: view.workflowId, workflowName: view.workflowName ?? "",
+    startedAt: view.startedAt ?? "", finishedAt: view.finishedAt, status: view.status,
+    total: view.total, completed: view.completed, results: view.results as unknown as DeviceRunResult[],
+    targetDescription: targetDescriptionOverride !== undefined ? targetDescriptionOverride : view.targetDescription,
+  };
+}
+
 /**
  * Create a run record and schedule its execution in the background (fire-
  * and-forget — the caller's HTTP request returns immediately regardless of
- * fleet size). Port of `_launch_workflow_run` (main.py:7371). Returns null
- * if the workflow needs the durable engine (has a 'wait'/'run_script_wait'
- * step) — Phase 4b; callers must handle that refusal explicitly, same
- * graceful-degradation contract as the rest of this migration.
+ * fleet size). Port of `_launch_workflow_run` (main.py:7371) plus the
+ * `_execute_workflow_run` dispatcher (main.py:7360-7369): workflows with a
+ * 'wait'/'run_script_wait' step go through the durable (Postgres-backed)
+ * engine; everything else uses the original fully in-memory engine.
  */
 export async function launchWorkflowRun(
   workflow: WorkflowRow,
@@ -391,7 +403,22 @@ export async function launchWorkflowRun(
 ): Promise<PublicRunView | null> {
   const steps = (workflow.steps as WorkflowStepPayload[]) ?? [];
   const hasWait = steps.some((s) => s.type === "wait" || s.type === "run_script_wait");
-  if (hasWait) return null;
+
+  if (hasWait) {
+    const runId = crypto.randomUUID();
+    await prisma.workflowRun.create({
+      data: {
+        id: runId, workspaceSlug, workflowId: workflow.id, workflowName: workflow.name,
+        targetDescription: targetDescription ?? null, status: "running", total: devices.length,
+        startedAt: new Date(),
+      },
+    });
+    void executeWorkflowRunDurable(runId, workflow, devices, authorization, workspaceSlug).catch((e) => {
+      console.error(`[Workflows] Durable run ${runId} crashed: ${e}`);
+    });
+    const view = await durableRunView(runId);
+    return view ? durableViewToPublicRun(view) : null;
+  }
 
   const runId = crypto.randomUUID();
   const run: ActiveRun = {
@@ -554,18 +581,26 @@ function rowToPublicRun(row: { id: string; workflowId: string; targetDescription
   };
 }
 
-/** Port of `_gather_workflow_runs` (main.py:6534) — combines still-running (in-memory) with persisted history, de-duped by id. (No durable/Postgres-open-runs set in Phase 4a — that's Phase 4b's `_pg_list_open_runs`.) */
+/**
+ * Port of `_gather_workflow_runs` (main.py:6534) — combines still-running
+ * in-memory runs (Phase 4a engine) with still-open durable runs (Phase 4b
+ * engine, via `listOpenRuns`'s Postgres read) and persisted/finalized
+ * history, de-duped by id.
+ */
 async function gatherWorkflowRuns(workspaceSlug: string): Promise<PublicRunView[]> {
   const inProgress = Array.from(activeRuns.values())
     .filter((r) => r.workspaceSlug === workspaceSlug && r.status === "running")
-    .map(publicRunView)
-    .sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
-  const openIds = new Set(inProgress.map((r) => r.id));
+    .map(publicRunView);
 
-  const rows = await prisma.workflowRun.findMany({ where: { workspaceSlug }, orderBy: { startedAt: "desc" } });
+  const durableOpen = (await listOpenRuns(workspaceSlug)).map((v) => durableViewToPublicRun(v));
+
+  const open = [...inProgress, ...durableOpen].sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
+  const openIds = new Set(open.map((r) => r.id));
+
+  const rows = await prisma.workflowRun.findMany({ where: { workspaceSlug, log: { not: Prisma.DbNull } }, orderBy: { startedAt: "desc" } });
   const history = rows.filter((r) => !openIds.has(r.id)).map(rowToPublicRun);
 
-  return [...inProgress, ...history];
+  return [...open, ...history];
 }
 
 export async function listWorkflowRuns(workspaceSlug: string, limit: number, dateFrom?: string | null, dateTo?: string | null) {
@@ -592,6 +627,13 @@ export async function getWorkflowRun(workspaceSlug: string, runId: string): Prom
   const active = activeRuns.get(runId);
   if (active) return publicRunView(active);
   const row = await prisma.workflowRun.findFirst({ where: { workspaceSlug, id: runId } });
-  if (row) return rowToPublicRun(row);
+  if (row) {
+    if (row.log) return rowToPublicRun(row);
+    // Still-open durable run (Phase 4b) — not yet finalized, so `log` is
+    // null; reconstruct the live view from the WorkflowRunResult relation
+    // instead (port of `_pg_run_view`, main.py:7031-7083).
+    const view = await durableRunView(runId);
+    if (view) return durableViewToPublicRun(view);
+  }
   throw new HttpError(404, "Run not found");
 }
