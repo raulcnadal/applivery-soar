@@ -1,0 +1,52 @@
+services:
+  applivery-big-picture-prod:
+    image: raulcnadal/applivery-big-picture:arm64-advanced
+    container_name: applivery-big-picture-prod
+    restart: unless-stopped
+    # ports:
+    #   - "2026:8000"
+    expose:
+      - 8000
+    networks:
+      - npm-network
+      - db-network
+    environment:
+      - DASHBOARD_SECRET=${DASHBOARD_SECRET}
+      - DATABASE_URL=postgresql://applivery:${POSTGRES_PASSWORD}@applivery-big-picture-db:5432/applivery_big_picture
+      # Optional — see .env for what these unlock.
+      # - AUTOMATION_ORG_SLUG=${AUTOMATION_ORG_SLUG}
+      # - AUTOMATION_API_TOKEN=${AUTOMATION_API_TOKEN}
+      # - TRIGGER_SECRET=${TRIGGER_SECRET}
+    volumes:
+      # Maps a local 'data' folder to the app's internal storage
+      - ./data:/app/data
+    depends_on:
+      applivery-big-picture-db:
+        condition: service_healthy
+
+  applivery-big-picture-db:
+    image: postgres:16-alpine
+    container_name: applivery-big-picture-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=applivery
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=applivery_big_picture
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U applivery -d applivery_big_picture"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - db-network
+
+networks:
+  npm-network:
+    external: true
+  # Private network shared only between the app and its database — Postgres
+  # is never exposed on npm-network, so nothing else on that shared network
+  # can reach it.
+  db-network:
+    driver: bridge

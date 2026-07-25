@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/* BlueSky design tokens — ported from the BlueSky design system's
+   src/app/globals.css (@theme block), the canonical source for the brand
+   color scale used by every @applivery/bluesky-vue component. */
+
+@theme {
+  --color-brand-50: #edf2ff;
+  --color-brand-100: #dce7ff;
+  --color-brand-200: #bad0ff;
+  --color-brand-300: #7aaaff;
+  --color-brand-400: #3d79ff;
+  --color-brand-500: #1258ff;
+  --color-brand-600: #0241e3;
+  --color-brand-700: #0235c0;
+  --color-brand-800: #052a96;
+  --color-brand-900: #0a276e;
+  --color-brand-950: #071847;
+  --color-canvas: #f2f6fd;
+  --font-sans: "Outfit", system-ui, sans-serif;
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.25s ease-out both;
+}

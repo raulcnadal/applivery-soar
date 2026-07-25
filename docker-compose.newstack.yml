@@ -1,0 +1,46 @@
+# Docker Compose for the BlueSky-stack rewrite (Vue 3 + Node/TS + Prisma +
+# Postgres) — separate from the original /docker-compose.yml (FastAPI +
+# React + per-workspace SQLite) so the two stacks can run side by side
+# during the incremental migration (migration-plan.md §8). At Phase 9
+# cutover, this file replaces the original.
+#
+# Usage: docker compose -f docker-compose.newstack.yml up --build
+
+services:
+  soar-app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: soar-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DASHBOARD_SECRET=${DASHBOARD_SECRET}
+      - DATABASE_URL=postgresql://soar:${POSTGRES_PASSWORD}@soar-db:5432/soar?schema=public
+      - APPLIVERY_API_URL=${APPLIVERY_API_URL:-https://api.applivery.com}
+      - TRIGGER_SECRET=${TRIGGER_SECRET:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    depends_on:
+      soar-db:
+        condition: service_healthy
+
+  soar-db:
+    image: postgres:16-alpine
+    container_name: soar-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=soar
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=soar
+    volumes:
+      - ./pgdata-newstack:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soar -d soar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      # Exposed on the host for local Prisma Studio / psql access during
+      # development — remove in a real production deployment.
+      - "5432:5432"

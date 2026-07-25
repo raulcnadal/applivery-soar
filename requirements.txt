@@ -1,0 +1,39 @@
+# Canonical, complete dependency list for the FastAPI backend. This is the
+# file the Dockerfile actually installs from (COPY requirements.txt in the
+# root build stage) — big-picture-api/requirements.txt is a secondary/local
+# copy used for editor tooling and must be kept in sync with this one; if
+# you add a new top-level `import` in big-picture-api/main.py, add it here
+# too or a fresh Docker build will fail at container startup with an
+# ImportError, not a friendly error page.
+fastapi==0.135.3
+uvicorn[standard]==0.42.0
+pydantic==2.12.5
+httpx==0.28.1
+PyJWT==2.12.1
+cryptography==43.0.3
+
+# Required at import time (main.py: `from cryptography.fernet import Fernet,
+# InvalidToken`) — encrypts the Vulnerability Service integration's API
+# token at rest. Unlike the packages below, this one has no try/except
+# fallback: if it's missing, the app won't start at all.
+
+# Optional at runtime — main.py wraps each of these in try/except ImportError
+# and degrades the specific feature gracefully (see the matching comment at
+# the top of main.py) rather than failing to start:
+asyncpg==0.31.0
+# ^ durable 'wait' workflow steps (requires DATABASE_URL / Postgres). Without
+#   it, every other feature still works; workflows just can't pause and
+#   resume later.
+boto3
+# ^ S3 Log Export Destination only (Settings > Log Export Destinations).
+#   Left unpinned deliberately — pin it yourself if you need a reproducible
+#   build; AWS ships frequent boto3 releases and an old pin tends to bit-rot.
+paramiko
+# ^ SFTP Log Export Destination only (Settings > Log Export Destinations).
+
+# Lazily imported only inside the PDF report generator (Reporting > Builder
+# > Generate/Schedule) — not needed for the rest of the app to run, but
+# required for that specific feature to work:
+jinja2==3.1.6
+weasyprint==68.1
+matplotlib==3.10.8

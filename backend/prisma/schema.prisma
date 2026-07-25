@@ -1,0 +1,637 @@
+// Applivery SOAR — BlueSky stack Prisma schema.
+// Source of truth: /migration-plan.md §3. Every model here maps onto one of
+// the 39 persisted store "kinds" in the original FastAPI app (see
+// migration-plan.md §7.1 for the full traceability list) or a durable-workflow
+// table that's new (previously handled by an optional side Postgres instance).
+//
+// Tenancy: `workspaceSlug` is a plain column (not a separate schema-per-tenant)
+// on every tenant-scoped model, replacing the original "one SQLite file per
+// workspace slug" design now that everything lives in one Postgres instance.
+// Models with no `workspaceSlug` are intentionally global (shared catalogs
+// refreshed once for every workspace, mirroring the original app's "_global"
+// pseudo-slug).
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ────────────────────────────────────────────────────────────────
+// Auth / RBAC — no local user table (every "user" is an Applivery
+// Collaborator); Role is the only thing we persist ourselves.
+// ────────────────────────────────────────────────────────────────
+
+model Role {
+  id                 String   @id @default(uuid())
+  workspaceSlug      String
+  name               String
+  description        String?
+  featureAccess      Json // { devices: "none"|"read"|"manage", ... }
+  riskyActions       Json // { canDeletePolicyOrWorkflow: bool, ... }
+  appliveryTagValues String[]
+  segmentIds         String[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model AutomationCredential {
+  workspaceSlug        String    @id
+  apiToken             String // encrypted at rest
+  refreshToken         String // encrypted at rest
+  apiTokenExpireAt     DateTime?
+  refreshTokenExpireAt DateTime?
+  updatedAt            DateTime  @updatedAt
+}
+
+// ────────────────────────────────────────────────────────────────
+// Workspace-level settings/state (today's single "state" JSON blob)
+// ────────────────────────────────────────────────────────────────
+
+model WorkspaceState {
+  workspaceSlug                     String   @id
+  themeMode                         String?
+  webhookUrl                        String?
+  smtpConfig                        Json?
+  scheduledReports                  Json?
+  timezone                          String?
+  customReportTemplate              String?  @db.Text
+  auditLogRetentionDays             Int?
+  sessionTimeoutMinutes             Int?
+  installedAppsRefreshBudgetPerHour Int?
+  updatedAt                         DateTime @updatedAt
+}
+
+model WidgetLayout {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  userEmail     String
+  layout        Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([workspaceSlug, userEmail])
+}
+
+// ────────────────────────────────────────────────────────────────
+// Compliance engine
+// ────────────────────────────────────────────────────────────────
+
+model CompliancePolicy {
+  id                        String   @id @default(uuid())
+  workspaceSlug             String
+  name                      String
+  description               String?
+  enabled                   Boolean  @default(true)
+  autoRun                   Boolean  @default(false)
+  severity                  String   @default("medium")
+  conditionLogic            String   @default("any")
+  conditions                Json
+  workflowId                String?
+  nonComplianceTag          String?
+  smartAttributeId          String?
+  segmentId                 String?
+  evaluationIntervalMinutes Int      @default(60)
+  autoRunBatchCap           Int      @default(15)
+  autoRunDestructiveAck     Boolean  @default(false)
+  circuitBreakerTripped     Boolean  @default(false)
+  mitreTechniques           String[]
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  violations ComplianceViolation[]
+
+  @@index([workspaceSlug])
+}
+
+model ComplianceViolation {
+  id            String    @id @default(uuid())
+  workspaceSlug String
+  policyId      String
+  policy        CompliancePolicy @relation(fields: [policyId], references: [id])
+  deviceId      String
+  deviceName    String?
+  status        String
+  detail        Json?
+  detectedAt    DateTime  @default(now())
+  resolvedAt    DateTime?
+
+  @@index([workspaceSlug, policyId])
+  @@index([workspaceSlug, status])
+}
+
+model PolicyQuarantineEntry {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  policyId      String
+  deviceId      String
+  reason        String
+  createdAt     DateTime @default(now())
+
+  @@index([workspaceSlug, policyId])
+}
+
+model ComplianceEvaluationState {
+  workspaceSlug   String @id
+  lastEvaluatedAt Json
+  circuitBreakers Json
+}
+
+// ────────────────────────────────────────────────────────────────
+// Workflows — two execution engines, same schema
+// ────────────────────────────────────────────────────────────────
+
+model Workflow {
+  id                         String   @id @default(uuid())
+  workspaceSlug              String
+  name                       String
+  description                String?
+  steps                      Json
+  targetPlatform             String?
+  targetDeploymentModel      String?
+  recovery                   Json
+  allowUnattendedDestructive Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  versions WorkflowVersion[]
+
+  @@index([workspaceSlug])
+}
+
+model WorkflowVersion {
+  id         String   @id @default(uuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id])
+  snapshot   Json
+  createdAt  DateTime @default(now())
+
+  @@index([workflowId])
+}
+
+model WorkflowRun {
+  id                String    @id @default(uuid())
+  workspaceSlug     String
+  workflowId        String
+  targetDescription String?
+  status            String
+  log               Json
+  startedAt         DateTime  @default(now())
+  completedAt       DateTime?
+
+  pendingSteps WorkflowPendingStep[]
+  results      WorkflowRunResult[]
+
+  @@index([workspaceSlug, workflowId])
+}
+
+model WorkflowPendingStep {
+  id        String   @id @default(uuid())
+  runId     String
+  run       WorkflowRun @relation(fields: [runId], references: [id])
+  deviceId  String
+  stepId    String
+  resumeAt  DateTime
+  context   Json
+  createdAt DateTime @default(now())
+
+  @@index([resumeAt])
+  @@index([runId])
+}
+
+model WorkflowRunResult {
+  id         String   @id @default(uuid())
+  runId      String
+  run        WorkflowRun @relation(fields: [runId], references: [id])
+  deviceId   String
+  stepId     String
+  status     String
+  detail     Json?
+  recordedAt DateTime @default(now())
+
+  @@index([runId])
+}
+
+// ────────────────────────────────────────────────────────────────
+// Triggers, Cases, Case automation
+// ────────────────────────────────────────────────────────────────
+
+model Trigger {
+  id                String   @id @default(uuid())
+  workspaceSlug     String
+  name              String
+  description       String?
+  workflowId        String
+  enabled           Boolean  @default(true)
+  openCase          Boolean  @default(false)
+  caseSeverity      String   @default("medium")
+  deviceLookupField String?
+  secret            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model Case {
+  id                String    @id @default(uuid())
+  workspaceSlug     String
+  title             String
+  status            String    @default("open")
+  severity          String    @default("medium")
+  deviceId          String?
+  deviceName        String?
+  assignee          String?
+  mitreTechniques   String[]
+  source            String
+  slaAcknowledgedAt DateTime?
+  slaResolvedAt     DateTime?
+  slaBreached       Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  notes    CaseNote[]
+  activity CaseActivity[]
+
+  @@index([workspaceSlug, status])
+}
+
+model CaseNote {
+  id        String   @id @default(uuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id])
+  text      String   @db.Text
+  author    String
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+}
+
+model CaseActivity {
+  id        String   @id @default(uuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id])
+  type      String
+  detail    Json
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+}
+
+model CaseAutoRunRule {
+  id                    String   @id @default(uuid())
+  workspaceSlug         String
+  name                  String
+  enabled               Boolean  @default(true)
+  minSeverity           String   @default("high")
+  mitreTechniques       String[]
+  workflowId            String
+  autoRunDestructiveAck Boolean  @default(false)
+  maxFiresPerHour       Int      @default(10)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model CaseSlaSettings {
+  workspaceSlug  String   @id
+  enabled        Boolean  @default(true)
+  notifyOnBreach Boolean  @default(true)
+  thresholds     Json
+  updatedAt      DateTime @updatedAt
+}
+
+// ────────────────────────────────────────────────────────────────
+// Integrations, Threat Intel, Applivery inbound webhook
+// ────────────────────────────────────────────────────────────────
+
+model Integration {
+  id                           String   @id @default(uuid())
+  workspaceSlug                String
+  name                         String
+  type                         String
+  enabled                      Boolean  @default(true)
+  notifyOnOpen                 Boolean  @default(true)
+  notifyOnClose                Boolean  @default(false)
+  minSeverity                  String   @default("low")
+  autoCloseCaseOnRemoteResolve Boolean  @default(false)
+  pageOnSystemHealthAlert      Boolean  @default(false)
+  config                       Json
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model ThreatIntelProvider {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  name          String
+  type          String
+  enabled       Boolean  @default(true)
+  config        Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model ThreatIntelCache {
+  id           String   @id @default(uuid())
+  workspaceSlug String
+  ioc          String
+  providerType String
+  result       Json
+  cachedAt     DateTime @default(now())
+  expiresAt    DateTime
+
+  @@unique([workspaceSlug, ioc, providerType])
+}
+
+model AppliveryWebhookConfig {
+  workspaceSlug String   @id
+  enabled       Boolean  @default(true)
+  secret        String
+  updatedAt     DateTime @updatedAt
+
+  rules AppliveryWebhookRule[]
+}
+
+model AppliveryWebhookRule {
+  id                    String  @id @default(uuid())
+  workspaceSlug         String
+  actionKey             String
+  label                 String?
+  enabled               Boolean @default(false)
+  openCase              Boolean @default(false)
+  caseSeverity          String  @default("medium")
+  runWorkflow           Boolean @default(false)
+  workflowId            String?
+  autoRunDestructiveAck Boolean @default(false)
+
+  workspace AppliveryWebhookConfig @relation(fields: [workspaceSlug], references: [workspaceSlug])
+
+  @@unique([workspaceSlug, actionKey])
+}
+
+// ────────────────────────────────────────────────────────────────
+// Device/MDM operational data
+// ────────────────────────────────────────────────────────────────
+
+model DeviceAudience {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  name          String
+  description   String?
+  selectors     Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model DevicePushData {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  deviceId      String
+  kind          String
+  payload       Json
+  reportedAt    DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([workspaceSlug, deviceId])
+}
+
+model InstalledAppInventory {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  deviceId      String
+  apps          Json
+  agentVersion  String?
+  reportedAt    DateTime
+  updatedAt     DateTime @updatedAt
+
+  @@unique([workspaceSlug, deviceId])
+}
+
+model PendingAppReport {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  deviceId      String
+  payload       Json
+  createdAt     DateTime @default(now())
+
+  @@index([workspaceSlug])
+}
+
+model DeviceReportSecret {
+  workspaceSlug String   @id
+  secret        String
+  updatedAt     DateTime @updatedAt
+}
+
+model ScriptRunTracking {
+  id            String    @id @default(uuid())
+  workspaceSlug String
+  deviceId      String
+  scriptId      String
+  status        String
+  requestedAt   DateTime  @default(now())
+  resolvedAt    DateTime?
+
+  @@index([workspaceSlug, status])
+}
+
+model FirewallRuleSet {
+  id                    String   @id @default(uuid())
+  workspaceSlug         String
+  name                  String
+  description           String?
+  ensureFirewallEnabled Boolean  @default(true)
+  defaultInboundAction  String   @default("notConfigured")
+  defaultOutboundAction String   @default("notConfigured")
+  rules                 Json
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model FirewallRemediationState {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  deviceId      String
+  rulesetId     String
+  appliedState  Json
+  appliedAt     DateTime @default(now())
+
+  @@unique([workspaceSlug, deviceId, rulesetId])
+}
+
+// ────────────────────────────────────────────────────────────────
+// Action library, script repos, app catalog/lists
+// ────────────────────────────────────────────────────────────────
+
+model ActionLibraryEntry {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  type          String
+  name          String
+  description   String?
+  platform      String
+  assetId       String?
+  assetName     String?
+  arguments     String?
+  scope         String?  @default("machine")
+  path          String?
+  action        String?
+  format        String?
+  value         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model ScriptRepo {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  name          String
+  owner         String
+  repo          String
+  branch        String   @default("main")
+  path          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model AppCatalogEntry {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  platform      String
+  identifier    String
+  name          String?
+  iconUrl       String?
+  source        String   @default("manual")
+  createdAt     DateTime @default(now())
+
+  @@unique([workspaceSlug, platform, identifier])
+}
+
+model AppList {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  name          String
+  description   String?
+  platform      String
+  appIds        String[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+// ────────────────────────────────────────────────────────────────
+// Vulnerability Service (opt-in) + shared global catalogs
+// ────────────────────────────────────────────────────────────────
+
+model VulnServiceConfig {
+  workspaceSlug        String   @id
+  enabled              Boolean  @default(false)
+  baseUrl              String   @default("")
+  apiToken             String?
+  refreshIntervalHours Int      @default(6)
+  updatedAt            DateTime @updatedAt
+}
+
+model VulnServiceCache {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  key           String
+  result        Json
+  cachedAt      DateTime @default(now())
+
+  @@unique([workspaceSlug, key])
+}
+
+model GlobalCatalog {
+  source          String   @id
+  payload         Json
+  lastRefreshedAt DateTime @default(now())
+}
+
+model LocationCache {
+  key      String   @id
+  payload  Json
+  cachedAt DateTime @default(now())
+}
+
+model AnalyticsSnapshot {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  source        String
+  date          String
+  payload       Json
+  createdAt     DateTime @default(now())
+
+  @@unique([workspaceSlug, date, source])
+}
+
+// ────────────────────────────────────────────────────────────────
+// Audit logging, log export, system health, config export
+// ────────────────────────────────────────────────────────────────
+
+model AuditLogEntry {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  category      String
+  action        String
+  actor         String
+  targetType    String?
+  targetId      String?
+  targetName    String?
+  message       String   @db.Text
+  severity      String   @default("info")
+  createdAt     DateTime @default(now())
+
+  @@index([workspaceSlug, createdAt])
+}
+
+model LogExportDestination {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  type          String
+  name          String
+  enabled       Boolean  @default(true)
+  format        String   @default("json")
+  config        Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+model SystemHealthJob {
+  jobKey          String    @id
+  status          String
+  detail          String?
+  lastHeartbeatAt DateTime  @default(now())
+  lastAlertSentAt DateTime?
+}
+
+model ConfigOperationLog {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  operation     String
+  stores        String[]
+  actor         String
+  createdAt     DateTime @default(now())
+}

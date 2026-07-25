@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+        
+        /* --- WEASYPRINT SPECIFIC PAGE RULES --- */
+        @page {
+            size: A4 portrait;
+            margin: 0; /* We handle layout margins via body padding */
+            margin-bottom: 80px; /* CRITICAL: Creates a physical deadzone at the bottom of every page for the footer */
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #F4F7FB; 
+            margin: 0; 
+            padding: 0;
+            color: #263238;
+        }
+
+        /* --- DASHBOARD TOP BAR --- */
+        .top-bar {
+            background-color: #0E4FF5; 
+            padding: 24px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .top-bar .logo { height: 32px; width: auto; }
+
+        .top-bar .tool-name {
+            color: #FFFFFF;
+            font-size: 20px;
+            font-weight: 600;
+            margin-left: 16px;
+            padding-left: 16px;
+            border-left: 2px solid rgba(255, 255, 255, 0.4); 
+            letter-spacing: 0.5px;
+            line-height: 1;
+        }
+
+        .top-bar .header-badge {
+            color: #FFFFFF;
+            background-color: rgba(255, 255, 255, 0.15); 
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        /* --- REPORT WRAPPER --- */
+        .report-container {
+            padding: 40px;
+            max-width: 100%; 
+            box-sizing: border-box;
+        }
+
+        .report-header { margin-bottom: 36px; }
+
+        .report-title {
+            color: #0E4FF5; 
+            font-size: 32px;
+            font-weight: 700;
+            margin: 0 0 10px 0;
+        }
+
+        .report-date {
+            color: #64748B;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        /* --- METADATA SECTION --- */
+        .metadata-bar {
+            background: white;
+            border-radius: 10px;
+            padding: 24px 30px;
+            display: flex;
+            flex-wrap: wrap; 
+            gap: 40px;
+            border: 1px solid #EAECEF;
+            margin-bottom: 40px;
+            break-inside: avoid; /* Prevents this box from slicing */
+        }
+
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .meta-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #94A3B8;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .meta-value {
+            font-size: 16px;
+            color: #263238;
+            font-weight: 600;
+        }
+
+		/* --- DATA CARDS & GRID --- */
+        .grid {
+            display: block; /* WeasyPrint handles page breaks much better on blocks than flexboxes */
+            width: 100%;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px; 
+            padding: 32px;
+            border: 1px solid #EAECEF; 
+            display: block;
+            box-sizing: border-box;
+            width: 100%; 
+            margin-bottom: 40px; /* Replaces gap */
+            break-inside: avoid; /* Enforces strict no-slicing rules */
+            page-break-inside: avoid;
+        }
+
+        .card-full {
+            width: 100%;
+        }
+
+        .card h2 {
+            margin-top: 0;
+            font-size: 18px;
+            color: #0E4FF5; 
+            border-bottom: 2px solid #F4F7FB; 
+            padding-bottom: 16px;
+            margin-bottom: 24px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .matplotlib-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .matplotlib-container img {
+            max-width: 80%; /* Prevents the chart from stretching weirdly */
+            height: auto;
+            border: none; 
+        }
+
+        /* --- INJECTED TABLE STYLING --- */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px; /* Increased font size for readability */
+            margin-top: auto; 
+        }
+
+        th {
+            text-align: left;
+            padding: 14px;
+            background-color: #F8FAFC;
+            border-bottom: 2px solid #CBD5E1;
+            color: #334155;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+
+        td {
+            padding: 14px;
+            border-bottom: 1px solid #F1F5F9;
+            color: #334155;
+            font-weight: 500;
+        }
+        
+        tbody tr:nth-child(even) {
+            background-color: #F8FAFC; /* Alternating row colors */
+        }
+
+        tr {
+            break-inside: avoid; /* CRITICAL: Prevents a table row from splitting across pages */
+            page-break-inside: avoid;
+        }
+
+        /* --- BRANDED FOOTER --- */
+        .footer {
+            background-color: #0E4FF5;
+            color: #FFFFFF;
+            padding: 0 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 500;
+            box-sizing: border-box;
+            width: 100%;
+            height: 50px;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            z-index: 1000;
+        }
+
+        .footer-logo {
+            height: 18px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <div class="brand-group">
+            <img src="https://dashboard.applivery.io/images/logo-combined-white.svg" class="logo" alt="Applivery" />
+            <span class="tool-name">SOAR</span>
+        </div>
+        <div class="header-badge">{{ Workspace_Name }} - Automated Report</div>
+    </div>
+
+    <div class="report-container">
+        <div class="report-header">
+            <h1 class="report-title">{{ Report_Title }}</h1>
+            <div class="report-date">Generated on: {{ Generated_Date }} | Time Lapse: {{ Time_Lapse }}</div>
+        </div>
+
+        <div class="metadata-bar">
+            {% for meta in metadata %}
+            <div class="meta-item">
+                <span class="meta-label">{{ meta.label }}</span>
+                <span class="meta-value">{{ meta.value }}</span>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="grid">
+            {% for section in report_sections %}
+            <div class="card">
+                
+                <h2>{{ section.section_title }}</h2>
+                
+                {% if section.image_source %}
+                <div class="matplotlib-container">
+                    <img src="{{ section.image_source }}" alt="{{ section.section_title }} Chart" />
+                </div>
+                {% endif %}
+                
+                {% if section.html_table %}
+                <div class="table-container">
+                    {{ section.html_table | safe }} 
+                </div>
+                {% endif %}
+                
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="footer">
+        <div>© Applivery S.L. All rights reserved.</div>
+        <img src="https://dashboard.applivery.io/images/logo-combined-white.svg" class="footer-logo" alt="Applivery" />
+    </div>
+
+</body>
+</html>
