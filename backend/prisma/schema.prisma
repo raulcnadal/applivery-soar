@@ -83,26 +83,39 @@ model WidgetLayout {
 // ────────────────────────────────────────────────────────────────
 
 model CompliancePolicy {
-  id                        String   @id @default(uuid())
-  workspaceSlug             String
-  name                      String
-  description               String?
-  enabled                   Boolean  @default(true)
-  autoRun                   Boolean  @default(false)
-  severity                  String   @default("medium")
-  conditionLogic            String   @default("any")
-  conditions                Json
-  workflowId                String?
-  nonComplianceTag          String?
-  smartAttributeId          String?
-  segmentId                 String?
-  evaluationIntervalMinutes Int      @default(60)
-  autoRunBatchCap           Int      @default(15)
-  autoRunDestructiveAck     Boolean  @default(false)
-  circuitBreakerTripped     Boolean  @default(false)
-  mitreTechniques           String[]
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  id                          String    @id @default(uuid())
+  workspaceSlug               String
+  name                        String
+  description                 String?
+  enabled                     Boolean   @default(true)
+  autoRun                     Boolean   @default(false)
+  severity                    String    @default("medium")
+  conditionLogic               String    @default("any")
+  conditions                  Json
+  workflowId                  String?
+  nonComplianceTag             String?
+  nonComplianceSmartAttributeId String?
+  openCaseOnViolation          Boolean   @default(true)
+  autoResolveCaseOnRecovery     Boolean   @default(false)
+  mitreTechniques              String[]
+  framework                   String?
+  controlRef                  String?
+  targetDeviceAudienceId        String?
+  evaluationIntervalMinutes    Int       @default(60)
+  autoRunBatchCap              Int?      @default(15)
+  autoRunDestructiveAck         Boolean   @default(false)
+  escalatedWorkflowId          String?
+  escalatedWorkflowMinRiskTier  String    @default("high")
+  // Scheduler/circuit-breaker state — not part of the save payload, managed
+  // by the evaluation engine itself (see CompliancePolicyPayload comments
+  // in compliance.schemas.ts). An explicit save resets the trip, same as
+  // the original's update_compliance_policy.
+  lastEvaluatedAt              DateTime?
+  autoRunTripped               Boolean   @default(false)
+  autoRunTrippedAt             DateTime?
+  autoRunTrippedReason         String?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
 
   violations ComplianceViolation[]
 
@@ -110,16 +123,25 @@ model CompliancePolicy {
 }
 
 model ComplianceViolation {
-  id            String    @id @default(uuid())
-  workspaceSlug String
-  policyId      String
-  policy        CompliancePolicy @relation(fields: [policyId], references: [id])
-  deviceId      String
-  deviceName    String?
-  status        String
-  detail        Json?
-  detectedAt    DateTime  @default(now())
-  resolvedAt    DateTime?
+  id                String    @id @default(uuid())
+  workspaceSlug     String
+  policyId          String
+  policy            CompliancePolicy @relation(fields: [policyId], references: [id])
+  policyName        String?
+  workflowId        String?
+  workflowName      String?
+  workflowRunId     String?
+  escalated         Boolean   @default(false)
+  deviceId          String
+  deviceName        String?
+  platform          String?
+  platformDeviceId  String?
+  matchedConditions Json?
+  caseId            String?
+  status            String
+  severity          String    @default("medium")
+  detectedAt        DateTime  @default(now())
+  resolvedAt        DateTime?
 
   @@index([workspaceSlug, policyId])
   @@index([workspaceSlug, status])
@@ -136,10 +158,17 @@ model PolicyQuarantineEntry {
   @@index([workspaceSlug, policyId])
 }
 
+// Per-workspace suppression map — port of the original's `_compliance_state`
+// JSON file. Keyed `"{policyId}:{deviceId}"` -> {violationId, status,
+// lastDetectedAt}; a key's presence is what stops a still-violating
+// device/policy pair from spawning a duplicate violation record on every
+// evaluation pass. Cleared only on recovery (see compliance.service.ts),
+// NOT by approving/dismissing a violation — matches the original's
+// behavior of the two being fully independent (state suppresses;
+// violation.status just reflects triage).
 model ComplianceEvaluationState {
-  workspaceSlug   String @id
-  lastEvaluatedAt Json
-  circuitBreakers Json
+  workspaceSlug String @id
+  state         Json   @default("{}")
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -544,12 +573,15 @@ model AppList {
 // ────────────────────────────────────────────────────────────────
 
 model VulnServiceConfig {
-  workspaceSlug        String   @id
-  enabled              Boolean  @default(false)
-  baseUrl              String   @default("")
-  apiToken             String?
-  refreshIntervalHours Int      @default(6)
-  updatedAt            DateTime @updatedAt
+  workspaceSlug        String    @id
+  enabled              Boolean   @default(false)
+  baseUrl              String    @default("")
+  apiTokenEncrypted    String?
+  refreshIntervalHours Int       @default(6)
+  lastRefreshAt        DateTime?
+  lastRefreshError     String?
+  lastRefreshStats     Json?
+  updatedAt            DateTime  @updatedAt
 }
 
 model VulnServiceCache {

@@ -14,8 +14,19 @@ import {
   type NormalizedDevice,
 } from "./deviceNormalize";
 import type { BulkReattestPayload, PoliciesUpdatePayload, SegmentUpdatePayload, TagsUpdatePayload } from "./devices.schemas";
+import { loadOsUpdateCatalog, computeWindowsPendingUpdates } from "../catalogs/osUpdateCatalog";
+import { loadVulnCatalog, computeApplePendingVulns, computeAndroidPendingVulns } from "../catalogs/vulnCatalog";
+import { loadOsLifecycleCatalog, computeOsLifecycleStatus } from "../catalogs/osLifecycleCatalog";
+import { loadGdmfCatalog } from "../catalogs/gdmfCatalog";
+import { loadInstalledAppsStore, type InstalledAppsEntry } from "../appLists/installedApps.service";
+import { getVulnServiceConfig, computeVulnServiceStatus } from "../catalogs/vulnService";
 
 const DEVICES_CACHE_SOURCE = "devices_full";
+
+// Port of `CASE_OPEN_STATUSES` (main.py:11801) — Cases don't exist yet
+// (Phase 5), so this always yields zero rows for now; kept as the real
+// query shape so wiring in Phase 5 is additive, not a rewrite.
+const CASE_OPEN_STATUSES = ["open", "investigating"];
 
 type Headers = Record<string, string>;
 
@@ -141,16 +152,75 @@ export async function getDevicesFull(
 
   const normalized = itemsAll.map((d) => normalizeDeviceFull(d, compIds, locCache, audienceMap, pushdataCache));
 
-  // TODO(Phase5): Cases don't exist yet — every device gets an empty
-  // openCases list, exactly as the original does before any Case has ever
-  // been opened.
+  // Cases/Compliance-violations/Compliance-state lookups, loaded once per
+  // fleet-wide call — same batching philosophy as everything else here,
+  // avoiding N queries for a device list that can run into the thousands.
+  // Port of main.py:3465-3519.
   const openCasesByDevice: Record<string, Array<Record<string, any>>> = {};
-  // TODO(Phase3): Compliance Policy violations/state don't exist yet —
-  // every device gets an empty activeViolations/policyViolations list and
-  // policyCompliant defaults to true (no violation recorded = compliant),
-  // matching the original's behavior with zero policies ever evaluated.
+  try {
+    const openCases = await prisma.case.findMany({ where: { workspaceSlug: slugKey, status: { in: CASE_OPEN_STATUSES }, deviceId: { not: null } } });
+    for (const c of openCases) {
+      if (!c.deviceId) continue;
+      (openCasesByDevice[c.deviceId] ??= []).push({ id: c.id, title: c.title, severity: c.severity, status: c.status });
+    }
+  } catch (e) {
+    console.warn(`[Devices] openCasesByDevice lookup failed: ${e}`);
+  }
+
   const activeViolationsByDevice: Record<string, Array<Record<string, any>>> = {};
+  try {
+    // "pending" = still awaiting review (the Compliance view's own "Awaiting
+    // review" queue) — approved/dismissed violations already had an analyst
+    // decide what to do about them.
+    const pendingViolations = await prisma.complianceViolation.findMany({ where: { workspaceSlug: slugKey, status: "pending" } });
+    for (const v of pendingViolations) {
+      (activeViolationsByDevice[v.deviceId] ??= []).push({ id: v.id, policyId: v.policyId, policyName: v.policyName, detectedAt: v.detectedAt.toISOString() });
+    }
+  } catch (e) {
+    console.warn(`[Devices] activeViolationsByDevice lookup failed: ${e}`);
+  }
+
+  // Policy-based compliance: _load_compliance_state is the live source of
+  // truth for "still currently violating" — one entry per policy+device
+  // pair, added the moment an evaluation pass detects a violation and
+  // deleted the moment the device recovers, regardless of the violation
+  // record's own review status. Unlike activeViolationsByDevice above
+  // (deliberately narrowed to 'pending'), this is every still-open
+  // violation — what "is this device compliant with our policies right
+  // now" actually needs.
   const policyViolationsByDevice: Record<string, Array<Record<string, any>>> = {};
+  try {
+    const stateRow = await prisma.complianceEvaluationState.findUnique({ where: { workspaceSlug: slugKey } });
+    const state = (stateRow?.state as Record<string, { status: string; lastDetectedAt: string }>) ?? {};
+    if (Object.keys(state).length) {
+      const policies = await prisma.compliancePolicy.findMany({ where: { workspaceSlug: slugKey } });
+      const policiesById = new Map(policies.map((p) => [p.id, p]));
+      for (const [key, entry] of Object.entries(state)) {
+        const sepIdx = key.indexOf(":");
+        if (sepIdx < 0) continue;
+        const policyId = key.slice(0, sepIdx);
+        const deviceId = key.slice(sepIdx + 1);
+        if (!deviceId) continue;
+        (policyViolationsByDevice[deviceId] ??= []).push({
+          policyId, policyName: policiesById.get(policyId)?.name ?? null,
+          status: entry.status, lastDetectedAt: entry.lastDetectedAt,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn(`[Devices] policyViolationsByDevice lookup failed: ${e}`);
+  }
+
+  // Intelligence catalogs — loaded once per fleet-wide call, same batching
+  // philosophy. Port of main.py:3521-3550.
+  const [osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, installedAppsStore, vulnServiceCfg] = await Promise.all([
+    loadOsUpdateCatalog(),
+    loadVulnCatalog(),
+    loadOsLifecycleCatalog(),
+    loadGdmfCatalog(),
+    loadInstalledAppsStore(slugKey),
+    getVulnServiceConfig(slugKey),
+  ]);
 
   for (const d of normalized) {
     const deviceId = d.id;
@@ -161,14 +231,26 @@ export async function getDevicesFull(
     const policyViolations = policyViolationsByDevice[deviceId] ?? [];
     d.policyViolations = policyViolations;
     d.policyCompliant = policyViolations.length === 0;
-    // TODO(Phase3): OS-update/vuln/lifecycle/app-update/vuln-service
-    // catalogs don't exist yet — always null until those background
-    // refresher jobs are ported.
-    d.osUpdateStatus = null;
-    d.vulnStatus = null;
-    d.osLifecycleStatus = null;
-    d.appleAppUpdateStatus = null;
-    d.vulnServiceStatus = null;
+
+    d.osUpdateStatus = d.platform === "windows" ? computeWindowsPendingUpdates(d.osVersion, osUpdateCatalog) : null;
+    if (d.platform === "apple" || d.platform === "macos") {
+      d.vulnStatus = computeApplePendingVulns(d.platform, d.osVersion, vulnCatalog);
+    } else if (d.platform === "android") {
+      d.vulnStatus = computeAndroidPendingVulns(d.osVersion, vulnCatalog);
+    } else {
+      d.vulnStatus = null;
+    }
+    d.osLifecycleStatus = computeOsLifecycleStatus(d.platform, d.osVersion, osLifecycleCatalog, d.model, gdmfCatalog);
+
+    // installedAppsStore carries a versioned "apps" list for every platform,
+    // not just Apple — appleAppUpdateStatus stays Apple-only (sourced from
+    // Applivery's own HasUpdateAvailable flag, which only Apple exposes),
+    // but the raw entry feeds the Vulnerability Service lookup for all
+    // platforms below.
+    const appsEntry: InstalledAppsEntry | null = installedAppsStore[String(deviceId)] ?? null;
+    d.appleAppUpdateStatus = d.platform === "apple" || d.platform === "macos" ? appsEntry?.appleAppUpdates ?? null : null;
+    d.vulnServiceStatus = vulnServiceCfg.enabled ? await computeVulnServiceStatus(slugKey, d, appsEntry) : null;
+
     Object.assign(d, computeDeviceRisk(d, openCases, activeViolations));
   }
 
@@ -221,7 +303,7 @@ export async function getDeviceFirewallState(workspaceSlug: string, deviceId: st
   return { active: rows.map((r) => r.appliedState) };
 }
 
-function invalidateDevicesCache(workspaceSlug: string) {
+export function invalidateDevicesCache(workspaceSlug: string) {
   liveCacheInvalidateSource(workspaceSlug || "global", DEVICES_CACHE_SOURCE);
 }
 

@@ -10,6 +10,9 @@ import { deviceCatalogRouter } from "./modules/devices/deviceCatalog.controller"
 import { devicesRouter } from "./modules/devices/devices.controller";
 import { healthRouter } from "./modules/health/health.controller";
 import { rolesRouter } from "./modules/roles/roles.controller";
+import { appListsRouter } from "./modules/appLists/appLists.controller";
+import { catalogsRouter } from "./modules/catalogs/catalogs.controller";
+import { complianceRouter } from "./modules/compliance/compliance.controller";
 
 export function createApp() {
   const app = express();
@@ -27,9 +30,12 @@ export function createApp() {
   app.use(devicesRouter);
   app.use(deviceCatalogRouter);
   app.use(deviceAudiencesRouter);
+  app.use(appListsRouter);
+  app.use(catalogsRouter);
+  app.use(complianceRouter);
 
-  // Phase 3+ modules mount their routers here as they're built:
-  // app.use(complianceRouter); app.use(workflowsRouter); ...
+  // Phase 4+ modules mount their routers here as they're built:
+  // app.use(workflowsRouter); app.use(casesRouter); ...
 
   // Static frontend serving, mirroring the original single-image pattern
   // (ARCHITECTURE.md §2.1): serve Vue's built dist/, catch-all to

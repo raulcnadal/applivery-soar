@@ -15,6 +15,7 @@ const router = useRouter();
 const navItems = [
   { id: "overview", label: "Overview" },
   { id: "devices", label: "Devices" },
+  { id: "compliance", label: "Compliance" },
 ];
 
 const activeId = computed(() => (typeof route.name === "string" ? route.name : "overview"));
