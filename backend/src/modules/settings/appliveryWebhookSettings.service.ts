@@ -7,13 +7,11 @@ import { APPLIVERY_WEBHOOK_EVENT_LABELS, appliveryWebhookEventLabel, type Appliv
 
 /**
  * Applivery inbound-webhook Settings tab — port of main.py:13036-13096
- * (GET/PUT config + rotate-secret). The actual event RECEIVER
+ * (GET/PUT config + rotate-secret). The actual event receiver
  * (`POST /api/applivery-webhook/receive/{secret}`, main.py:13098-13243) is
- * TODO(Phase8) — External receivers + Onboarding, same phase the plan
- * groups it under alongside `/api/triggers/fire/*`. This module only
- * covers the config CRUD so the Settings tab is functional now (viewing/
- * enabling rules, rotating the secret) — rules configured here simply
- * won't fire anything until Phase8 wires up the receiver.
+ * appliveryWebhookReceive.service.ts (Phase 8) — this module covers the
+ * config CRUD (viewing/enabling rules, rotating the secret, and the
+ * recentEvents/receivedCount/lastReceivedAt bookkeeping the receiver writes).
  */
 
 function newSecret(): string {
@@ -39,7 +37,10 @@ async function ensureConfig(workspaceSlug: string) {
 export async function getAppliveryWebhookConfig(workspaceSlug: string) {
   const config = await ensureConfig(workspaceSlug);
   const rules = await prisma.appliveryWebhookRule.findMany({ where: { workspaceSlug }, orderBy: { actionKey: "asc" } });
-  return { enabled: config.enabled, secret: config.secret, rules };
+  return {
+    enabled: config.enabled, secret: config.secret, rules,
+    recentEvents: config.recentEvents, receivedCount: config.receivedCount, lastReceivedAt: config.lastReceivedAt,
+  };
 }
 
 export async function updateAppliveryWebhookConfig(workspaceSlug: string, payload: AppliveryWebhookConfigPayload, actor: string) {

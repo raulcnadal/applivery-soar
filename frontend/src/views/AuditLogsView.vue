@@ -2,6 +2,7 @@
 // Audit Logs top-level view. Port of main.py:2530-2591 (list/actors/export).
 import { Alert, Button, EmptyState, Input, PageHeader, StatusPill } from "@applivery/bluesky-vue";
 import { onMounted, reactive, watch } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import { useAuditLogsStore, type AuditLogFilters } from "../stores/auditLogs";
 
 const store = useAuditLogsStore();
@@ -41,6 +42,9 @@ onMounted(async () => {
 <template>
   <div class="p-8 space-y-6 animate-page-enter">
     <PageHeader title="Audit Logs" :description="`${store.total} event${store.total === 1 ? '' : 's'} — retained ${store.retentionDays === 0 ? 'forever' : store.retentionDays + ' days'}`">
+      <template #title-suffix>
+        <HelpIcon slug="audit-logs" title="Audit Logs admin guide" />
+      </template>
       <template #action>
         <Button variant="ghost" @click="store.exportCsv(activeFilters())">Export CSV</Button>
       </template>

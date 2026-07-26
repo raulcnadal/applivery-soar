@@ -10,6 +10,7 @@
 import Globe, { type GlobeInstance } from "globe.gl";
 import { Alert, Button, PageHeader } from "@applivery/bluesky-vue";
 import { onBeforeUnmount, onMounted, ref } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import { fetchWidgetData } from "../lib/widgetData";
 
 const containerEl = ref<HTMLDivElement | null>(null);
@@ -113,6 +114,9 @@ onBeforeUnmount(() => {
 <template>
   <div class="p-8 space-y-6 animate-page-enter h-full flex flex-col">
     <PageHeader title="Playground" description="Your fleet, mapped by last-known GPS location.">
+      <template #title-suffix>
+        <HelpIcon slug="playground" title="Playground admin guide" />
+      </template>
       <template #action>
         <div class="flex items-center gap-2">
           <span class="text-xs text-gray-500">{{ locatedDevices }} / {{ totalDevices }} devices with a location</span>

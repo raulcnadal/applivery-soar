@@ -6,6 +6,7 @@
 // tag/policy edit, bulk reattest").
 import { Alert, Button, Input, PageHeader, Tabs } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import DeviceDetailDrawer from "../components/devices/DeviceDetailDrawer.vue";
 import DeviceFleetTable from "../components/devices/DeviceFleetTable.vue";
 import DeviceMap from "../components/devices/DeviceMap.vue";
@@ -85,6 +86,9 @@ onMounted(async () => {
 <template>
   <div class="p-8 space-y-6 animate-page-enter">
     <PageHeader title="Devices" :description="`${store.total} device(s) in the fleet`">
+      <template #title-suffix>
+        <HelpIcon slug="devices" title="Devices admin guide" />
+      </template>
       <template #action>
         <Button variant="secondary" :loading="store.isLoading" @click="refresh">Refresh</Button>
       </template>

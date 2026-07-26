@@ -4,7 +4,8 @@
 // app's Workflows view (Phase 4a: builder/dry-run/run/versions; Phase 4b:
 // Action Library, Firewall Rule Sets, Script Repos, Triggers).
 import { Alert, Button, PageHeader, Tabs } from "@applivery/bluesky-vue";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import DryRunDialog from "../components/workflows/DryRunDialog.vue";
 import RunHistoryTable from "../components/workflows/RunHistoryTable.vue";
 import RunWorkflowDialog from "../components/workflows/RunWorkflowDialog.vue";
@@ -42,6 +43,13 @@ const tabs = [
   { id: "triggers", label: "Triggers" },
 ];
 const activeTab = ref("workflows");
+// Port of WORKFLOWS_TAB_ANCHORS (WorkflowsView.jsx) — the original had 3
+// tabs (workflows/library/firewall); Run History/Script Repos/Triggers are
+// new tabs merged into this same view and land at the doc's top.
+const WORKFLOWS_TAB_ANCHORS: Record<string, string> = {
+  workflows: "workflow-list", "action-library": "script--oma-uri-library", firewall: "firewall-policy-library",
+};
+const helpAnchor = computed<string | null>(() => WORKFLOWS_TAB_ANCHORS[activeTab.value] ?? null);
 
 const builderOpen = ref(false);
 const editingWorkflow = ref<Workflow | null>(null);
@@ -133,6 +141,9 @@ async function onTabChange(tabId: string) {
 <template>
   <div class="p-8 space-y-6 animate-page-enter">
     <PageHeader title="Workflows" :description="`${store.workflows.length} workflow${store.workflows.length === 1 ? '' : 's'} configured`">
+      <template #title-suffix>
+        <HelpIcon slug="workflows" :anchor="helpAnchor" title="Workflows admin guide" />
+      </template>
       <template #action>
         <Button v-if="activeTab === 'workflows'" @click="openNew">New workflow</Button>
         <Button v-else-if="activeTab === 'action-library'" variant="secondary" class="mr-2" @click="browseImportOpen = true">Fetch from Applivery</Button>

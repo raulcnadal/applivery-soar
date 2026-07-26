@@ -4,7 +4,8 @@
 // Intel Providers, Case Auto-Run Rules, and Case SLA settings didn't
 // previously have a home in this app's nav).
 import { Alert, Button, PageHeader, Tabs } from "@applivery/bluesky-vue";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import IntegrationsTable from "../components/settings/IntegrationsTable.vue";
 import IntegrationDialog from "../components/settings/IntegrationDialog.vue";
 import ThreatIntelProvidersTable from "../components/settings/ThreatIntelProvidersTable.vue";
@@ -37,6 +38,15 @@ const tabs = [
   { id: "backup", label: "Backup & Restore" },
 ];
 const activeTab = ref("integrations");
+// Port of SETTINGS_TAB_ANCHORS (App.jsx) — this view's tab ids don't
+// exactly match the original's (e.g. "case-autorun" vs "caseautorun"), so
+// mapped explicitly rather than reused verbatim.
+const SETTINGS_TAB_ANCHORS: Record<string, string> = {
+  integrations: "integrations", "threat-intel": "threat-intel", "case-autorun": "case-auto-run-rules",
+  "case-sla": "case-sla", "applivery-events": "applivery-events", "device-webhook": "device-data-webhook",
+  logexport: "log-export", systemhealth: "system-health", backup: "backup--restore",
+};
+const helpAnchor = computed(() => SETTINGS_TAB_ANCHORS[activeTab.value] ?? null);
 
 const integrationDialogOpen = ref(false);
 const editingIntegration = ref<Integration | null>(null);
@@ -70,6 +80,9 @@ async function onTabChange(tabId: string) {
 <template>
   <div class="p-8 space-y-6 animate-page-enter">
     <PageHeader title="Settings">
+      <template #title-suffix>
+        <HelpIcon slug="settings" :anchor="helpAnchor" title="Settings admin guide" />
+      </template>
       <template #action>
         <Button v-if="activeTab === 'integrations'" @click="openNewIntegration">New integration</Button>
         <Button v-else-if="activeTab === 'threat-intel'" @click="openNewProvider">New provider</Button>

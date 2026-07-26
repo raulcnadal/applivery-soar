@@ -1,9 +1,4 @@
 // Port of App.jsx's `CATALOG` / `ALL_CHART_TYPES` / `SIZES` (wow-dashboard/src/App.jsx:1617-1727).
-// Deliberately excludes `applivery_events_by_type` / `applivery_events_trend`
-// / `applivery_automation_outcomes` — those read AppliveryWebhookConfig
-// .recentEvents, which only the inbound webhook receiver (TODO(Phase8), see
-// backend's appliveryWebhookSettings.service.ts) ever populates; they'll be
-// added back to this catalog once that receiver exists.
 
 export interface CatalogItem {
   id: string;
@@ -81,6 +76,10 @@ export const WIDGET_CATALOG: CatalogItem[] = [
 
   { id: "triggers_summary", label: "Inbound trigger fires", group: "3rd-Party Events (SOAR)" },
   { id: "triggers_fired_trend", label: "Inbound trigger fires trend", group: "3rd-Party Events (SOAR)" },
+
+  { id: "applivery_events_by_type", label: "Events by type", group: "Applivery Events (SOAR)" },
+  { id: "applivery_events_trend", label: "Events received trend", group: "Applivery Events (SOAR)" },
+  { id: "applivery_automation_outcomes", label: "Automation outcomes", group: "Applivery Events (SOAR)" },
 ];
 
 export const WIDGET_LABEL_BY_ID: Record<string, string> = Object.fromEntries(WIDGET_CATALOG.map((w) => [w.id, w.label]));

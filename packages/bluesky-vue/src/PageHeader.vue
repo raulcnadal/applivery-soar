@@ -20,7 +20,10 @@ const props = defineProps<Props>()
             {{ badge }}
           </span>
         </div>
-        <h1 class="text-3xl font-semibold text-gray-900">{{ title }}</h1>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold text-gray-900">{{ title }}</h1>
+          <slot name="title-suffix" />
+        </div>
         <p v-if="description" class="mt-2 text-gray-500 text-sm">{{ description }}</p>
       </div>
       <div v-if="$slots.action" class="shrink-0">

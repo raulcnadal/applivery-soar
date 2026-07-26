@@ -2,11 +2,11 @@
 // Thin hand-wrapped Leaflet + leaflet.markercluster binding — no official
 // Vue Leaflet component ships in the BlueSky package, same situation as
 // GlobeWidget.vue's globe.gl wrapper (migration-plan.md §6). Plots devices
-// that carry a `location` (lat/lng) — TODO(Phase8): every device's
-// `location` is null until the location-cache background job exists, so
-// this renders its "no location data yet" empty state for a cold-start
-// workspace, exactly matching the original app's Devices map before that
-// job has ever run.
+// that carry a `location` (lat/lng) — populated from the LocationCache
+// table once an admin has run a location sync (Playground's "Sync
+// locations" button, or POST /api/analytics/locations/sync). Renders its
+// "no location data yet" empty state until then, exactly matching the
+// original app's Devices map for a workspace that's never synced.
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import "leaflet.markercluster/dist/MarkerCluster.css";

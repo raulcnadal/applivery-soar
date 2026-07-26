@@ -2,10 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 /**
- * Port of /api/applivery-webhook* config CRUD (main.py:13040-13096). The
- * actual event receiver is TODO(Phase8) — rules configured here won't fire
- * anything until that receiver exists; this store only covers viewing/
- * editing the config so the Settings tab is functional now.
+ * Port of /api/applivery-webhook* config CRUD + receiver (main.py:13040-13243).
  */
 
 export interface AppliveryWebhookRule {
@@ -20,10 +17,26 @@ export interface AppliveryWebhookRule {
   autoRunDestructiveAck: boolean;
 }
 
+export interface AppliveryWebhookEvent {
+  id: string;
+  receivedAt: string;
+  actionKey: string;
+  canonicalKey: string;
+  os: string | null;
+  outcome: string;
+  deviceId: string | null;
+  deviceName: string | null;
+  caseId: string | null;
+  workflowRunId: string | null;
+}
+
 export interface AppliveryWebhookConfig {
   enabled: boolean;
   secret: string;
   rules: AppliveryWebhookRule[];
+  recentEvents: AppliveryWebhookEvent[];
+  receivedCount: number;
+  lastReceivedAt: string | null;
 }
 
 export const useAppliveryWebhookSettingsStore = defineStore("appliveryWebhookSettings", () => {

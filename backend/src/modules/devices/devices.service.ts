@@ -20,8 +20,10 @@ import { loadOsLifecycleCatalog, computeOsLifecycleStatus } from "../catalogs/os
 import { loadGdmfCatalog } from "../catalogs/gdmfCatalog";
 import { loadInstalledAppsStore, type InstalledAppsEntry } from "../appLists/installedApps.service";
 import { getVulnServiceConfig, computeVulnServiceStatus } from "../catalogs/vulnService";
+import { loadDevicePushDataCache } from "./deviceData.service";
+import { LOCATION_CACHE_KEY } from "../analytics/locationsSync.service";
 
-const DEVICES_CACHE_SOURCE = "devices_full";
+export const DEVICES_CACHE_SOURCE = "devices_full";
 
 // Port of `CASE_OPEN_STATUSES` (main.py:11801) — Cases don't exist yet
 // (Phase 5), so this always yields zero rows for now; kept as the real
@@ -145,10 +147,17 @@ export async function getDevicesFull(
   const compIds = new Set(itemsComp.map((i) => String(i.id ?? i._id ?? "")));
   const audienceMap = await fetchDeviceAudienceMembershipMap(headers, orgBase, itemsAll);
 
-  // TODO(Phase8): location cache (device GPS pings) and device push-data
-  // (Windows/macOS self-report agent) don't exist yet — both always empty.
-  const locCache: Record<string, unknown> = {};
-  const pushdataCache: Record<string, unknown> = {};
+  // Location cache (Playground globe GPS pings, synced by locationsSync.service.ts)
+  // and device push-data (Windows/macOS self-report agent, populated by
+  // deviceData.service.ts's /api/device-data/report) — both real as of Phase 8.
+  let locCache: Record<string, unknown> = {};
+  try {
+    const row = await prisma.locationCache.findUnique({ where: { key: LOCATION_CACHE_KEY } });
+    locCache = (row?.payload as Record<string, unknown>) ?? {};
+  } catch (e) {
+    console.warn(`[Devices] locationCache lookup failed: ${e}`);
+  }
+  const pushdataCache = await loadDevicePushDataCache(slugKey);
 
   const normalized = itemsAll.map((d) => normalizeDeviceFull(d, compIds, locCache, audienceMap, pushdataCache));
 

@@ -25,6 +25,7 @@ import {
 } from "./compliance.service";
 import { COMPLIANCE_FIELDS, suggestMitreTechniquesForConditions, getComplianceTemplates } from "./complianceFields";
 import { getMitreTechniques, refreshMitreCatalog } from "../catalogs/mitreCatalog";
+import { getSelfReportedAttributeNames } from "../devices/deviceData.service";
 
 /**
  * CompliancePolicy CRUD + evaluation + violations review queue + MITRE/
@@ -88,13 +89,15 @@ complianceRouter.get("/api/compliance/smart-attribute-names", ...readCompliance,
 }));
 
 /**
- * Port of `get_self_reported_attribute_names` (main.py:10184). TODO(Phase8):
- * the device self-report push-data store doesn't exist yet (no device has
- * ever self-reported), so this always returns empty — same as a brand-new
- * original-app workspace before /api/device-data/report exists.
+ * Port of `get_self_reported_attribute_names` (main.py:10184) — distinct
+ * attribute names ever pushed to the device-data webhook for this
+ * workspace, read straight from the local DevicePushData store (Phase 8).
+ * ?platform=windows|macos narrows to attribute names seen from that
+ * platform; omitted returns the union across both.
  */
-complianceRouter.get("/api/compliance/self-reported-attribute-names", ...readCompliance, asyncHandler(async (_req, res) => {
-  res.json({ items: [] });
+complianceRouter.get("/api/compliance/self-reported-attribute-names", ...readCompliance, asyncHandler(async (req, res) => {
+  const platform = typeof req.query.platform === "string" ? req.query.platform : undefined;
+  res.json({ items: await getSelfReportedAttributeNames(workspaceOf(req), platform) });
 }));
 
 // ── Policy CRUD (main.py:10828-10957) ──

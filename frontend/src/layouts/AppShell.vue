@@ -6,11 +6,37 @@
 // Devices in Phase 2; Compliance/Workflows/Cases/Audit Logs/Settings
 // follow in Phases 3, 4, 5, 6).
 import { VerticalNav } from "@applivery/bluesky-vue";
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
+import { useAuthStore } from "../stores/auth";
+import { api } from "../api/http";
+import WorkspaceOnboardingModal from "../components/onboarding/WorkspaceOnboardingModal.vue";
 
 const route = useRoute();
 const router = useRouter();
+const auth = useAuthStore();
+
+// New-workspace onboarding (main.py:1802-1811's workspace-status check) —
+// checked once per landing (fresh login, or after a workspace switch's full
+// reload — both are a fresh AppShell mount, so a single mount-time effect
+// covers both). Only offered once per still-empty workspace per browser;
+// dismissing it sets a per-workspace localStorage flag (see
+// WorkspaceOnboardingModal.vue's dismissForThisWorkspace).
+const isOnboardingModalOpen = ref(false);
+onMounted(async () => {
+  if (!auth.orgSlug) return;
+  try {
+    if (localStorage.getItem(`applivery_onboarding_dismissed_${auth.orgSlug}`) === "1") return;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const res = await api.get("/config/workspace-status");
+    if (res.data?.isEmpty) isOnboardingModalOpen.value = true;
+  } catch {
+    // non-critical — just skip onboarding if the check fails
+  }
+});
 
 const navItems = [
   { id: "overview", label: "Overview" },
@@ -40,5 +66,10 @@ function onNavigate(id: string) {
     <main class="flex-1 min-w-0">
       <RouterView />
     </main>
+    <WorkspaceOnboardingModal
+      v-if="isOnboardingModalOpen"
+      @close="isOnboardingModalOpen = false"
+      @cloned="() => { isOnboardingModalOpen = false; window.location.reload(); }"
+    />
   </div>
 </template>

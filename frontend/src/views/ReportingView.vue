@@ -5,6 +5,7 @@
 // 16048-16159). See migration-plan.md §8 Phase 7.
 import { Alert, Button, Card, PageHeader, Tabs } from "@applivery/bluesky-vue";
 import { computed, onMounted, reactive, ref } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import { useAuthStore } from "../stores/auth";
 import { useDashboardStateStore, type ScheduledReport } from "../stores/dashboardState";
 import { WIDGET_CATALOG } from "../lib/analyticsCatalog";
@@ -18,6 +19,10 @@ const tabs = [
   { id: "scheduled", label: `Schedules` },
   { id: "template", label: "Template" },
 ];
+// Port of the anchor object literal passed to HelpIcon in App.jsx's
+// Reporting header ({ builder: 'builder-tab', scheduled: 'schedules-tab', template: 'template-tab' }).
+const REPORTING_TAB_ANCHORS: Record<string, string> = { builder: "builder-tab", scheduled: "schedules-tab", template: "template-tab" };
+const helpAnchor = computed(() => REPORTING_TAB_ANCHORS[activeTab.value] ?? null);
 
 onMounted(async () => {
   if (!store.isLoaded) await store.fetchState();
@@ -149,7 +154,11 @@ async function saveTemplate() {
 
 <template>
   <div class="p-8 space-y-6 animate-page-enter">
-    <PageHeader title="Reporting" description="Generate on-demand PDF reports, or schedule recurring ones." />
+    <PageHeader title="Reporting" description="Generate on-demand PDF reports, or schedule recurring ones.">
+      <template #title-suffix>
+        <HelpIcon slug="reporting" :anchor="helpAnchor" title="Reporting admin guide" />
+      </template>
+    </PageHeader>
     <Tabs :tabs="tabs" v-model="activeTab" variant="pill" />
 
     <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>

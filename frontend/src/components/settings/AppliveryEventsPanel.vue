@@ -1,12 +1,29 @@
 <script setup lang="ts">
-// Applivery Events tab. Port of main.py:13036-13096 (config CRUD). The
-// receiver that actually fires these rules is TODO(Phase8) — see
-// appliveryWebhookSettings.service.ts's module comment; rules saved here
-// won't run anything yet, but the tab is fully editable/functional.
+// Applivery Events tab. Port of main.py:13036-13243 (config CRUD + the
+// recent-events feed the receiver, appliveryWebhookReceive.service.ts,
+// populates).
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useAppliveryWebhookSettingsStore } from "../../stores/appliveryWebhookSettings";
 import { useWorkflowsStore } from "../../stores/workflows";
+
+const OUTCOME_COLORS: Record<string, string> = {
+  logged: "#9CA3AF", webhook_disabled: "#9CA3AF", case_opened: "#0241E3", workflow_fired: "#22C55E",
+  workflow_blocked_destructive: "#EF4444", workflow_missing: "#F59E0B", no_automation_credential: "#F59E0B",
+  workflow_unavailable: "#F59E0B",
+};
+function outcomeColor(outcome: string): string {
+  return OUTCOME_COLORS[outcome] ?? "#0241E3";
+}
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
 const store = useAppliveryWebhookSettingsStore();
 const workflowsStore = useWorkflowsStore();
@@ -108,6 +125,31 @@ onMounted(async () => {
 
     <div class="flex justify-end">
       <Button :loading="isSaving" @click="save">Save rules</Button>
+    </div>
+
+    <div v-if="store.config && store.config.recentEvents.length > 0">
+      <h4 class="text-xs font-semibold mb-2 text-gray-900">Recent events</h4>
+      <div class="space-y-1.5">
+        <div
+          v-for="ev in store.config.recentEvents.slice(0, 15)"
+          :key="ev.id"
+          class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-[11px] border border-gray-200 bg-white"
+        >
+          <div class="min-w-0 flex items-center gap-2">
+            <span class="font-medium truncate text-gray-900">{{ ev.actionKey }}</span>
+            <span v-if="ev.deviceName" class="truncate text-gray-500">· {{ ev.deviceName }}</span>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span
+              class="font-semibold px-1.5 py-0.5 rounded-full"
+              :style="{ backgroundColor: `${outcomeColor(ev.outcome)}15`, color: outcomeColor(ev.outcome) }"
+            >
+              {{ ev.outcome.replace(/_/g, " ") }}
+            </span>
+            <span class="text-gray-500">{{ timeAgo(ev.receivedAt) }}</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

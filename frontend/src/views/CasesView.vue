@@ -3,6 +3,7 @@
 // (migration-plan.md Phase 5 checkpoint: "Case lifecycle end-to-end").
 import { Alert, Button, PageHeader } from "@applivery/bluesky-vue";
 import { onMounted, ref } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import CasesTable from "../components/cases/CasesTable.vue";
 import CaseCreateDialog from "../components/cases/CaseCreateDialog.vue";
 import CaseDetailDrawer from "../components/cases/CaseDetailDrawer.vue";
@@ -31,6 +32,9 @@ onMounted(async () => {
 <template>
   <div class="p-8 space-y-6 animate-page-enter">
     <PageHeader title="Cases" :description="`${store.cases.length} case${store.cases.length === 1 ? '' : 's'}`">
+      <template #title-suffix>
+        <HelpIcon slug="cases" title="Cases admin guide" />
+      </template>
       <template #action>
         <a :href="store.exportCasesUrl()" target="_blank" rel="noopener" class="mr-2 inline-block">
           <Button variant="ghost">Export CSV</Button>

@@ -65,6 +65,13 @@ export const useAuthStore = defineStore("auth", () => {
   const orgSlug = ref<string | null>(localStorage.getItem("applivery_orgSlug"));
   const email = ref<string | null>(localStorage.getItem("applivery_email"));
   const access = ref<ResolvedAccess | null>(null);
+  // The full sibling-workspace list from login's `organizations` response —
+  // the original app never persisted this either, but this port's onboarding
+  // modal (WorkspaceOnboardingModal.vue, Phase 8) needs it to offer
+  // "copy config from workspace X" without a second API round-trip. Not
+  // sensitive (just names/slugs the account already has access to), so
+  // localStorage is fine, same tier as orgSlug/email above.
+  const organizations = ref<Organization[]>(JSON.parse(localStorage.getItem("applivery_organizations") ?? "[]"));
 
   const isAuthenticated = computed(() => Boolean(dashboardToken.value && apiToken.value));
 
@@ -74,18 +81,21 @@ export const useAuthStore = defineStore("auth", () => {
     refreshToken: string;
     orgSlug: string;
     email: string;
+    organizations?: Organization[];
   }) {
     dashboardToken.value = payload.dashboardToken;
     apiToken.value = payload.apiToken;
     refreshToken.value = payload.refreshToken;
     orgSlug.value = payload.orgSlug;
     email.value = payload.email;
+    if (payload.organizations) organizations.value = payload.organizations;
 
     localStorage.setItem("applivery_dashboard_token", payload.dashboardToken);
     localStorage.setItem("applivery_apiToken", payload.apiToken);
     localStorage.setItem("applivery_refreshToken", payload.refreshToken);
     localStorage.setItem("applivery_orgSlug", payload.orgSlug);
     localStorage.setItem("applivery_email", payload.email);
+    if (payload.organizations) localStorage.setItem("applivery_organizations", JSON.stringify(payload.organizations));
   }
 
   function clearSession() {
@@ -95,6 +105,7 @@ export const useAuthStore = defineStore("auth", () => {
     orgSlug.value = null;
     email.value = null;
     access.value = null;
+    organizations.value = [];
     localStorage.clear();
   }
 
@@ -144,6 +155,7 @@ export const useAuthStore = defineStore("auth", () => {
     orgSlug,
     email,
     access,
+    organizations,
     isAuthenticated,
     persistSession,
     clearSession,

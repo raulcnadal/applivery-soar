@@ -11,10 +11,10 @@ import { decryptSecret, encryptSecret } from "../../utils/secretCipher";
  * write — so it's fine, and necessary, to hand the real (decrypted) value
  * back to them to paste into that script.
  *
- * Consuming this secret (the actual `/api/device-data/report*` webhook
- * receivers a device's scheduled script POSTs to) is TODO(Phase8) — see
- * devices/deviceNormalize.ts's `pushdataCache` TODO — this module only
- * covers the Settings-side secret lifecycle so that tab is functional now.
+ * The actual `/api/device-data/report*` webhook receivers a device's
+ * scheduled script POSTs to (which consume this secret) are ported in
+ * devices/deviceData.service.ts (Phase 8) — this module covers only the
+ * Settings-side secret lifecycle (view/rotate/clear).
  */
 
 export interface DeviceReportSecretStatus {

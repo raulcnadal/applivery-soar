@@ -5,6 +5,7 @@
 import { Alert, Button, Card, EmptyState, PageHeader, RichSelect } from "@applivery/bluesky-vue";
 import { GridLayout, GridItem } from "grid-layout-plus";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import WidgetCard from "../components/overview/WidgetCard.vue";
 import { useDashboardStateStore } from "../stores/dashboardState";
 import { CHART_TYPES, WIDGET_CATALOG, WIDGET_SIZES, defaultChartTypeFor, type ChartType, type DashboardWidget, type GridLayoutItem } from "../lib/analyticsCatalog";
@@ -126,6 +127,9 @@ watch(pickedSource, (src) => {
 <template>
   <div class="p-8 space-y-6 animate-page-enter">
     <PageHeader title="Overview" description="Your fleet, compliance, and automation posture at a glance.">
+      <template #title-suffix>
+        <HelpIcon slug="overview" title="Overview admin guide" />
+      </template>
       <template #action>
         <div class="flex items-center gap-2">
           <select v-model="range" class="rounded-lg px-3 py-2 text-sm border border-gray-200">

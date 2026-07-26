@@ -98,6 +98,7 @@ async function finishLogin(org: Organization) {
     refreshToken: pendingLogin.value.refreshToken,
     orgSlug: slug,
     email: pendingLogin.value.email,
+    organizations: pendingLogin.value.organizations,
   });
   isLoading.value = true;
   try {

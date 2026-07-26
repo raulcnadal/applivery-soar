@@ -16,6 +16,7 @@ import { loadInstalledAppsStore } from "../appLists/installedApps.service";
 import { getSystemHealth } from "../systemHealth/systemHealth.service";
 import { listWorkflowRuns } from "../workflows/workflows.service";
 import { aggregateSnapshotsForRange, loadSnapshot, listSnapshotDates, saveSnapshot } from "./snapshotEngine";
+import { appliveryWebhookEventLabel } from "../settings/appliveryWebhookSettings.schemas";
 
 /**
  * Analytics widget engine — port of `get_widget_data` (main.py:14386-15510),
@@ -33,14 +34,10 @@ import { aggregateSnapshotsForRange, loadSnapshot, listSnapshotDates, saveSnapsh
  * (memoized per call) only by the branches that actually touch the Applivery
  * API, so every local-only widget never makes that extra request.
  *
- * Deliberately NOT yet implemented: applivery_events_by_type /
- * applivery_events_trend / applivery_automation_outcomes — all three read
- * `AppliveryWebhookConfig.recentEvents`, which only the inbound webhook
- * RECEIVER (`POST /api/applivery-webhook/receive/{secret}`) ever populates.
- * That receiver is TODO(Phase8) (see appliveryWebhookSettings.service.ts),
- * so these three sources return an empty response for now rather than being
- * silently wrong — they're also left out of the frontend widget catalog
- * until Phase 8 lands.
+ * applivery_events_by_type / applivery_events_trend /
+ * applivery_automation_outcomes read `AppliveryWebhookConfig.recentEvents`,
+ * populated by the inbound webhook receiver
+ * (appliveryWebhookReceive.service.ts, Phase 8) — see main.py:14860-14912.
  */
 
 export interface WidgetResponse {
@@ -430,9 +427,54 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
     }
   }
 
-  // ── 2.6b Applivery Event Webhook — TODO(Phase8), see module doc above. ──
+  // ── 2.6b Applivery Event Webhook — port of main.py:14860-14912. recentEvents
+  // is capped at 50 (see appliveryWebhookReceive.service.ts), so these three
+  // widgets reflect "the last 50 events received", not a true rolling
+  // window — same caveat as the original, and the same store the Settings >
+  // Applivery Events page's own recent-events feed reads. ──
   if (["applivery_events_by_type", "applivery_events_trend", "applivery_automation_outcomes"].includes(source)) {
-    return response; // empty — receiver not built yet
+    const config = await prisma.appliveryWebhookConfig.findUnique({ where: { workspaceSlug: slugKey } });
+    const events = ((config?.recentEvents as unknown as Array<Record<string, any>>) ?? []);
+
+    if (source === "applivery_events_by_type") {
+      const agg: Record<string, number> = {};
+      for (const ev of events) {
+        const label = appliveryWebhookEventLabel(ev.canonicalKey || ev.actionKey || "");
+        agg[label] = (agg[label] ?? 0) + 1;
+      }
+      response.chartData = Object.entries(agg).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+      response.scorecardValue = events.length;
+      response.items = events;
+      return response;
+    }
+
+    if (source === "applivery_events_trend") {
+      const dateMap = widgetTrendDateMap(dateIni, dateEnd);
+      for (const ev of events) {
+        const dStr = ev.receivedAt ? isoToMmdd(ev.receivedAt) : null;
+        if (dStr && dStr in dateMap) dateMap[dStr]++;
+      }
+      response.trendData = { labels: Object.keys(dateMap), series: Object.values(dateMap), os_totals: { apple: 0, android: 0, windows: 0 } };
+      response.scorecardValue = Object.values(dateMap).reduce((a, b) => a + b, 0);
+      return response;
+    }
+
+    // applivery_automation_outcomes
+    const outcomeLabels: Record<string, string> = {
+      logged: "Logged only", webhook_disabled: "Webhook disabled", case_opened: "Case opened",
+      workflow_fired: "Workflow fired", workflow_blocked_destructive: "Blocked (destructive)",
+      workflow_missing: "Workflow missing", no_automation_credential: "No automation credential",
+      workflow_unavailable: "Workflow unavailable",
+    };
+    const agg: Record<string, number> = {};
+    for (const ev of events) {
+      const outcome = ev.outcome || "logged";
+      const label = outcomeLabels[outcome] ?? String(outcome).replace(/\+/g, " + ").replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+      agg[label] = (agg[label] ?? 0) + 1;
+    }
+    response.chartData = Object.entries(agg).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+    response.scorecardValue = events.length;
+    return response;
   }
 
   // ── 2.65 Inbound Webhook Triggers ──

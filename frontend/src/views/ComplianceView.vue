@@ -4,7 +4,8 @@
 // Phase 3 checkpoint: "Policy Builder, violation queue (approve/dismiss/
 // bulk), App Lists, template gallery all functional").
 import { Alert, Button, PageHeader, Tabs } from "@applivery/bluesky-vue";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import HelpIcon from "../components/shared/HelpIcon.vue";
 import AppListsPanel from "../components/compliance/AppListsPanel.vue";
 import PoliciesTable from "../components/compliance/PoliciesTable.vue";
 import PolicyBuilderDrawer from "../components/compliance/PolicyBuilderDrawer.vue";
@@ -21,6 +22,15 @@ const tabs = [
   { id: "app-lists", label: "App Lists" },
 ];
 const activeTab = ref("policies");
+// Port of the original's HelpIcon placements (CompliancePoliciesView.jsx's
+// anchor="policies-list", AppListsView.jsx's anchor="app-lists-sub-view") —
+// merged into one tabbed view here, so the anchor tracks whichever of those
+// two sub-views is active; Violations/Templates land at the doc's top.
+const helpAnchor = computed<string | null>(() => {
+  if (activeTab.value === "policies") return "policies-list";
+  if (activeTab.value === "app-lists") return "app-lists-sub-view";
+  return null;
+});
 
 const drawerOpen = ref(false);
 const editingPolicy = ref<CompliancePolicy | null>(null);
@@ -57,6 +67,9 @@ onMounted(async () => {
 <template>
   <div class="p-8 space-y-6 animate-page-enter">
     <PageHeader title="Compliance" :description="`${store.policies.length} polic${store.policies.length === 1 ? 'y' : 'ies'} configured`">
+      <template #title-suffix>
+        <HelpIcon slug="compliance" :anchor="helpAnchor" title="Compliance admin guide" />
+      </template>
       <template #action>
         <Button @click="openNewPolicy">New policy</Button>
       </template>

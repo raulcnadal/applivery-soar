@@ -1,0 +1,59 @@
+# Reporting — Admin Guide
+
+**Reporting** builds, schedules, and templates **PDF reports** summarizing whatever the dashboard tracks — device fleet stats, compliance/framework status, cases, workflows, risk, vulnerabilities, OS lifecycle, App Distribution — using the same widget catalog as the [Overview](overview.md) dashboard. Reached via three sub-tabs: **Builder**, **Schedules**, and **Template**.
+
+## Builder tab
+
+Click **Create Report** to open the Report Builder:
+
+1. **Report Name** — free text, e.g. "Weekly Compliance Report."
+2. **Select Data Sources** — the same widget catalog as Overview (minus "Organisation profile," which isn't chart/table-shaped) — any metric available as an Overview widget can go in a report.
+3. **Time Lapse** — Last 7 Days / Last 30 Days / All Time. No custom date picker here.
+4. **Filters** — Operating System, Compliance, Role, Auth Origin, and a "hide devices not reported in last 24h" checkbox. There's no in-modal segment picker — whatever [Segment](devices.md) is currently selected in the left sidebar at generation time is applied automatically.
+5. **Display Options** — Trend Charts (Line/Bar), Distribution Charts (Donut/Pie/Bar/Radar), Data Tables (Standard/Progress Bars) — toggle each on/off independently.
+6. **Delivery** — Download PDF directly, Send to Webhook, Send via Email (reveals a recipients box). Note: **"Send to Webhook" doesn't attach the PDF** — it fires a chat notification ("Analytics Report Generated…") with no file attached. Only Download and Email actually deliver the PDF itself.
+7. **Automation & Scheduling** (toggle on/off) — Frequency (Daily / Weekly-Mondays / Monthly-1st), Execution Time, Timezone, Start Date. Only relevant if you're saving this as a recurring schedule.
+
+**Generate Now** renders the report immediately server-side and, per your Delivery choices, downloads it to your browser and/or emails it. The button reads "Generating…" while in flight.
+
+**Save Schedule** (only visible with Scheduling on) saves the config as a recurring definition and switches to the Schedules tab — it does **not** generate a report right away.
+
+## Schedules tab
+
+Each saved schedule is a card: name, frequency pill, execution time + timezone, source count + time lapse, and recipients if email delivery is on.
+
+- **Run now** — generates immediately using the schedule's saved config, and **always downloads a PDF to your browser** regardless of that schedule's own "Download PDF directly" setting — a manual run always drops a copy locally in addition to whatever email/webhook delivery is configured.
+- **Edit** — reopens the Builder pre-filled.
+- **Delete** — removes it (confirm-gated).
+
+There's no separate "pause" control — to pause a schedule without deleting it, edit it and turn the Automation & Scheduling toggle off.
+
+Recurring delivery only supports **email** and the **chat webhook** notification described above — no generic webhook file delivery, Slack/Teams, SMS, or other channel.
+
+**How it actually fires**: a background job wakes every 60 seconds and, for every enabled schedule, resolves the workspace's stored [Automation Credential](settings.md#workspace-automation) (skipping — and logging — any workspace without one configured), checks whether the current local time/day matches the schedule's frequency/time/timezone, and if so generates and delivers the report exactly as described above, using the workspace-level email/webhook settings (not anything per-schedule beyond recipients). This runs even when nobody is logged in, which is exactly why the Automation Credential is required.
+
+## Template tab
+
+Opens a **Custom HTML Template** editor — a raw code textarea, not a visual/WYSIWYG editor, and there's no live preview. Use Jinja2 syntax to inject data (e.g. `{{ Report_Title }}`); leave it blank to use the built-in default template.
+
+The **default template** defines the PDF's whole visual identity: a blue top bar with your logo/wordmark and workspace name, a metadata bar (workspace, sources analyzed, applied filters), one card per selected data section (chart image + optional table), and a fixed footer. Available template variables: `Workspace_Name`, `Report_Title`, `Generated_Date`, `Time_Lapse`, `metadata`, and `report_sections` (each with a title, chart image, optional table, and full-width flag).
+
+Whatever you type is saved per-workspace and used verbatim for every future report/schedule in that workspace until you change it. **Reset to Default** clears it back to the built-in template (confirm-gated). **Apply & Save** / **Close** — the actual save happens through the app's normal state-save, not a dedicated button beyond closing the modal.
+
+**Practical tip**: if report generation suddenly starts failing for everyone in a workspace right after someone edits this tab, the most likely cause is a broken custom template — reopen the Template tab and click Reset to Default to confirm.
+
+## Settings this view depends on
+
+- **Email delivery** needs [Settings → SMTP](settings.md#smtp) configured (Host/Username at minimum) — the Builder shows an inline warning if it isn't.
+- **Webhook delivery** needs a "Notifications Webhook URL" set under [Settings → General](settings.md#general) (this is a Google Chat webhook specifically, not a generic one) — same inline warning if missing.
+- **Scheduled reports specifically** need a per-workspace [Automation Credential](settings.md#workspace-automation) — without one, that workspace's schedules are silently skipped every tick. One-off Generate Now / Run Now don't need this; they use your own logged-in session.
+- **[System Health](settings.md#system-health)** is the only place you'd notice if the report scheduler itself stopped running — it tracks a heartbeat for this job and flags it overdue.
+
+## Generation failures
+
+If a report fails to generate, you'll see a generic "Failed to generate report" message — the app doesn't currently distinguish between a network error, a broken custom template, or a server-side rendering problem. If it's failing for the whole workspace, check the Template tab first (see above), then confirm SMTP/webhook settings if delivery (not generation) is what's failing.
+
+## Related guides
+
+- [Overview](overview.md) — the widget catalog reports are built from, and where to check what a metric means before including it in a report.
+- [Settings](settings.md) — SMTP, webhook URL, and Automation Credential setup.

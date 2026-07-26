@@ -4,15 +4,14 @@
  * _SINGLE_POLICY_KEYS/_ARRAY_POLICY_KEYS, _extract_active_policies,
  * _normalize_device_full, _compute_device_risk — main.py:2743-3417).
  *
- * Phase 3 (Compliance + catalogs) / Phase 5 (Cases) / Phase 8 (device
- * push-data self-report ingestion) inputs don't exist yet in this
- * incremental migration. Every place the original reads one of those is
- * marked `// TODO(PhaseN):` below and passed as an explicit empty/null
- * value — EXACTLY the shape the original app itself produces before those
- * background jobs/endpoints have ever run for a workspace (a cold-start
- * device has no open cases, no violations, no self-reported attributes,
- * etc.), so this is not an approximation: it's the same code path the
- * original takes when that data simply doesn't exist yet.
+ * Phase 3 (Compliance + catalogs) / Phase 5 (Cases) inputs are wired in by
+ * devices.service.ts's getDevicesFull, which calls normalizeDeviceFull.
+ * Phase 8 wires in real device push-data (see `pushdataCache` below,
+ * populated from deviceData.service.ts's loadDevicePushDataCache) — a
+ * cold-start device with no self-reports yet still gets exactly the same
+ * empty shape the original produces before /api/device-data/report has ever
+ * been called for it, so this was never an approximation, only a staged
+ * wiring order.
  */
 
 export type NormalizedPlatform = "android" | "apple" | "macos" | "windows" | "other";
@@ -179,10 +178,10 @@ export interface NormalizedDevice {
  * Normalize a raw Applivery device record into the shape the Devices view
  * consumes — port of `_normalize_device_full` (main.py:3091).
  *
- * @param pushdataCache TODO(Phase8): device self-report agent data
- *   (Windows/macOS attestation script, matched by serial number). Always
- *   empty in this phase — no device has ever self-reported yet, same as a
- *   brand-new original-app workspace before /api/device-data/report exists.
+ * @param pushdataCache Device self-report agent data (Windows/macOS
+ *   attestation script, matched by serial number) — see
+ *   deviceData.service.ts's loadDevicePushDataCache (Phase 8). Empty for any
+ *   device that has never self-reported.
  */
 export function normalizeDeviceFull(
   raw: Record<string, any>,
@@ -239,8 +238,8 @@ export function normalizeDeviceFull(
   }
 
   const serialNumber = summary.serialNumber ?? raw.serialNumber ?? "";
-  // TODO(Phase8): populate from the real device-data pushdata store once
-  // /api/device-data/report exists (main.py:3148). Always null for now.
+  // Populated from the real device-data pushdata store (main.py:3148) —
+  // see deviceData.service.ts's loadDevicePushDataCache (Phase 8).
   const selfReported = serialNumber ? pushdataCache[serialNumber] ?? null : null;
 
   let nativeSecurity: Record<string, any> | null = null;

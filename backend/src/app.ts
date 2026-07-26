@@ -8,6 +8,7 @@ import { authRouter } from "./modules/auth/auth.controller";
 import { deviceAudiencesRouter } from "./modules/devices/deviceAudiences.controller";
 import { deviceCatalogRouter } from "./modules/devices/deviceCatalog.controller";
 import { devicesRouter } from "./modules/devices/devices.controller";
+import { deviceDataRouter } from "./modules/devices/deviceData.controller";
 import { healthRouter } from "./modules/health/health.controller";
 import { rolesRouter } from "./modules/roles/roles.controller";
 import { appListsRouter } from "./modules/appLists/appLists.controller";
@@ -32,6 +33,7 @@ import { appliveryWebhookSettingsRouter } from "./modules/settings/appliveryWebh
 import { analyticsRouter } from "./modules/analytics/analytics.controller";
 import { dashboardStateRouter } from "./modules/analytics/dashboardState.controller";
 import { reportsRouter } from "./modules/reports/reports.controller";
+import { helpRouter } from "./modules/help/help.controller";
 
 export function createApp() {
   const app = express();
@@ -47,6 +49,7 @@ export function createApp() {
   app.use(authRouter);
   app.use(rolesRouter);
   app.use(devicesRouter);
+  app.use(deviceDataRouter);
   app.use(deviceCatalogRouter);
   app.use(deviceAudiencesRouter);
   app.use(appListsRouter);
@@ -71,6 +74,7 @@ export function createApp() {
   app.use(analyticsRouter);
   app.use(dashboardStateRouter);
   app.use(reportsRouter);
+  app.use(helpRouter);
 
   // Static frontend serving, mirroring the original single-image pattern
   // (ARCHITECTURE.md §2.1): serve Vue's built dist/, catch-all to

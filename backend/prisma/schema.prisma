@@ -495,6 +495,14 @@ model AppliveryWebhookConfig {
   workspaceSlug String   @id
   enabled       Boolean  @default(true)
   secret        String
+  // Port of main.py's recentEvents/receivedCount/lastReceivedAt fields on
+  // the same JSON blob — populated only by the inbound receiver
+  // (POST /api/applivery-webhook/receive/:secret, Phase 8). recentEvents is
+  // an array of {id, receivedAt, actionKey, canonicalKey, os, outcome,
+  // deviceId, deviceName, caseId, workflowRunId}, capped at 50 entries.
+  recentEvents  Json     @default("[]")
+  receivedCount Int      @default(0)
+  lastReceivedAt DateTime?
   updatedAt     DateTime @updatedAt
 
   rules AppliveryWebhookRule[]
@@ -533,6 +541,14 @@ model DeviceAudience {
   @@index([workspaceSlug])
 }
 
+// Port of `_load_device_pushdata`/`_save_device_pushdata` (main.py:7663) —
+// one row per (workspaceSlug, deviceId=serialNumber, kind), upserted in
+// place on every /api/device-data/report so `payload` always holds the
+// LATEST normalized attributes (mirrors the original's dict-keyed-by-serial
+// replace semantics) while `reportedAt` tracks lastReportedAt and
+// `payload.reportCount` tracks the running total. `kind` is always
+// "attributes" today (the general device-data report); left open-ended in
+// case a distinct push-data kind is ever added.
 model DevicePushData {
   id            String   @id @default(uuid())
   workspaceSlug String
@@ -542,7 +558,7 @@ model DevicePushData {
   reportedAt    DateTime
   createdAt     DateTime @default(now())
 
-  @@index([workspaceSlug, deviceId])
+  @@unique([workspaceSlug, deviceId, kind])
 }
 
 model InstalledAppInventory {
@@ -557,6 +573,13 @@ model InstalledAppInventory {
   @@unique([workspaceSlug, deviceId])
 }
 
+// Port of `_load_pending_app_reports`/`_save_pending_app_reports`
+// (main.py:9670-9686) — buffers a self-reported app inventory (from
+// /api/device-data/report-apps) whose serial number (stored in `deviceId`,
+// same "keyed by serial, not yet resolved to an Applivery device id"
+// convention as DevicePushData above) didn't match any device in the
+// live cache yet. Reconciled by the not-yet-ported installed-apps rolling
+// refresher (see backgroundJobs.ts's module doc) once that job exists.
 model PendingAppReport {
   id            String   @id @default(uuid())
   workspaceSlug String
@@ -564,7 +587,7 @@ model PendingAppReport {
   payload       Json
   createdAt     DateTime @default(now())
 
-  @@index([workspaceSlug])
+  @@unique([workspaceSlug, deviceId])
 }
 
 model DeviceReportSecret {

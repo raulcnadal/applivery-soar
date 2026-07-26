@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Device Data Webhook tab. Port of main.py:7799-7897 (Settings side only —
-// the actual receiver endpoints are TODO(Phase8), see
-// deviceReportSecret.service.ts's module comment).
+// Device Data Webhook tab. Port of main.py:7799-7897. The actual receiver
+// endpoints (POST /api/device-data/report, /report-apps) are backend's
+// deviceData.controller.ts (Phase 8) — this panel covers the secret
+// lifecycle + script downloads.
 import { Alert, Button } from "@applivery/bluesky-vue";
 import { onMounted, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";

@@ -78,6 +78,10 @@ COPY --from=backend-builder /app/backend/scripts ./scripts
 # Vendored Chart.js UMD bundle, inlined into every generated report's HTML
 # so PDF rendering needs no network access at runtime (reports/reportTemplate.ts).
 COPY --from=backend-builder /app/backend/assets ./assets
+# Admin/developer guide markdown, served as-is by GET /api/help/:slug
+# (modules/help/help.controller.ts) — same "not compiled, needs its own
+# COPY" reasoning as scripts/ above.
+COPY --from=backend-builder /app/backend/docs ./docs
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 EXPOSE 8000

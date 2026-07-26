@@ -19,7 +19,7 @@ import { resolveOrgBase } from "../auth/rbac.service";
  */
 
 const LOCATION_SYNC_MIN_INTERVAL_MS = 5 * 60_000; // 5 minutes
-const LOCATION_CACHE_KEY = "locations_cache";
+export const LOCATION_CACHE_KEY = "locations_cache";
 const lastLocationSync = new Map<string, number>();
 
 export async function syncDeviceLocations(authorization: string, workspaceSlug: string): Promise<{ status: string; synced_devices: number }> {
