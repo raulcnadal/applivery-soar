@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { verifyDashboardToken } from "../../middleware/auth.middleware";
 import { getCachedAccess, requirePermission } from "../../middleware/rbac.middleware";
+import { verifyTriggerSecret } from "../../middleware/triggerSecret.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { HttpError } from "../../utils/httpError";
 import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
+import { resumeDueWorkflowSteps } from "./durableEngine";
 import {
   createWorkflow,
   deleteWorkflow,
@@ -111,6 +113,18 @@ workflowsRouter.get("/api/workflows/runs/export", ...readWorkflows, asyncHandler
 
 workflowsRouter.get("/api/workflows/runs/:runId", ...readWorkflows, asyncHandler(async (req, res) => {
   res.json(await getWorkflowRun(workspaceOf(req), req.params.runId));
+}));
+
+// POST /api/workflows/resume-due — external-cron-triggerable alternative to
+// this container's own in-process workflow_wait_resumer loop
+// (backgroundJobs.ts, already running every 30s unattended). Secret-gated
+// (TRIGGER_SECRET), not dashboard-token gated — same reasoning as
+// compliance's /evaluate-due sibling (see docs/README.md's TRIGGER_SECRET
+// row). `limit` mirrors resumeDueWorkflowSteps' own default of 50.
+workflowsRouter.post("/api/workflows/resume-due", verifyTriggerSecret, asyncHandler(async (req, res) => {
+  const limit = req.query.limit ? Number(req.query.limit) : undefined;
+  const resumedCount = await resumeDueWorkflowSteps(limit);
+  res.json({ resumedCount });
 }));
 
 // ── Manual run (main.py:7576-7611) ──

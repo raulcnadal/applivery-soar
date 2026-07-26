@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { verifyDashboardToken } from "../../middleware/auth.middleware";
 import { requirePermission } from "../../middleware/rbac.middleware";
+import { verifyTriggerSecret } from "../../middleware/triggerSecret.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { HttpError } from "../../utils/httpError";
+import { runComplianceSchedulerTick } from "./complianceJobs";
 import {
   compliancePolicySchema,
   evaluateNowSchema,
@@ -163,6 +165,18 @@ complianceRouter.post("/api/compliance/evaluate", ...readCompliance, asyncHandle
     });
   }
   res.json(summary);
+}));
+
+// POST /api/compliance/evaluate-due — external-cron-triggerable alternative
+// to this container's own in-process Compliance scheduler loop
+// (complianceJobs.ts's runComplianceSchedulerTick, already running every
+// 60s unattended). Secret-gated (TRIGGER_SECRET), not dashboard-token
+// gated — there's no human session behind an external cron call. See
+// docs/README.md's TRIGGER_SECRET row: only needed if a deployer wants an
+// external scheduler to drive this instead of relying on the built-in loop.
+complianceRouter.post("/api/compliance/evaluate-due", verifyTriggerSecret, asyncHandler(async (_req, res) => {
+  await runComplianceSchedulerTick();
+  res.json({ status: "ok" });
 }));
 
 complianceRouter.get("/api/compliance/policies/:policyId/violating-device-ids", ...readCompliance, asyncHandler(async (req, res) => {

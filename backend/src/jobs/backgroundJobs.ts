@@ -12,6 +12,8 @@ import { rotateAuditLogsForAllWorkspaces } from "../modules/auditLogs/auditLogs.
 import { runLogExportSchedulerTick } from "../modules/settings/logExportDestinations.service";
 import { checkSystemHealthAndAlert } from "../modules/systemHealth/systemHealth.service";
 import { runReportSchedulerTick, runSnapshotSchedulerTick, REPORT_SCHEDULER_TICK_MS, SNAPSHOT_SCHEDULER_TICK_MS } from "../modules/analytics/analyticsJobs";
+import { runComplianceSchedulerTick, COMPLIANCE_SCHEDULER_TICK_MS } from "../modules/compliance/complianceJobs";
+import { runInstalledAppsRefresherTick, INSTALLED_APPS_REFRESH_TICK_MS } from "../modules/appLists/installedAppsJobs";
 
 /**
  * Background scheduler for the five GLOBAL intelligence catalogs (no
@@ -33,12 +35,13 @@ import { runReportSchedulerTick, runSnapshotSchedulerTick, REPORT_SCHEDULER_TICK
  * delivery tick (port of report_scheduler_loop) — both now that the widget
  * engine and Puppeteer PDF pipeline exist to drive them unattended.
  *
- * Explicitly still NOT started here (both are per-workspace and need
- * subsystems this migration hasn't reached yet):
- *   - Compliance policy evaluation loop
- *   - Installed-apps rolling refresher
- * Their manual/on-demand equivalents (using the calling admin's live
- * session) are fully wired through their respective controllers already.
+ * Phase 9 adds the last two of the full 17 (migration-plan.md §5): the
+ * Compliance scheduler and the Installed-apps rolling refresher — both were
+ * previously deferred pending Automation Credentials (Phase 4b), which now
+ * exist, so both are wired in for real below (complianceJobs.ts,
+ * installedAppsJobs.ts). Their manual/on-demand equivalents (using the
+ * calling admin's live session) were already wired through their respective
+ * controllers since Phase 3.
  */
 
 interface CatalogJob {
@@ -52,7 +55,10 @@ const AUDIT_LOG_ROTATION_TICK_MS = 86_400_000; // once a day
 const LOG_EXPORT_SCHEDULER_TICK_MS = 86_400_000; // once a day
 const SYSTEM_HEALTH_MONITOR_TICK_MS = 300_000; // 5 minutes
 
-const JOBS: CatalogJob[] = [
+// Exported read-only for backgroundJobs.test.ts's structural sign-off check
+// (all 17 loops from migration-plan.md §5 present, unique jobKeys) — not
+// meant to be mutated by callers.
+export const JOBS: readonly CatalogJob[] = [
   { jobKey: "catalog:os-update", tickMs: OS_UPDATE_TICK_MS, run: refreshOsUpdateCatalog },
   { jobKey: "catalog:vuln", tickMs: VULN_CATALOG_TICK_MS, run: refreshVulnCatalog },
   { jobKey: "catalog:os-lifecycle", tickMs: OS_LIFECYCLE_TICK_MS, run: refreshOsLifecycleCatalog },
@@ -68,6 +74,8 @@ const JOBS: CatalogJob[] = [
   { jobKey: "vuln_service_refresh", tickMs: VULN_SERVICE_TICK_MS, run: runVulnServiceRefresherTick },
   { jobKey: "snapshot_scheduler", tickMs: SNAPSHOT_SCHEDULER_TICK_MS, run: runSnapshotSchedulerTick },
   { jobKey: "report_scheduler", tickMs: REPORT_SCHEDULER_TICK_MS, run: runReportSchedulerTick },
+  { jobKey: "compliance_scheduler", tickMs: COMPLIANCE_SCHEDULER_TICK_MS, run: runComplianceSchedulerTick },
+  { jobKey: "installed_apps_refresher", tickMs: INSTALLED_APPS_REFRESH_TICK_MS, run: runInstalledAppsRefresherTick },
 ];
 
 // Stagger initial runs so five outbound HTTP calls don't fire in the same
