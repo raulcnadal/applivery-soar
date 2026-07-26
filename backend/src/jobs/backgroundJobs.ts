@@ -4,9 +4,13 @@ import { refreshVulnCatalog, VULN_CATALOG_TICK_MS } from "../modules/catalogs/vu
 import { refreshOsLifecycleCatalog, OS_LIFECYCLE_TICK_MS } from "../modules/catalogs/osLifecycleCatalog";
 import { refreshGdmfCatalog, GDMF_TICK_MS } from "../modules/catalogs/gdmfCatalog";
 import { refreshMitreCatalog, MITRE_CATALOG_TICK_MS } from "../modules/catalogs/mitreCatalog";
+import { runVulnServiceRefresherTick, VULN_SERVICE_TICK_MS } from "../modules/catalogs/vulnService";
 import { resumeDueWorkflowSteps } from "../modules/workflows/durableEngine";
 import { runScriptLogReconcilerTick, SCRIPT_RUN_RECONCILE_TICK_MS } from "../modules/workflows/scriptLogReconciler";
 import { CASE_SLA_MONITOR_TICK_MS, runCaseSlaMonitorTick, runTicketStatusSyncTick, TICKET_SYNC_TICK_MS } from "../modules/cases/caseJobs";
+import { rotateAuditLogsForAllWorkspaces } from "../modules/auditLogs/auditLogs.service";
+import { runLogExportSchedulerTick } from "../modules/settings/logExportDestinations.service";
+import { checkSystemHealthAndAlert } from "../modules/systemHealth/systemHealth.service";
 
 /**
  * Background scheduler for the five GLOBAL intelligence catalogs (no
@@ -17,11 +21,16 @@ import { CASE_SLA_MONITOR_TICK_MS, runCaseSlaMonitorTick, runTicketStatusSyncTic
  * on its own cadence, recording an OK/error heartbeat every tick so a silent
  * failure surfaces later in Settings > System Health (Phase 6).
  *
- * Explicitly NOT started here (both are per-workspace and still need
+ * Phase 6 adds: audit log rotation, log export scheduler (batch s3/nfs/sftp
+ * shipment — real-time syslog/webhook fires inline from services/auditLog.ts
+ * instead), system health alert monitor, and the Vulnerability Service
+ * per-workspace refresher (now that Automation Credentials exist to drive
+ * it unattended).
+ *
+ * Explicitly still NOT started here (both are per-workspace and need
  * subsystems this migration hasn't reached yet):
  *   - Compliance policy evaluation loop
  *   - Installed-apps rolling refresher
- *   - Vulnerability Service per-workspace refresh
  * Their manual/on-demand equivalents (using the calling admin's live
  * session) are fully wired through their respective controllers already.
  */
@@ -33,6 +42,9 @@ interface CatalogJob {
 }
 
 const WORKFLOW_RESUMER_TICK_MS = 30_000;
+const AUDIT_LOG_ROTATION_TICK_MS = 86_400_000; // once a day
+const LOG_EXPORT_SCHEDULER_TICK_MS = 86_400_000; // once a day
+const SYSTEM_HEALTH_MONITOR_TICK_MS = 300_000; // 5 minutes
 
 const JOBS: CatalogJob[] = [
   { jobKey: "catalog:os-update", tickMs: OS_UPDATE_TICK_MS, run: refreshOsUpdateCatalog },
@@ -44,6 +56,10 @@ const JOBS: CatalogJob[] = [
   { jobKey: "script_log_reconciler", tickMs: SCRIPT_RUN_RECONCILE_TICK_MS, run: runScriptLogReconcilerTick },
   { jobKey: "ticket_status_sync", tickMs: TICKET_SYNC_TICK_MS, run: runTicketStatusSyncTick },
   { jobKey: "case_sla_monitor", tickMs: CASE_SLA_MONITOR_TICK_MS, run: runCaseSlaMonitorTick },
+  { jobKey: "audit_log_rotation", tickMs: AUDIT_LOG_ROTATION_TICK_MS, run: rotateAuditLogsForAllWorkspaces },
+  { jobKey: "log_export_scheduler", tickMs: LOG_EXPORT_SCHEDULER_TICK_MS, run: runLogExportSchedulerTick },
+  { jobKey: "system_health_monitor", tickMs: SYSTEM_HEALTH_MONITOR_TICK_MS, run: checkSystemHealthAndAlert },
+  { jobKey: "vuln_service_refresh", tickMs: VULN_SERVICE_TICK_MS, run: runVulnServiceRefresherTick },
 ];
 
 // Stagger initial runs so five outbound HTTP calls don't fire in the same

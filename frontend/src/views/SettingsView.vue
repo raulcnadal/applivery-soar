@@ -12,6 +12,11 @@ import ThreatIntelProviderDialog from "../components/settings/ThreatIntelProvide
 import CaseAutoRunRulesTable from "../components/settings/CaseAutoRunRulesTable.vue";
 import CaseAutoRunRuleDialog from "../components/settings/CaseAutoRunRuleDialog.vue";
 import CaseSlaSettingsForm from "../components/settings/CaseSlaSettingsForm.vue";
+import LogExportDestinationsPanel from "../components/settings/LogExportDestinationsPanel.vue";
+import DeviceDataWebhookPanel from "../components/settings/DeviceDataWebhookPanel.vue";
+import SystemHealthPanel from "../components/settings/SystemHealthPanel.vue";
+import BackupRestorePanel from "../components/settings/BackupRestorePanel.vue";
+import AppliveryEventsPanel from "../components/settings/AppliveryEventsPanel.vue";
 import { useIntegrationsStore, type Integration } from "../stores/integrations";
 import { useThreatIntelStore, type ThreatIntelProvider } from "../stores/threatIntel";
 import { useCasesStore, type CaseAutoRunRule } from "../stores/cases";
@@ -25,6 +30,11 @@ const tabs = [
   { id: "threat-intel", label: "Threat Intel" },
   { id: "case-autorun", label: "Case Auto-Run Rules" },
   { id: "case-sla", label: "Case SLA" },
+  { id: "applivery-events", label: "Applivery Events" },
+  { id: "device-webhook", label: "Device Data Webhook" },
+  { id: "logexport", label: "Log Export" },
+  { id: "systemhealth", label: "System Health" },
+  { id: "backup", label: "Backup & Restore" },
 ];
 const activeTab = ref("integrations");
 
@@ -81,6 +91,11 @@ async function onTabChange(tabId: string) {
       <CaseAutoRunRulesTable :rules="casesStore.autoRunRules" :is-loading="false" @edit="editRule" @delete="deleteRule" />
     </template>
     <CaseSlaSettingsForm v-else-if="activeTab === 'case-sla'" />
+    <AppliveryEventsPanel v-else-if="activeTab === 'applivery-events'" />
+    <DeviceDataWebhookPanel v-else-if="activeTab === 'device-webhook'" />
+    <LogExportDestinationsPanel v-else-if="activeTab === 'logexport'" />
+    <SystemHealthPanel v-else-if="activeTab === 'systemhealth'" />
+    <BackupRestorePanel v-else-if="activeTab === 'backup'" />
 
     <IntegrationDialog :open="integrationDialogOpen" :integration="editingIntegration" @close="integrationDialogOpen = false" @saved="integrationsStore.fetchIntegrations()" />
     <ThreatIntelProviderDialog :open="providerDialogOpen" :provider="editingProvider" @close="providerDialogOpen = false" @saved="threatIntelStore.fetchProviders()" />

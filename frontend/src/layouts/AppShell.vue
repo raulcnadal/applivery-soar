@@ -18,6 +18,7 @@ const navItems = [
   { id: "compliance", label: "Compliance" },
   { id: "workflows", label: "Workflows" },
   { id: "cases", label: "Cases" },
+  { id: "audit-logs", label: "Audit Logs" },
   { id: "settings", label: "Settings" },
 ];
 

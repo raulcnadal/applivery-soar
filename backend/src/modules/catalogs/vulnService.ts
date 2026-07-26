@@ -264,6 +264,37 @@ export async function refreshVulnServiceNow(workspaceSlug: string, authorization
 }
 
 /**
+ * Unattended per-workspace refresh — port of `vuln_service_refresh_loop`
+ * (main.py:17059), now that Automation Credentials exist (Phase 4b) to drive
+ * it without an admin's live session. For every workspace with both an
+ * automation credential AND the Vulnerability Service enabled+configured,
+ * refreshes once its own `refreshIntervalHours` has elapsed since
+ * `lastRefreshAt` — a per-workspace-configurable cadence, not one global
+ * interval for every tenant. Wired into jobs/backgroundJobs.ts as
+ * `vuln_service_refresh` (was TODO(Phase6) — see the comment on
+ * `refreshVulnServiceForWorkspace` above).
+ */
+export async function runVulnServiceRefresherTick(): Promise<void> {
+  const { listAutomationWorkspaces, getAutomationBearer } = await import("../settings/automationCredential.service");
+  for (const workspaceSlug of await listAutomationWorkspaces()) {
+    const cfg = await loadConfigRow(workspaceSlug);
+    if (!cfg?.enabled || !cfg.baseUrl || !cfg.apiTokenEncrypted) continue;
+    if (cfg.lastRefreshAt) {
+      const elapsedMs = Date.now() - cfg.lastRefreshAt.getTime();
+      if (elapsedMs < clampRefreshHours(cfg.refreshIntervalHours) * 3600 * 1000) continue;
+    }
+    const bearer = await getAutomationBearer(workspaceSlug);
+    if (!bearer) continue;
+    try {
+      const stats = await refreshVulnServiceForWorkspace(workspaceSlug, bearer);
+      console.log(`[Vuln Service] ${workspaceSlug}: ${JSON.stringify(stats)}`);
+    } catch (e) {
+      console.warn(`[Vuln Service Refresher] ${workspaceSlug} failed: ${e}`);
+    }
+  }
+}
+
+/**
  * Local-cache-only read (never calls the Worker inline) — port of
  * `_compute_vuln_service_status` (main.py:17099).
  */

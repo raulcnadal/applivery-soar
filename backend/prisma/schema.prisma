@@ -560,7 +560,8 @@ model PendingAppReport {
 
 model DeviceReportSecret {
   workspaceSlug String   @id
-  secret        String
+  secret        String // encrypted at rest (secretCipher) — see settings/deviceReportSecret.service.ts
+  rotatedBy     String?
   updatedAt     DateTime @updatedAt
 }
 
@@ -762,25 +763,34 @@ model AuditLogEntry {
 }
 
 model LogExportDestination {
-  id            String   @id @default(uuid())
-  workspaceSlug String
-  type          String
-  name          String
-  enabled       Boolean  @default(true)
-  format        String   @default("json")
-  config        Json
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String    @id @default(uuid())
+  workspaceSlug   String
+  type            String
+  name            String
+  enabled         Boolean   @default(true)
+  format          String    @default("json")
+  config          Json // secret sub-fields (secretAccessKey/password/privateKeyPassphrase) encrypted at rest — see logExportDestinations.service.ts
+  createdBy       String?
+  // Batch types only (s3/nfs/sftp) — cursor + last-failure tracking for
+  // log_export_scheduler_loop's once-a-day ship. Real-time types
+  // (syslog/webhook) never touch these, they fire inline per audit write.
+  lastExportedAt  DateTime?
+  lastExportError String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([workspaceSlug])
 }
 
 model SystemHealthJob {
-  jobKey          String    @id
-  status          String
-  detail          String?
-  lastHeartbeatAt DateTime  @default(now())
-  lastAlertSentAt DateTime?
+  jobKey            String    @id
+  status            String
+  detail            String?
+  lastHeartbeatAt   DateTime  @default(now())
+  lastSuccessAt     DateTime?
+  lastErrorAt       DateTime?
+  consecutiveErrors Int       @default(0)
+  lastAlertSentAt   DateTime? // non-null == already alerted for the current unhealthy streak, mirrors Case SLA's slaAckBreachNotifiedAt pattern
 }
 
 model ConfigOperationLog {

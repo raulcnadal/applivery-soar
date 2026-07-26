@@ -55,6 +55,10 @@ COPY --from=backend-builder /app/backend/dist ./dist
 COPY --from=backend-builder /app/backend/node_modules/.prisma ./node_modules/.prisma
 COPY --from=backend-builder /app/backend/node_modules/@prisma ./node_modules/@prisma
 COPY --from=backend-builder /app/backend/prisma ./prisma
+# Device-report script templates served as-is by Settings > Device Data
+# Webhook (settings/deviceReportScripts.controller.ts) — not compiled, so
+# they need an explicit copy alongside dist rather than riding along with it.
+COPY --from=backend-builder /app/backend/scripts ./scripts
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 EXPOSE 8000

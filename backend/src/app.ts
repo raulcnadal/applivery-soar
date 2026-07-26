@@ -23,6 +23,12 @@ import { triggersRouter } from "./modules/workflows/triggers.controller";
 import { casesRouter } from "./modules/cases/cases.controller";
 import { integrationsRouter } from "./modules/integrations/integrations.controller";
 import { threatIntelRouter } from "./modules/threatIntel/threatIntel.controller";
+import { auditLogsRouter } from "./modules/auditLogs/auditLogs.controller";
+import { logExportDestinationsRouter } from "./modules/settings/logExportDestinations.controller";
+import { deviceReportScriptsRouter } from "./modules/settings/deviceReportScripts.controller";
+import { configRouter } from "./modules/config/config.controller";
+import { systemHealthRouter } from "./modules/systemHealth/systemHealth.controller";
+import { appliveryWebhookSettingsRouter } from "./modules/settings/appliveryWebhookSettings.controller";
 
 export function createApp() {
   const app = express();
@@ -53,6 +59,12 @@ export function createApp() {
   app.use(casesRouter);
   app.use(integrationsRouter);
   app.use(threatIntelRouter);
+  app.use(auditLogsRouter);
+  app.use(logExportDestinationsRouter);
+  app.use(deviceReportScriptsRouter);
+  app.use(configRouter);
+  app.use(systemHealthRouter);
+  app.use(appliveryWebhookSettingsRouter);
 
   // Static frontend serving, mirroring the original single-image pattern
   // (ARCHITECTURE.md §2.1): serve Vue's built dist/, catch-all to

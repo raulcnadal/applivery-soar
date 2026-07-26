@@ -195,7 +195,11 @@ export async function testIntegration(workspaceSlug: string, integrationId: stri
 
 // ── Chat notifications (main.py:13415-13433) ──
 
-async function sendChatNotification(webhookUrl: string | undefined, kase: DispatchableCase, eventType: string, kind: string): Promise<void> {
+// Exported (not just used internally) so systemHealth.service.ts's
+// `fireSystemHealthAlert` can reuse the exact same senders for a
+// system-health alert shaped as a minimal case-like object — same trick
+// `testIntegration` uses for its fake_case, now shared with a second caller.
+export async function sendChatNotification(webhookUrl: string | undefined, kase: DispatchableCase, eventType: string, kind: string): Promise<void> {
   if (!webhookUrl) throw new Error("No webhook URL configured");
   const verb: Record<string, string> = {
     created: "opened", reopened: "reopened", closed: "resolved/closed",
@@ -246,13 +250,13 @@ async function sendOpsgenieEvent(cfg: Record<string, any>, alias: string, action
   }
 }
 
-async function sendPagingEvent(itype: string, cfg: Record<string, any>, dedupKey: string, action: "trigger" | "resolve", summary: string, severity = "high", details?: Record<string, unknown>): Promise<void> {
+export async function sendPagingEvent(itype: string, cfg: Record<string, any>, dedupKey: string, action: "trigger" | "resolve", summary: string, severity = "high", details?: Record<string, unknown>): Promise<void> {
   if (itype === "pagerduty") await sendPagerdutyEvent(cfg, dedupKey, action, summary, severity, details);
   else if (itype === "opsgenie") await sendOpsgenieEvent(cfg, dedupKey, action, summary, severity, details);
   else throw new Error(`Unknown paging integration type '${itype}'`);
 }
 
-async function sendGenericWebhook(cfg: Record<string, any>, kase: DispatchableCase, eventType: string): Promise<void> {
+export async function sendGenericWebhook(cfg: Record<string, any>, kase: DispatchableCase, eventType: string): Promise<void> {
   const url = cfg.url;
   if (!url) throw new Error("No URL configured");
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(cfg.headers ?? {}) }, body: JSON.stringify({ event: eventType, case: kase }) });
@@ -464,8 +468,14 @@ export async function dispatchCaseSlaBreach(workspaceSlug: string, kase: Dispatc
       console.error(`[Integrations] '${integ.name}' (${itype}) SLA breach notify failed for case ${kase.id}: ${message}`);
     }
   }
-  // Alert email (SMTP alertRecipients) intentionally omitted for now — no
-  // SMTP/scheduled-report settings module exists yet in this migration.
+  const { sendAlertEmail } = await import("../../services/alertEmail");
+  await sendAlertEmail(
+    workspaceSlug,
+    `[SLA Breach] ${kase.title}`,
+    `A Case has breached its ${breachKind} SLA and has not been ${breachKind === "acknowledge" ? "acknowledged" : "resolved"} in time.\n\n` +
+      `Title: ${kase.title}\nSeverity: ${kase.severity}\nStatus: ${kase.status}\n` +
+      `Device: ${kase.deviceName || "—"}\nCase ID: ${kase.id}\n`,
+  );
 }
 
 /** Port of `_sync_case_ticket_refs` (main.py:13662-13696). Mutates each ref in place; returns refs that just transitioned to resolved on THIS call. */

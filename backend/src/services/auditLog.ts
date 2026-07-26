@@ -1,11 +1,16 @@
 import { prisma } from "./prisma";
 
 /**
- * Minimal port of _record_audit_event (main.py) — writes into the
- * AuditLogEntry table. Full Audit Logs feature (query/filter/export,
- * retention rotation, real-time log-export dispatch) is Phase 6; this
- * exists now because Roles CRUD (Phase 1) already calls it in the
- * original app and dropping that silently would be a real feature loss.
+ * Port of `_record_audit_event`/`_append_audit_events` (main.py:1964-2009) —
+ * writes into the AuditLogEntry table, then fans the new event out to any
+ * real-time (syslog/webhook) log export destinations configured for this
+ * workspace — the single choke-point every audit event passes through, same
+ * as the original. The dispatch import is dynamic to avoid a module cycle:
+ * logExportDestinations.service.ts itself calls recordAuditEvent (to log its
+ * own CRUD actions), so a static top-level import here would form a cycle.
+ * A destination that's down or misconfigured must never break the caller
+ * that triggered this write — failures are swallowed (logged, not thrown),
+ * matching the original's try/except around `_dispatch_realtime_log_exports`.
  */
 export interface AuditEventInput {
   category: string;
@@ -19,7 +24,7 @@ export interface AuditEventInput {
 }
 
 export async function recordAuditEvent(workspaceSlug: string, event: AuditEventInput): Promise<void> {
-  await prisma.auditLogEntry.create({
+  const created = await prisma.auditLogEntry.create({
     data: {
       workspaceSlug,
       category: event.category,
@@ -32,4 +37,22 @@ export async function recordAuditEvent(workspaceSlug: string, event: AuditEventI
       severity: event.severity ?? "info",
     },
   });
+
+  try {
+    const { dispatchRealtimeLogExports } = await import("../modules/settings/logExportDestinations.service");
+    await dispatchRealtimeLogExports(workspaceSlug, [{
+      id: created.id,
+      timestamp: created.createdAt.toISOString(),
+      category: created.category,
+      action: created.action,
+      severity: created.severity,
+      actor: created.actor,
+      targetType: created.targetType,
+      targetId: created.targetId,
+      targetName: created.targetName,
+      message: created.message,
+    }]);
+  } catch (e) {
+    console.warn(`[Log Export] Real-time dispatch error: ${e}`);
+  }
 }
