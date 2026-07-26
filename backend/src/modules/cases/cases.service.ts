@@ -130,8 +130,8 @@ async function serializeCase(kase: PrismaCase, thresholds?: Record<string, { ack
     slaAckBreachNotifiedAt: kase.slaAckBreachNotifiedAt?.toISOString() ?? null,
     slaResolveBreachNotifiedAt: kase.slaResolveBreachNotifiedAt?.toISOString() ?? null,
     mitreTechniques: kase.mitreTechniques,
-    threatIntel: (kase.threatIntel as ThreatIntelResult[]) ?? [],
-    externalRefs: (kase.externalRefs as ExternalRef[]) ?? [],
+    threatIntel: (kase.threatIntel as unknown as ThreatIntelResult[]) ?? [],
+    externalRefs: (kase.externalRefs as unknown as ExternalRef[]) ?? [],
     notes: notes.map((n) => ({ id: n.id, authorEmail: n.authorEmail, text: n.text, createdAt: n.createdAt.toISOString() })),
     timeline: timeline.map((t) => ({ id: t.id, type: t.type, message: t.message, actor: t.actor, at: t.createdAt.toISOString() })),
     ...(thresholds ? { slaStatus: caseSlaStatus(kase, thresholds) } : {}),
@@ -141,7 +141,7 @@ async function serializeCase(kase: PrismaCase, thresholds?: Record<string, { ack
 export function caseToDispatchable(kase: PrismaCase): DispatchableCase {
   return {
     id: kase.id, title: kase.title, severity: kase.severity, status: kase.status, source: kase.source,
-    deviceName: kase.deviceName, policyName: kase.policyName, externalRefs: (kase.externalRefs as ExternalRef[]) ?? [],
+    deviceName: kase.deviceName, policyName: kase.policyName, externalRefs: (kase.externalRefs as unknown as ExternalRef[]) ?? [],
   };
 }
 
@@ -157,7 +157,7 @@ export async function dispatchAndAttachCaseEvent(workspaceSlug: string, caseId: 
 async function attachExternalRefs(caseId: string, refs: ExternalRef[]): Promise<void> {
   const kase = await prisma.case.findUnique({ where: { id: caseId } });
   if (!kase) return;
-  const existing = (kase.externalRefs as ExternalRef[]) ?? [];
+  const existing = (kase.externalRefs as unknown as ExternalRef[]) ?? [];
   await prisma.case.update({ where: { id: caseId }, data: { externalRefs: [...existing, ...refs] as any, updatedAt: new Date() } });
   for (const ref of refs) {
     await addCaseTimelineEntry(caseId, "note_added", `Ticket created: ${ref.type} ${ref.id}`);
@@ -179,7 +179,7 @@ async function autoEnrichCaseFromText(workspaceSlug: string, caseId: string, tex
 
   const kase = await prisma.case.findUnique({ where: { id: caseId } });
   if (!kase) return;
-  const existingIntel = (kase.threatIntel as ThreatIntelResult[]) ?? [];
+  const existingIntel = (kase.threatIntel as unknown as ThreatIntelResult[]) ?? [];
   const alreadyChecked = new Set(existingIntel.map((r) => (r.ioc ?? "").toLowerCase()));
   let added: ThreatIntelResult[] = [];
   let changed = false;
@@ -429,7 +429,7 @@ export async function retryCaseIntegrations(workspaceSlug: string, caseId: strin
 export async function syncCaseTicketStatus(workspaceSlug: string, caseId: string, actorEmail: string) {
   const kase = await prisma.case.findFirst({ where: { workspaceSlug, id: caseId } });
   if (!kase) throw new HttpError(404, "Case not found");
-  const refs = (kase.externalRefs as ExternalRef[]) ?? [];
+  const refs = (kase.externalRefs as unknown as ExternalRef[]) ?? [];
   if (!refs.some((r) => r.type === "jira" || r.type === "servicenow")) {
     throw new HttpError(400, "This case has no linked Jira or ServiceNow ticket to sync");
   }
@@ -504,7 +504,7 @@ export async function enrichCase(workspaceSlug: string, caseId: string, value: s
   const providerCount = await prisma.threatIntelProvider.count({ where: { workspaceSlug } });
   if (providerCount === 0) throw new HttpError(400, "No threat intel providers configured yet — add one under Settings > Threat Intel.");
 
-  const existingIntel = (kase.threatIntel as ThreatIntelResult[]) ?? [];
+  const existingIntel = (kase.threatIntel as unknown as ThreatIntelResult[]) ?? [];
   if (!forceRefresh) {
     const already = existingIntel.find((r) => (r.ioc ?? "").toLowerCase() === iocValue.toLowerCase());
     if (already) throw new HttpError(409, `'${iocValue}' was already checked on this case (${already.checkedAt ?? "earlier"}) — use force refresh to re-check.`);

@@ -47,7 +47,7 @@ export async function runTicketStatusSyncTick(): Promise<void> {
 
     const openCases = await prisma.case.findMany({ where: { workspaceSlug, status: { in: [...CASE_OPEN_STATUSES] } } });
     for (const kase of openCases) {
-      const refs = (kase.externalRefs as ExternalRef[]) ?? [];
+      const refs = (kase.externalRefs as unknown as ExternalRef[]) ?? [];
       if (!refs.some((r) => integrationsByType.has(r.type))) continue;
       try {
         const { refs: updatedRefs, newlyResolved } = await syncCaseTicketRefs(refs, integrationsByType);
