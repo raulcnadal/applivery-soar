@@ -6,6 +6,7 @@ import { refreshGdmfCatalog, GDMF_TICK_MS } from "../modules/catalogs/gdmfCatalo
 import { refreshMitreCatalog, MITRE_CATALOG_TICK_MS } from "../modules/catalogs/mitreCatalog";
 import { resumeDueWorkflowSteps } from "../modules/workflows/durableEngine";
 import { runScriptLogReconcilerTick, SCRIPT_RUN_RECONCILE_TICK_MS } from "../modules/workflows/scriptLogReconciler";
+import { CASE_SLA_MONITOR_TICK_MS, runCaseSlaMonitorTick, runTicketStatusSyncTick, TICKET_SYNC_TICK_MS } from "../modules/cases/caseJobs";
 
 /**
  * Background scheduler for the five GLOBAL intelligence catalogs (no
@@ -41,6 +42,8 @@ const JOBS: CatalogJob[] = [
   { jobKey: "catalog:mitre", tickMs: MITRE_CATALOG_TICK_MS, run: refreshMitreCatalog },
   { jobKey: "workflow_wait_resumer", tickMs: WORKFLOW_RESUMER_TICK_MS, run: () => resumeDueWorkflowSteps() },
   { jobKey: "script_log_reconciler", tickMs: SCRIPT_RUN_RECONCILE_TICK_MS, run: runScriptLogReconcilerTick },
+  { jobKey: "ticket_status_sync", tickMs: TICKET_SYNC_TICK_MS, run: runTicketStatusSyncTick },
+  { jobKey: "case_sla_monitor", tickMs: CASE_SLA_MONITOR_TICK_MS, run: runCaseSlaMonitorTick },
 ];
 
 // Stagger initial runs so five outbound HTTP calls don't fire in the same

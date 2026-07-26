@@ -7,6 +7,7 @@ import type { NormalizedDevice } from "../devices/deviceNormalize";
 import { getAutomationBearer } from "../settings/automationCredential.service";
 import { launchWorkflowRun } from "./workflows.service";
 import type { WorkflowDeviceRefPayload } from "./workflows.schemas";
+import { openCaseForTrigger } from "../cases/cases.service";
 
 /**
  * Inbound webhook Triggers — a self-contained URL external systems (EDR,
@@ -185,10 +186,15 @@ export async function fireTrigger(triggerId: string, secret: string, body: Recor
 
   await prisma.trigger.update({ where: { id: triggerId }, data: { lastFiredAt: new Date(), fireCount: { increment: 1 } } });
 
-  // TODO(Phase5): Cases don't exist yet — the original opens/reuses a Case
-  // here when trigger.openCase is set (source="workflow_trigger", linked to
-  // this run's id). caseId is always null until Phase 5 lands.
-  const caseId: string | null = null;
+  // Opens a Case (source="workflow_trigger") when this trigger is configured
+  // to — port of the case-opening block inside `fire_trigger` (main.py:12873-12896).
+  let caseId: string | null = null;
+  if (trigger.openCase) {
+    caseId = await openCaseForTrigger(
+      slugKey, trigger.name, workflow.name, runRecord.id, trigger.caseSeverity,
+      matchedDevice ? { id: matchedDevice.id, displayName: matchedDevice.displayName, segmentId: matchedDevice.segmentId } : null,
+    );
+  }
 
   await recordAuditEvent(slugKey, {
     category: "trigger", action: "trigger_fired", actor: "external",

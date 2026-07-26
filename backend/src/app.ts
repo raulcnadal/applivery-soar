@@ -20,6 +20,9 @@ import { scriptAssetsRouter } from "./modules/workflows/scriptAssets.controller"
 import { scriptReposRouter } from "./modules/workflows/scriptRepos.controller";
 import { firewallRuleSetsRouter } from "./modules/workflows/firewallRuleSets.controller";
 import { triggersRouter } from "./modules/workflows/triggers.controller";
+import { casesRouter } from "./modules/cases/cases.controller";
+import { integrationsRouter } from "./modules/integrations/integrations.controller";
+import { threatIntelRouter } from "./modules/threatIntel/threatIntel.controller";
 
 export function createApp() {
   const app = express();
@@ -47,9 +50,9 @@ export function createApp() {
   app.use(scriptReposRouter);
   app.use(firewallRuleSetsRouter);
   app.use(triggersRouter);
-
-  // Phase 5+ modules mount their routers here as they're built:
-  // app.use(casesRouter); ...
+  app.use(casesRouter);
+  app.use(integrationsRouter);
+  app.use(threatIntelRouter);
 
   // Static frontend serving, mirroring the original single-image pattern
   // (ARCHITECTURE.md §2.1): serve Vue's built dist/, catch-all to

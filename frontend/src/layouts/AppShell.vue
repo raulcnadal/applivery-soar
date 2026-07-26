@@ -17,6 +17,8 @@ const navItems = [
   { id: "devices", label: "Devices" },
   { id: "compliance", label: "Compliance" },
   { id: "workflows", label: "Workflows" },
+  { id: "cases", label: "Cases" },
+  { id: "settings", label: "Settings" },
 ];
 
 const activeId = computed(() => (typeof route.name === "string" ? route.name : "overview"));

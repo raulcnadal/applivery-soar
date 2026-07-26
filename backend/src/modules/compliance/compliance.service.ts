@@ -10,6 +10,7 @@ import { appListScopedDeviceIds, readInstalledAppsFromStore } from "../appLists/
 import { getWorkflowRun, launchWorkflowRun, workflowHasDestructiveStep } from "../workflows/workflows.service";
 import type { WorkflowDeviceRefPayload } from "../workflows/workflows.schemas";
 import type { CompliancePolicyPayload } from "./compliance.schemas";
+import { addCaseTimelineEntry, dispatchAndAttachCaseEvent, markCaseRecovered, upsertCaseForViolation } from "../cases/cases.service";
 
 /**
  * CompliancePolicy CRUD + the shared evaluation engine — port of
@@ -18,14 +19,11 @@ import type { CompliancePolicyPayload } from "./compliance.schemas";
  * (main.py:11429-11599, `_approve_violation_core`/`_dismiss_violation_core`
  * and their single/bulk endpoints).
  *
- * Workflow execution (Phase 4) and Case management (Phase 5) don't exist
- * yet in this migration. Rather than fake their behavior, this file queries
- * the REAL (currently-empty) Workflow/Case Prisma tables — so a policy's
- * `workflowId` never resolves to anything yet, which naturally reproduces
- * the original's own "no_workflow" / "Linked workflow no longer exists"
- * codepaths rather than approximating them. `caseId` is always left null
- * with a TODO(Phase5) marker. This is the same code path the original takes
- * once Phase 4/5 land — not a stand-in for it.
+ * Case Management (Phase 5) is wired in: `openCaseOnViolation`/
+ * `autoResolveCaseOnRecovery` drive `upsertCaseForViolation`/
+ * `markCaseRecovered` inline in the per-device loop, and Ticketing/Chat
+ * integrations for any Case that opened/reopened/closed this pass are
+ * dispatched once the whole pass finishes (see `caseNotifyEvents` below).
  */
 
 // ── Bounds/constants (main.py:10806-10815, 10972, 6620) ──
@@ -349,6 +347,11 @@ export async function runComplianceEvaluation(
   const auditEvents: Array<{ category: string; action: string; actor?: string | null; targetType?: string; targetId?: string; targetName?: string; message: string; severity?: string }> = [];
   const markerActions: MarkerAction[] = [];
   const newViolationRows: Array<Parameters<typeof prisma.complianceViolation.create>[0]["data"]> = [];
+  // Cases/Integrations dispatch is deferred until the whole pass finishes
+  // (see the loop after "await saveComplianceState" below) — dispatching
+  // real HTTP calls per device inline would defeat the point of batching.
+  // Port of `case_notify_events` (main.py:11073 and its dispatch loop).
+  const caseNotifyEvents: Array<{ caseId: string; eventType: "created" | "reopened" | "closed" }> = [];
   let policiesChanged = false;
 
   for (const policy of policies) {
@@ -396,7 +399,8 @@ export async function runComplianceEvaluation(
       const matched = policyViolated(device, { conditions: (policy.conditions as any[]) ?? [], conditionLogic: policy.conditionLogic }, appLists);
 
       if (!matched.length) {
-        if (state[key]) {
+        const suppressed = state[key];
+        if (suppressed) {
           delete state[key];
           summary.recovered += 1;
           policyRecovered += 1;
@@ -407,7 +411,8 @@ export async function runComplianceEvaluation(
             targetType: "device", targetId: device.id, targetName: device.displayName,
             message: `${device.displayName} recovered from "${policy.name}"`,
           });
-          // TODO(Phase5): Case auto-resolve-on-recovery isn't wired yet — Cases don't exist.
+          const recovery = await markCaseRecovered(workspaceSlug, suppressed.violationId, Boolean(policy.autoResolveCaseOnRecovery));
+          if (recovery?.notifyEvent) caseNotifyEvents.push({ caseId: recovery.caseId, eventType: recovery.notifyEvent });
         }
         continue;
       }
@@ -422,6 +427,22 @@ export async function runComplianceEvaluation(
 
       const escalated = Boolean(escalatedWorkflow) && (RISK_TIER_RANK[device.riskTier ?? "low"] ?? 0) >= escalatedMinRank;
       const effectiveWorkflow = escalated ? escalatedWorkflow : workflow;
+
+      // Opens (or reuses/reopens) a Case the moment this policy is newly
+      // violated — off for policies with openCaseOnViolation=false. Port of
+      // `record["caseId"] = _upsert_case_for_violation_inmem(...) if policy.get('openCaseOnViolation', True) else None`
+      // (main.py:11207).
+      let caseId: string | null = null;
+      if (policy.openCaseOnViolation) {
+        const upserted = await upsertCaseForViolation(
+          workspaceSlug,
+          { id: policy.id, name: policy.name, severity: policy.severity, mitreTechniques: policy.mitreTechniques ?? [] },
+          { id: device.id, displayName: device.displayName, segmentId: (device as any).segmentId },
+          violationId,
+        );
+        caseId = upserted.caseId;
+        if (upserted.notifyEvent) caseNotifyEvents.push({ caseId: upserted.caseId, eventType: upserted.notifyEvent });
+      }
 
       let status: string;
       let workflowRunId: string | null = null;
@@ -470,7 +491,10 @@ export async function runComplianceEvaluation(
             targetType: "device", targetId: device.id, targetName: device.displayName,
             message: `${device.displayName} violated "${policy.name}" — auto-ran "${effectiveWorkflow.name}"${escalationNote}`,
           });
-          // TODO(Phase5): Case timeline linking isn't wired yet — Cases don't exist.
+          if (caseId) {
+            await prisma.case.update({ where: { id: caseId }, data: { workflowRunIds: { push: runRecord.id }, updatedAt: new Date(nowIso) } });
+            await addCaseTimelineEntry(caseId, "workflow_run_linked", `Auto-ran "${effectiveWorkflow.name}" (policy autoRun is on)${escalationNote}`);
+          }
         }
       } else if (!workflow) {
         status = "no_workflow";
@@ -507,8 +531,7 @@ export async function runComplianceEvaluation(
         resolvedAt: null,
         status,
         severity: policy.severity || "medium",
-        // TODO(Phase5): Cases don't exist yet — openCaseOnViolation has no effect until then.
-        caseId: null,
+        caseId,
       });
       state[key] = { violationId, status, lastDetectedAt: nowIso };
     }
@@ -531,6 +554,19 @@ export async function runComplianceEvaluation(
     await Promise.all(auditEvents.map((e) => recordAuditEvent(workspaceSlug, e)));
   }
   void policiesChanged; // per-policy circuit-breaker trips are already persisted individually above
+
+  // Now that the whole pass has finished, dispatch Ticketing/Chat
+  // integrations for every Case that newly opened/reopened/closed this pass
+  // — deliberately deferred from the per-device loop above (real HTTP calls
+  // per device would defeat the point of batching). Port of the
+  // `case_notify_events` dispatch loop (main.py, after `_save_cases`).
+  for (const { caseId, eventType } of caseNotifyEvents) {
+    try {
+      await dispatchAndAttachCaseEvent(workspaceSlug, caseId, eventType);
+    } catch (e) {
+      console.error(`[Compliance] Case integration dispatch failed for case ${caseId}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
 
   // Pass 2 — dispatch marker writes, bounded concurrency across devices;
   // each device's own actions still run in order (read-modify-write safety).
@@ -641,7 +677,10 @@ export async function approveViolationCore(violationId: string, workspaceSlug: s
     state[key].status = "approved";
     await saveComplianceState(workspaceSlug, state);
   }
-  // TODO(Phase5): Cases don't exist yet — the original notes the remediation run on the linked Case's timeline here.
+  if (violation.caseId) {
+    await prisma.case.update({ where: { id: violation.caseId }, data: { workflowRunIds: { push: runRecord.id }, updatedAt: new Date() } });
+    await addCaseTimelineEntry(violation.caseId, "workflow_run_linked", `Violation approved by ${actorEmail} — ran "${workflow.name}"`, actorEmail);
+  }
   return updated;
 }
 
@@ -680,7 +719,9 @@ export async function dismissViolationCore(violationId: string, workspaceSlug: s
     state[key].status = "dismissed";
     await saveComplianceState(workspaceSlug, state);
   }
-  // TODO(Phase5): Cases don't exist yet — the original notes the dismissal on the linked Case's timeline here.
+  if (violation.caseId) {
+    await addCaseTimelineEntry(violation.caseId, "note_added", `Violation dismissed by ${actorEmail} — remediation not run`, actorEmail);
+  }
   return updated;
 }
 

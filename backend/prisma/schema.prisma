@@ -316,63 +316,101 @@ model Trigger {
   @@index([workspaceSlug])
 }
 
+// The incident layer above raw Compliance Violations — port of main.py's
+// CASE MANAGEMENT section (main.py:11779-12360ish). A Case survives across
+// repeated detections of the same underlying problem and carries its own
+// investigative status independent of whether remediation already ran.
+// Three sources: 'compliance_violation' (auto-opened by
+// upsertCaseForViolation), 'workflow_trigger' (opened by fireTrigger when
+// openCase=true), 'manual' (POST /api/cases).
 model Case {
-  id                String    @id @default(uuid())
-  workspaceSlug     String
-  title             String
-  status            String    @default("open")
-  severity          String    @default("medium")
-  deviceId          String?
-  deviceName        String?
-  assignee          String?
-  mitreTechniques   String[]
-  source            String
-  slaAcknowledgedAt DateTime?
-  slaResolvedAt     DateTime?
-  slaBreached       Boolean   @default(false)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id             String  @id @default(uuid())
+  workspaceSlug  String
+  title          String
+  status         String  @default("open") // open | investigating | resolved | closed | false_positive
+  severity       String  @default("medium")
+  source         String // compliance_violation | workflow_trigger | manual
+  deviceId       String?
+  deviceName     String?
+  segmentId      String?
+  policyId       String?
+  policyName     String?
+  violationIds   String[] @default([])
+  workflowRunIds String[] @default([])
+  assignee       String?
+  createdBy      String?
+  closedAt       DateTime?
+  // SLA tracking — see CaseSlaSettings/_case_sla_status. acknowledgedAt is
+  // set the first time a case gets an assignee OR moves to 'investigating'.
+  // slaClockStartedAt anchors the SLA window and resets on every reopen
+  // (recurrence is a fresh incident from an SLA standpoint); createdAt never
+  // changes, preserving the case's original open date for history.
+  acknowledgedAt             DateTime?
+  slaClockStartedAt          DateTime  @default(now())
+  slaAckBreachNotifiedAt     DateTime?
+  slaResolveBreachNotifiedAt DateTime?
+  mitreTechniques String[] @default([])
+  // Threat intel lookups run against IOCs on this case (see
+  // POST /api/cases/{id}/enrich) — array of {id,ioc,iocType,provider,
+  // providerType,verdict,score,detail,link,checkedAt,checkedBy,cached}.
+  threatIntel Json @default("[]")
+  // Ticket links created by Integrations dispatch — array of
+  // {type,id,url,sysId?,remoteStatus?,remoteResolved?,remoteStatusCheckedAt?,remoteStatusError?}.
+  externalRefs Json @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   notes    CaseNote[]
-  activity CaseActivity[]
+  timeline CaseTimelineEntry[]
 
   @@index([workspaceSlug, status])
+  @@index([workspaceSlug, policyId, deviceId])
 }
 
 model CaseNote {
+  id          String   @id @default(uuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  authorEmail String?
+  text        String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([caseId])
+}
+
+// Port of `_case_timeline_entry` (main.py:11816) — one row per timeline
+// event instead of a JSON array field, so a case with a long history doesn't
+// require rewriting its entire timeline blob on every single append.
+model CaseTimelineEntry {
   id        String   @id @default(uuid())
   caseId    String
-  case      Case     @relation(fields: [caseId], references: [id])
-  text      String   @db.Text
-  author    String
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type      String // created | status_changed | severity_changed | note_added | violation_linked | workflow_run_linked | assigned | reopened | device_recovered | sla_breached
+  message   String   @db.Text
+  actor     String?
   createdAt DateTime @default(now())
 
   @@index([caseId])
 }
 
-model CaseActivity {
-  id        String   @id @default(uuid())
-  caseId    String
-  case      Case     @relation(fields: [caseId], references: [id])
-  type      String
-  detail    Json
-  createdAt DateTime @default(now())
-
-  @@index([caseId])
-}
-
+// Closes the gap that manually-created Cases had no unattended auto-fire
+// path (unlike Compliance Policy autoRun and Inbound Triggers). Evaluated
+// once, at creation time only. Port of main.py:12461-12651.
 model CaseAutoRunRule {
   id                    String   @id @default(uuid())
   workspaceSlug         String
   name                  String
   enabled               Boolean  @default(true)
   minSeverity           String   @default("high")
-  mitreTechniques       String[]
+  mitreTechniques       String[] @default([])
   workflowId            String
   autoRunDestructiveAck Boolean  @default(false)
   maxFiresPerHour       Int      @default(10)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  // Rolling 1-hour rate-limit window — array of ISO timestamps, capped to
+  // the last 200 on write. Port of `rule.recentFires`.
+  recentFires Json @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([workspaceSlug])
 }
@@ -389,31 +427,43 @@ model CaseSlaSettings {
 // Integrations, Threat Intel, Applivery inbound webhook
 // ────────────────────────────────────────────────────────────────
 
+// Port of main.py:13275-13413 (IntegrationPayload/CRUD). config's secret
+// sub-field(s) (webhookUrl/url/apiToken/password/routingKey/apiKey,
+// depending on `type`) are Fernet-encrypted at rest by integrations.service.ts,
+// mirroring _encrypt_integration_config/_decrypt_integration_config.
 model Integration {
-  id                           String   @id @default(uuid())
+  id                           String    @id @default(uuid())
   workspaceSlug                String
   name                         String
-  type                         String
-  enabled                      Boolean  @default(true)
-  notifyOnOpen                 Boolean  @default(true)
-  notifyOnClose                Boolean  @default(false)
-  minSeverity                  String   @default("low")
-  autoCloseCaseOnRemoteResolve Boolean  @default(false)
-  pageOnSystemHealthAlert      Boolean  @default(false)
+  type                         String // slack | teams | discord | jira | servicenow | generic_webhook | pagerduty | opsgenie
+  enabled                      Boolean   @default(true)
+  notifyOnOpen                 Boolean   @default(true)
+  notifyOnClose                Boolean   @default(false)
+  minSeverity                  String    @default("low")
+  autoCloseCaseOnRemoteResolve Boolean   @default(false)
+  notifyOnSystemHealth         Boolean   @default(false)
   config                       Json
-  createdAt                    DateTime @default(now())
-  updatedAt                    DateTime @updatedAt
+  createdBy                    String?
+  lastFiredAt                  DateTime?
+  fireCount                    Int       @default(0)
+  lastError                    String?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
 
   @@index([workspaceSlug])
 }
 
+// Port of main.py:13965-14000 (ThreatIntelProviderPayload/CRUD). config's
+// apiKey (virustotal/abuseipdb/hibp only — generic_rest has no single secret
+// field) is Fernet-encrypted at rest, mirroring _encrypt_threat_intel_config.
 model ThreatIntelProvider {
   id            String   @id @default(uuid())
   workspaceSlug String
   name          String
-  type          String
+  type          String // virustotal | abuseipdb | hibp | generic_rest
   enabled       Boolean  @default(true)
   config        Json
+  createdBy     String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

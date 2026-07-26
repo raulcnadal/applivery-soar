@@ -139,6 +139,11 @@ export const MITRE_TECHNIQUES: MitreTechnique[] = [
 ];
 const MITRE_TECHNIQUES_BY_ID = new Map(MITRE_TECHNIQUES.map((t) => [t.id, t]));
 
+/** Whether `id` is a known MITRE ATT&CK technique in this catalog — used to filter Case.mitreTechniques on save (main.py's `_MITRE_TECHNIQUES_BY_ID` membership check). */
+export function isKnownMitreTechnique(id: string): boolean {
+  return MITRE_TECHNIQUES_BY_ID.has(id);
+}
+
 /** Port of `_suggest_mitre_techniques_for_conditions` (main.py:9925). */
 export function suggestMitreTechniquesForConditions(conditions: Array<Record<string, any>>): Array<Record<string, any>> {
   const suggestions = new Map<string, Record<string, any>>();
