@@ -14,6 +14,7 @@ import { checkSystemHealthAndAlert } from "../modules/systemHealth/systemHealth.
 import { runReportSchedulerTick, runSnapshotSchedulerTick, REPORT_SCHEDULER_TICK_MS, SNAPSHOT_SCHEDULER_TICK_MS } from "../modules/analytics/analyticsJobs";
 import { runComplianceSchedulerTick, COMPLIANCE_SCHEDULER_TICK_MS } from "../modules/compliance/complianceJobs";
 import { runInstalledAppsRefresherTick, INSTALLED_APPS_REFRESH_TICK_MS } from "../modules/appLists/installedAppsJobs";
+import { isQueueBackedJobsEnabled, registerRepeatableJobs, startBackgroundJobWorker, stopBackgroundJobQueue } from "../queue/backgroundQueue";
 
 /**
  * Background scheduler for the five GLOBAL intelligence catalogs (no
@@ -42,6 +43,16 @@ import { runInstalledAppsRefresherTick, INSTALLED_APPS_REFRESH_TICK_MS } from ".
  * installedAppsJobs.ts). Their manual/on-demand equivalents (using the
  * calling admin's live session) were already wired through their respective
  * controllers since Phase 3.
+ *
+ * Post-migration scale review: with REDIS_URL configured, every job below
+ * instead runs as a BullMQ repeatable job (queue/backgroundQueue.ts) so
+ * exactly one instance of each job runs cluster-wide even with multiple
+ * backend replicas — N plain setInterval loops across N replicas would each
+ * fire independently, double/triple/N-tuple-firing the compliance
+ * evaluator, workflow resumer, ticket sync, etc. Without REDIS_URL (the
+ * default — a single-replica deployment needs no extra infrastructure),
+ * this falls back to the original in-process setInterval behavior
+ * unchanged.
  */
 
 interface CatalogJob {
@@ -94,8 +105,19 @@ async function runJobOnce(job: CatalogJob): Promise<void> {
   }
 }
 
-/** Call once at process startup (server.ts). Idempotent-ish: calling twice just double-schedules, so guard at the call site if that ever matters. */
+/**
+ * Call once at process startup (server.ts). Idempotent-ish: calling twice
+ * on the in-process fallback just double-schedules (guard at the call site
+ * if that ever matters); calling twice on the queue-backed path is safe —
+ * registerRepeatableJobs() dedupes by jobId and starting a second Worker on
+ * the same queue is exactly the multi-replica case this exists for.
+ */
 export function startBackgroundJobs(): void {
+  if (isQueueBackedJobsEnabled()) {
+    void registerRepeatableJobs(JOBS).then(() => startBackgroundJobWorker(JOBS));
+    return;
+  }
+
   JOBS.forEach((job, index) => {
     const initialDelay = STARTUP_STAGGER_MS * (index + 1);
     const kickoff = setTimeout(() => {
@@ -109,6 +131,9 @@ export function startBackgroundJobs(): void {
 
 /** For graceful shutdown / tests. */
 export function stopBackgroundJobs(): void {
+  if (isQueueBackedJobsEnabled()) {
+    void stopBackgroundJobQueue();
+  }
   for (const t of timers) clearTimeout(t as unknown as NodeJS.Timeout);
   timers.length = 0;
 }

@@ -48,4 +48,14 @@ export const env = {
   // anyway). The Docker image installs the `chromium` apk package and sets
   // this to its path; local dev can point it at any installed Chrome/Chromium.
   puppeteerExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH ?? "",
+
+  // Optional — when set, background jobs (jobs/backgroundJobs.ts) run as
+  // BullMQ repeatable jobs backed by this Redis instance instead of
+  // in-process setInterval loops, so exactly one instance of each job runs
+  // cluster-wide even with multiple backend replicas (needed once the app
+  // is scaled horizontally for a large device fleet — see
+  // queue/backgroundQueue.ts). Left unset, the app falls back to the
+  // original single-process setInterval behavior, which is fine for a
+  // single-replica deployment and needs no extra infrastructure.
+  redisUrl: process.env.REDIS_URL ?? "",
 };
