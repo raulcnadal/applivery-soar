@@ -29,6 +29,9 @@ import { deviceReportScriptsRouter } from "./modules/settings/deviceReportScript
 import { configRouter } from "./modules/config/config.controller";
 import { systemHealthRouter } from "./modules/systemHealth/systemHealth.controller";
 import { appliveryWebhookSettingsRouter } from "./modules/settings/appliveryWebhookSettings.controller";
+import { analyticsRouter } from "./modules/analytics/analytics.controller";
+import { dashboardStateRouter } from "./modules/analytics/dashboardState.controller";
+import { reportsRouter } from "./modules/reports/reports.controller";
 
 export function createApp() {
   const app = express();
@@ -65,6 +68,9 @@ export function createApp() {
   app.use(configRouter);
   app.use(systemHealthRouter);
   app.use(appliveryWebhookSettingsRouter);
+  app.use(analyticsRouter);
+  app.use(dashboardStateRouter);
+  app.use(reportsRouter);
 
   // Static frontend serving, mirroring the original single-image pattern
   // (ARCHITECTURE.md §2.1): serve Vue's built dist/, catch-all to

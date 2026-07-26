@@ -14,10 +14,12 @@ const router = useRouter();
 
 const navItems = [
   { id: "overview", label: "Overview" },
+  { id: "playground", label: "Playground" },
   { id: "devices", label: "Devices" },
   { id: "compliance", label: "Compliance" },
   { id: "workflows", label: "Workflows" },
   { id: "cases", label: "Cases" },
+  { id: "reporting", label: "Reporting" },
   { id: "audit-logs", label: "Audit Logs" },
   { id: "settings", label: "Settings" },
 ];

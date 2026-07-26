@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { prisma } from "./prisma";
+import { decryptSmtpConfig } from "./smtpConfig";
 
 /**
  * Best-effort email alert using the workspace's SMTP config (Settings >
@@ -12,7 +13,7 @@ import { prisma } from "./prisma";
 export async function sendAlertEmail(workspaceSlug: string, subject: string, bodyText: string): Promise<void> {
   try {
     const state = await prisma.workspaceState.findUnique({ where: { workspaceSlug } });
-    const smtpConfig = (state?.smtpConfig as Record<string, any>) ?? {};
+    const smtpConfig = decryptSmtpConfig(state?.smtpConfig as Record<string, any>) ?? {};
     const recipients: string | undefined = smtpConfig.alertRecipients;
     if (!smtpConfig.host || !smtpConfig.user || !recipients) return;
 

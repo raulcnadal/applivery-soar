@@ -58,6 +58,15 @@ model AutomationCredential {
 
 model WorkspaceState {
   workspaceSlug                     String   @id
+  // Opaque grid-layout blob ({widgets:[...], layout:[...]}) — the ACTUAL
+  // Overview dashboard persistence mechanism (port of main.py's `dashboard`
+  // StatePayload field). Note this is entirely separate from the
+  // `WidgetLayout` model below, which backs the *other*, disused
+  // `/api/layout` endpoint — the original frontend never calls that one;
+  // every real dashboard save goes through POST /api/state's `dashboard`
+  // field instead. Preserved as two separate mechanisms here for the same
+  // reason: faithful port of a pre-existing quirk, not "fixed".
+  dashboard                         Json?
   themeMode                         String?
   webhookUrl                        String?
   smtpConfig                        Json?

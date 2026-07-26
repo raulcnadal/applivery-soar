@@ -32,4 +32,12 @@ export const env = {
   triggerSecret: process.env.TRIGGER_SECRET ?? "",
 
   corsOrigins: (process.env.CORS_ORIGINS ?? "*").split(",").map((s) => s.trim()),
+
+  // Report generation's Puppeteer PDF pipeline (Phase 7) needs a real
+  // Chromium binary — puppeteer-core ships no bundled browser (deliberately,
+  // to avoid an unreliable/large download at npm-install time, especially
+  // under Alpine's musl libc, which the bundled Chromium doesn't support
+  // anyway). The Docker image installs the `chromium` apk package and sets
+  // this to its path; local dev can point it at any installed Chrome/Chromium.
+  puppeteerExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH ?? "",
 };

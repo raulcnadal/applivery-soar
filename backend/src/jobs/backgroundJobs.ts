@@ -11,6 +11,7 @@ import { CASE_SLA_MONITOR_TICK_MS, runCaseSlaMonitorTick, runTicketStatusSyncTic
 import { rotateAuditLogsForAllWorkspaces } from "../modules/auditLogs/auditLogs.service";
 import { runLogExportSchedulerTick } from "../modules/settings/logExportDestinations.service";
 import { checkSystemHealthAndAlert } from "../modules/systemHealth/systemHealth.service";
+import { runReportSchedulerTick, runSnapshotSchedulerTick, REPORT_SCHEDULER_TICK_MS, SNAPSHOT_SCHEDULER_TICK_MS } from "../modules/analytics/analyticsJobs";
 
 /**
  * Background scheduler for the five GLOBAL intelligence catalogs (no
@@ -26,6 +27,11 @@ import { checkSystemHealthAndAlert } from "../modules/systemHealth/systemHealth.
  * instead), system health alert monitor, and the Vulnerability Service
  * per-workspace refresher (now that Automation Credentials exist to drive
  * it unattended).
+ *
+ * Phase 7 adds: the daily analytics snapshot capture (every automation
+ * workspace, port of snapshot_scheduler_loop) and the scheduled-report
+ * delivery tick (port of report_scheduler_loop) — both now that the widget
+ * engine and Puppeteer PDF pipeline exist to drive them unattended.
  *
  * Explicitly still NOT started here (both are per-workspace and need
  * subsystems this migration hasn't reached yet):
@@ -60,6 +66,8 @@ const JOBS: CatalogJob[] = [
   { jobKey: "log_export_scheduler", tickMs: LOG_EXPORT_SCHEDULER_TICK_MS, run: runLogExportSchedulerTick },
   { jobKey: "system_health_monitor", tickMs: SYSTEM_HEALTH_MONITOR_TICK_MS, run: checkSystemHealthAndAlert },
   { jobKey: "vuln_service_refresh", tickMs: VULN_SERVICE_TICK_MS, run: runVulnServiceRefresherTick },
+  { jobKey: "snapshot_scheduler", tickMs: SNAPSHOT_SCHEDULER_TICK_MS, run: runSnapshotSchedulerTick },
+  { jobKey: "report_scheduler", tickMs: REPORT_SCHEDULER_TICK_MS, run: runReportSchedulerTick },
 ];
 
 // Stagger initial runs so five outbound HTTP calls don't fire in the same

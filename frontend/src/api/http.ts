@@ -14,7 +14,13 @@ api.interceptors.request.use((config) => {
   if (auth.dashboardToken) {
     config.headers["X-Dashboard-Token"] = auth.dashboardToken;
   }
-  if (auth.orgSlug) {
+  // Only default this from the session — NOT overwrite it — so callers can
+  // explicitly pin `X-Workspace-Slug: 'global'` for /api/state and
+  // /api/layout, exactly like the original frontend's own hardcoded header
+  // override on those two endpoints (see dashboardState.controller.ts's
+  // module doc: that pair is deliberately shared across every workspace,
+  // not scoped to whichever org is currently selected).
+  if (auth.orgSlug && !config.headers["X-Workspace-Slug"]) {
     config.headers["X-Workspace-Slug"] = auth.orgSlug;
   }
   if (auth.apiToken) {

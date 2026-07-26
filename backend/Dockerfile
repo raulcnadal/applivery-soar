@@ -47,6 +47,22 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app/backend
 
+# Puppeteer PDF report generation (Phase 7) needs a real Chromium — the
+# bundled binary puppeteer-core would otherwise download isn't musl-libc
+# compatible with Alpine anyway, so this uses puppeteer-core (no bundled
+# download) plus Alpine's own `chromium` apk package instead. The extra
+# libs are Chromium's own runtime dependencies under Alpine (same set
+# documented by the Puppeteer troubleshooting guide for Alpine images).
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 ENV NODE_ENV=production
 COPY backend/package*.json ./
 RUN npm install --omit=dev
@@ -59,6 +75,9 @@ COPY --from=backend-builder /app/backend/prisma ./prisma
 # Webhook (settings/deviceReportScripts.controller.ts) — not compiled, so
 # they need an explicit copy alongside dist rather than riding along with it.
 COPY --from=backend-builder /app/backend/scripts ./scripts
+# Vendored Chart.js UMD bundle, inlined into every generated report's HTML
+# so PDF rendering needs no network access at runtime (reports/reportTemplate.ts).
+COPY --from=backend-builder /app/backend/assets ./assets
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 EXPOSE 8000

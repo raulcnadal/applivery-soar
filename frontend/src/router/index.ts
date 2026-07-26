@@ -12,14 +12,14 @@ const router = createRouter({
   routes: [
     { path: "/login", name: "login", component: () => import("../views/LoginView.vue") },
     { path: "/", name: "overview", component: () => import("../views/OverviewView.vue") },
+    { path: "/playground", name: "playground", component: () => import("../views/PlaygroundView.vue") },
     { path: "/devices", name: "devices", component: () => import("../views/DevicesView.vue") },
     { path: "/compliance", name: "compliance", component: () => import("../views/ComplianceView.vue") },
     { path: "/workflows", name: "workflows", component: () => import("../views/WorkflowsView.vue") },
     { path: "/cases", name: "cases", component: () => import("../views/CasesView.vue") },
+    { path: "/reporting", name: "reporting", component: () => import("../views/ReportingView.vue") },
     { path: "/audit-logs", name: "audit-logs", component: () => import("../views/AuditLogsView.vue") },
     { path: "/settings", name: "settings", component: () => import("../views/SettingsView.vue") },
-    // Phase 7+ adds: /playground, /reporting — one route per top-level view
-    // in the original app's top nav (ARCHITECTURE.md §1.4).
   ],
 });
 
