@@ -80,13 +80,23 @@ const appliveryWebhookConfigHandler: StoreHandler = {
     const bundle = (data as { config?: Record<string, any>; rules?: Record<string, any>[] }) ?? {};
     if (bundle.config) {
       const { workspaceSlug: _w, updatedAt: _u, ...rest } = bundle.config;
+      // `rest` is a Record<string, any> destructured from a Json-shaped
+      // payload — spreading it into a Prisma create/update input loses its
+      // index-signature properties under the real generated client's
+      // stricter object-literal inference (TS only carries named
+      // properties through a spread, not a source type's index signature),
+      // so the compiler sees only `{ workspaceSlug }` and flags every
+      // required field (secret, actionKey, ...) as missing. Bridging
+      // through `any` here is the same "writes use `as any`" convention
+      // already established for Json-field writes elsewhere in this
+      // codebase (see cases.service.ts).
       await prisma.appliveryWebhookConfig.upsert({
-        where: { workspaceSlug }, create: { workspaceSlug, ...rest }, update: { ...rest },
+        where: { workspaceSlug }, create: { workspaceSlug, ...rest } as any, update: { ...rest } as any,
       });
     }
     await prisma.appliveryWebhookRule.deleteMany({ where: { workspaceSlug } });
     if (bundle.rules?.length) {
-      await prisma.appliveryWebhookRule.createMany({ data: bundle.rules.map((r) => ({ ...r, workspaceSlug })) });
+      await prisma.appliveryWebhookRule.createMany({ data: bundle.rules.map((r) => ({ ...r, workspaceSlug })) as any });
     }
   },
 };
