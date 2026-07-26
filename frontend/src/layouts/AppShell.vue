@@ -55,6 +55,17 @@ const activeId = computed(() => (typeof route.name === "string" ? route.name : "
 function onNavigate(id: string) {
   router.push({ name: id });
 }
+
+// Same reasoning as handleSwitchOrganization elsewhere — a full reload after
+// a config clone is the simplest way to guarantee every store re-fetches
+// against the now-populated workspace. Kept as a named method (rather than
+// an inline template arrow function referencing `window`) since vue-tsc's
+// template type-checker doesn't resolve globals inside template
+// expressions the way plain <script> code can.
+function onCloned() {
+  isOnboardingModalOpen.value = false;
+  window.location.reload();
+}
 </script>
 
 <template>
@@ -69,7 +80,7 @@ function onNavigate(id: string) {
     <WorkspaceOnboardingModal
       v-if="isOnboardingModalOpen"
       @close="isOnboardingModalOpen = false"
-      @cloned="() => { isOnboardingModalOpen = false; window.location.reload(); }"
+      @cloned="onCloned"
     />
   </div>
 </template>
