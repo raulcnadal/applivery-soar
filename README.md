@@ -63,12 +63,12 @@ Postgres backs exactly one feature: a workflow's `wait` and `run_script_wait` st
 
 ### Building without the bundled Postgres service
 
-If you already run Postgres elsewhere, drop the `applivery-big-picture-db` service and `db-network` from `docker-compose.yml`, and set `DATABASE_URL` on the app service to point at your own instance. Everything else is unchanged.
+If you already run Postgres elsewhere, drop the `applivery-soar-legacy-db` service and `db-network` from `docker-compose.yml`, and set `DATABASE_URL` on the app service to point at your own instance. Everything else is unchanged.
 
 ### Building the image manually
 
 ```bash
-docker build -t applivery-big-picture .
+docker build -t applivery-soar-legacy .
 ```
 
 The `Dockerfile` is a two-stage build: Stage 1 (`node:20-alpine`) builds the React frontend (`wow-dashboard/`) with `npm install && npm run build`; Stage 2 (`python:3.11-slim`) installs the Python backend's system dependencies (WeasyPrint's Cairo/Pango libraries, needed for [Reporting](docs/reporting.md)'s PDF generation), installs from the **root `requirements.txt`** (not `big-picture-api/requirements.txt` — the latter is a secondary/local copy for editor tooling that must be kept in sync, see the comment at the top of the root file), copies in `main.py`/`template.html`/`scripts/`, and copies the Stage 1 build output into `./dist`. The final image runs `uvicorn main:app --host 0.0.0.0 --port 8000`, serving the built frontend as static files from the same process.
