@@ -18,7 +18,9 @@ services:
     environment:
       - DASHBOARD_SECRET=${DASHBOARD_SECRET}
       - DATABASE_URL=postgresql://soar:${POSTGRES_PASSWORD}@soar-db:5432/soar?schema=public
-      - APPLIVERY_API_URL=${APPLIVERY_API_URL:-https://api.applivery.com}
+      - APPLIVERY_API_URL=${APPLIVERY_API_URL:-https://api.applivery.io/v1}
+      - APPLIVERY_RATE_LIMIT_PER_HOUR=${APPLIVERY_RATE_LIMIT_PER_HOUR:-10000}
+      - APPLIVERY_RATE_LIMIT_BURST=${APPLIVERY_RATE_LIMIT_BURST:-100}
       - TRIGGER_SECRET=${TRIGGER_SECRET:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
     depends_on:

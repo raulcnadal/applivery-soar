@@ -25,6 +25,14 @@ export const env = {
   // ("https://api.applivery.io/v1"), not the guessed .com host from Phase 0.
   appliveryApiUrl: process.env.APPLIVERY_API_URL ?? "https://api.applivery.io/v1",
 
+  // Applivery's own documented ceiling (docs.applivery.com's platform
+  // overview: "10,000 requests per hour with burst capability") — drives
+  // the shared outbound TokenBucket in services/appliveryClient.ts.
+  // Configurable per deployment in case a given org's actual plan/contract
+  // grants a different ceiling than the publicly documented default.
+  appliveryRateLimitPerHour: Number(process.env.APPLIVERY_RATE_LIMIT_PER_HOUR ?? 10_000),
+  appliveryRateLimitBurst: Number(process.env.APPLIVERY_RATE_LIMIT_BURST ?? 100),
+
   // Secret used by the two external, secret-in-URL-path receivers
   // (/api/applivery-webhook/receive/:secret is per-workspace and DB-stored;
   // /api/compliance/evaluate-due uses this separate trigger secret, matching

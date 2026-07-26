@@ -20,9 +20,22 @@ export class AppliveryClient {
   private readonly rateLimiter: TokenBucket;
 
   constructor() {
-    // Capacity/refill deliberately conservative, well below Applivery's own
-    // published ceiling — same values as the migration guidelines doc.
-    this.rateLimiter = new TokenBucket(50, 10);
+    // Sustained refill rate is derived from Applivery's own documented
+    // ceiling (docs.applivery.com: "10,000 requests per hour with burst
+    // capability" — env.appliveryRateLimitPerHour, default 10,000 -> ~2.78
+    // req/sec sustained). The earlier hardcoded (50, 10) here refilled at
+    // 10/sec = 36,000/hour, ~3.6x over the real published limit — fine for
+    // a small fleet's occasional calls, but a genuine risk of tripping
+    // Applivery's own throttling/enforcement once this deployment is doing
+    // sustained work at scale (paginating a six-figure device fleet,
+    // dispatching a workflow run against tens of thousands of devices,
+    // background jobs iterating every workspace). `appliveryRateLimitBurst`
+    // (default 100) is the short-burst allowance on top of that sustained
+    // rate — covers a quick flurry of requests without needing to be
+    // metered to the exact instant, while the refill rate is what actually
+    // keeps sustained throughput inside budget.
+    const sustainedPerSec = env.appliveryRateLimitPerHour / 3600;
+    this.rateLimiter = new TokenBucket(env.appliveryRateLimitBurst, sustainedPerSec);
     this.client = axios.create({
       baseURL: env.appliveryApiUrl,
       timeout: 10_000,
