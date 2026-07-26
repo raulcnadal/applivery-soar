@@ -62,8 +62,20 @@ export const useAuthStore = defineStore("auth", () => {
   const dashboardToken = ref<string | null>(localStorage.getItem("applivery_dashboard_token"));
   const apiToken = ref<string | null>(localStorage.getItem("applivery_apiToken"));
   const refreshToken = ref<string | null>(localStorage.getItem("applivery_refreshToken"));
+  // Expiry timestamps for the two tokens above — needed by the Workspace
+  // Automation settings panel's "Use this session for automation" action
+  // (POST /api/settings/automation-credential expects them so the stored
+  // credential knows when it needs to self-refresh). Not used for anything
+  // else client-side; same sensitivity tier as the tokens themselves.
+  const apiTokenExpireAt = ref<string | null>(localStorage.getItem("applivery_apiTokenExpireAt"));
+  const refreshTokenExpireAt = ref<string | null>(localStorage.getItem("applivery_refreshTokenExpireAt"));
   const orgSlug = ref<string | null>(localStorage.getItem("applivery_orgSlug"));
   const email = ref<string | null>(localStorage.getItem("applivery_email"));
+  // Read-only profile fields for the Account settings panel (docs/settings.md#account)
+  // — Applivery's login response includes these, the original frontend just
+  // never persisted them past the login screen.
+  const fullName = ref<string | null>(localStorage.getItem("applivery_fullName"));
+  const avatarUrl = ref<string | null>(localStorage.getItem("applivery_avatarUrl"));
   const access = ref<ResolvedAccess | null>(null);
   // The full sibling-workspace list from login's `organizations` response —
   // the original app never persisted this either, but this port's onboarding
@@ -79,31 +91,60 @@ export const useAuthStore = defineStore("auth", () => {
     dashboardToken: string;
     apiToken: string;
     refreshToken: string;
+    apiTokenExpireAt?: string | null;
+    refreshTokenExpireAt?: string | null;
     orgSlug: string;
     email: string;
+    fullName?: string | null;
+    avatarUrl?: string | null;
     organizations?: Organization[];
   }) {
     dashboardToken.value = payload.dashboardToken;
     apiToken.value = payload.apiToken;
     refreshToken.value = payload.refreshToken;
+    apiTokenExpireAt.value = payload.apiTokenExpireAt ?? null;
+    refreshTokenExpireAt.value = payload.refreshTokenExpireAt ?? null;
     orgSlug.value = payload.orgSlug;
     email.value = payload.email;
+    if (payload.fullName !== undefined) fullName.value = payload.fullName ?? null;
+    if (payload.avatarUrl !== undefined) avatarUrl.value = payload.avatarUrl ?? null;
     if (payload.organizations) organizations.value = payload.organizations;
 
     localStorage.setItem("applivery_dashboard_token", payload.dashboardToken);
     localStorage.setItem("applivery_apiToken", payload.apiToken);
     localStorage.setItem("applivery_refreshToken", payload.refreshToken);
+    if (payload.apiTokenExpireAt) localStorage.setItem("applivery_apiTokenExpireAt", payload.apiTokenExpireAt);
+    if (payload.refreshTokenExpireAt) localStorage.setItem("applivery_refreshTokenExpireAt", payload.refreshTokenExpireAt);
     localStorage.setItem("applivery_orgSlug", payload.orgSlug);
     localStorage.setItem("applivery_email", payload.email);
+    if (payload.fullName) localStorage.setItem("applivery_fullName", payload.fullName);
+    if (payload.avatarUrl) localStorage.setItem("applivery_avatarUrl", payload.avatarUrl);
     if (payload.organizations) localStorage.setItem("applivery_organizations", JSON.stringify(payload.organizations));
+  }
+
+  /**
+   * Switch to a sibling Applivery organization without a full re-login —
+   * same session tokens, just a different X-Workspace-Slug going forward.
+   * Docs/settings.md#account's "Workspace switcher". Callers should reload
+   * the page after this resolves so every store re-fetches clean against
+   * the newly active workspace (same pattern AppShell.vue's onCloned uses).
+   */
+  async function switchWorkspace(slug: string) {
+    orgSlug.value = slug;
+    localStorage.setItem("applivery_orgSlug", slug);
+    await resolveAccess();
   }
 
   function clearSession() {
     dashboardToken.value = null;
     apiToken.value = null;
     refreshToken.value = null;
+    apiTokenExpireAt.value = null;
+    refreshTokenExpireAt.value = null;
     orgSlug.value = null;
     email.value = null;
+    fullName.value = null;
+    avatarUrl.value = null;
     access.value = null;
     organizations.value = [];
     localStorage.clear();
@@ -115,8 +156,10 @@ export const useAuthStore = defineStore("auth", () => {
     return res.data as {
       access_token: string;
       appliveryAccessToken: string;
+      appliveryAccessTokenExpireAt?: string;
       appliveryRefreshToken: string;
-      user: { email: string };
+      appliveryRefreshTokenExpireAt?: string;
+      user: { email: string; fullName?: string; picture?: string };
       organizations: Organization[];
       currentOrganizationId?: string;
     };
@@ -152,8 +195,12 @@ export const useAuthStore = defineStore("auth", () => {
     dashboardToken,
     apiToken,
     refreshToken,
+    apiTokenExpireAt,
+    refreshTokenExpireAt,
     orgSlug,
     email,
+    fullName,
+    avatarUrl,
     access,
     organizations,
     isAuthenticated,
@@ -161,6 +208,7 @@ export const useAuthStore = defineStore("auth", () => {
     clearSession,
     login,
     resolveAccess,
+    switchWorkspace,
     hasFeatureAccess,
     hasRiskyAction,
   };

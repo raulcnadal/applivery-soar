@@ -88,6 +88,14 @@ const CASES: Case[] = [
 
   // ── roles.controller.ts (superAdminOnly) ──
   { label: "roles: GET /api/roles (non-super-admin, even with full role)", method: "get", path: "/api/roles", superAdminOnly: true, insufficientAccess: roleWithAccess({ devices: "manage", compliance: "manage", workflows: "manage", cases: "manage", integrations: "manage", settings: "manage" }) },
+
+  // ── reports.controller.ts — newly gated (post-migration scale/completeness
+  // review; reporting was previously declared in SOAR_FEATURE_AREAS but
+  // never enforced anywhere) ──
+  { label: "reports: POST /api/reports/generate", method: "post", path: "/api/reports/generate", area: "reporting", level: "read", insufficientAccess: roleWithAccess({ reporting: "none" }) },
+
+  // ── auditLogs.controller.ts — newly gated (same review) ──
+  { label: "auditLogs: GET /api/audit-logs", method: "get", path: "/api/audit-logs", area: "auditLog", level: "read", insufficientAccess: roleWithAccess({ auditLog: "none" }) },
 ];
 
 describe("RBAC boundary — insufficient access is denied, sufficient access clears the gate", () => {

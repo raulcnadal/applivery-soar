@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { verifyDashboardToken } from "../../middleware/auth.middleware";
+import { requirePermission } from "../../middleware/rbac.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { HttpError } from "../../utils/httpError";
 import { reportPayloadSchema } from "./reports.schemas";
@@ -7,10 +8,17 @@ import { generateReportPdf, sendEmailReport, sendGoogleChatWebhook } from "./rep
 
 export const reportsRouter = Router();
 
+// Previously only `verifyDashboardToken` — the `reporting` RBAC area was
+// declared in SOAR_FEATURE_AREAS but not enforced anywhere (migration-plan.md
+// §9 / ARCHITECTURE.md §2.4). Now actually gated: generating a report is a
+// read of aggregated data (no reporting-area write action exists), so
+// `level: "read"` is sufficient here.
+const readReporting = [verifyDashboardToken, requirePermission({ area: "reporting", level: "read" })];
+
 // POST /api/reports/generate (main.py:15608)
 reportsRouter.post(
   "/api/reports/generate",
-  verifyDashboardToken,
+  ...readReporting,
   asyncHandler(async (req, res) => {
     const authorization = req.header("Authorization");
     const workspaceSlug = req.header("X-Workspace-Slug");

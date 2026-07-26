@@ -26,7 +26,11 @@ interface PendingLogin {
   dashboardToken: string;
   apiToken: string;
   refreshToken: string;
+  apiTokenExpireAt?: string;
+  refreshTokenExpireAt?: string;
   email: string;
+  fullName?: string;
+  avatarUrl?: string;
   organizations: Organization[];
   currentOrganizationId?: string;
 }
@@ -66,8 +70,10 @@ async function submitMfa() {
 function handleLoginResult(result: {
   access_token: string;
   appliveryAccessToken: string;
+  appliveryAccessTokenExpireAt?: string;
   appliveryRefreshToken: string;
-  user: { email: string };
+  appliveryRefreshTokenExpireAt?: string;
+  user: { email: string; fullName?: string; picture?: string };
   organizations: Organization[];
   currentOrganizationId?: string;
 }) {
@@ -75,7 +81,11 @@ function handleLoginResult(result: {
     dashboardToken: result.access_token,
     apiToken: result.appliveryAccessToken,
     refreshToken: result.appliveryRefreshToken,
+    apiTokenExpireAt: result.appliveryAccessTokenExpireAt,
+    refreshTokenExpireAt: result.appliveryRefreshTokenExpireAt,
     email: result.user.email,
+    fullName: result.user.fullName,
+    avatarUrl: result.user.picture,
     organizations: result.organizations,
     currentOrganizationId: result.currentOrganizationId,
   };
@@ -96,8 +106,12 @@ async function finishLogin(org: Organization) {
     dashboardToken: pendingLogin.value.dashboardToken,
     apiToken: pendingLogin.value.apiToken,
     refreshToken: pendingLogin.value.refreshToken,
+    apiTokenExpireAt: pendingLogin.value.apiTokenExpireAt,
+    refreshTokenExpireAt: pendingLogin.value.refreshTokenExpireAt,
     orgSlug: slug,
     email: pendingLogin.value.email,
+    fullName: pendingLogin.value.fullName,
+    avatarUrl: pendingLogin.value.avatarUrl,
     organizations: pendingLogin.value.organizations,
   });
   isLoading.value = true;
