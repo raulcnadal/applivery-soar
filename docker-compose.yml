@@ -1,68 +1,85 @@
-# NOTE on naming: this compose file runs the LEGACY FastAPI + React build
-# (big-picture-api/ + wow-dashboard/) being replaced by the BlueSky-stack
-# rewrite (see docker-compose.newstack.yml). Container/service names and the
-# image tag below have been renamed to the "Applivery SOAR" branding used
-# everywhere else in the repo now — POSTGRES_USER/POSTGRES_DB and the
-# ./data/./pgdata bind-mount paths are DELIBERATELY left unchanged, since
-# those are what an already-running deployment's persisted data actually
-# depends on; renaming them would make Postgres look for a database that
-# doesn't exist in an already-initialized data directory. If you're
-# deploying this fresh (no existing ./data or ./pgdata), the identifiers
-# below are otherwise free to rename further. The image tag
-# `raulcnadal/applivery-soar:legacy-arm64-advanced` is NOT auto-published by
-# any workflow in this repo (docker-publish.yml only publishes the new
-# stack's image, also under the `raulcnadal/applivery-soar` repo but with
-# `latest`/`sha-*` tags) — you'll need to build and push/retag this image
-# yourself under that name before `docker compose up` can pull it.
+# Docker Compose for Applivery SOAR (Vue 3 + Node/TS + Prisma + Postgres).
+#
+# Split-service topology: soar-frontend (Nginx) serves the built Vue SPA and
+# reverse-proxies /api/* to soar-backend, so the browser only ever talks to
+# one origin (no CORS needed). soar-backend builds from the existing
+# backend/Dockerfile — the same image docker-publish.yml ships as the
+# single-container reference build to Docker Hub — it just runs API-only
+# here; its own bundled frontend/dist goes unused since soar-frontend's
+# Nginx is what actually serves the SPA in this topology.
+#
+# soar-redis is optional-but-provisioned: only matters if soar-backend is
+# scaled to more than one replica (`docker compose up --scale soar-backend=3`),
+# in which case REDIS_URL makes every background job (compliance evaluator,
+# workflow resumer, ticket sync, etc.) run as a BullMQ repeatable job —
+# exactly once cluster-wide — instead of each replica's own in-process
+# setInterval loop firing independently.
+#
+# Usage: docker compose up --build
+
 services:
-  applivery-soar-legacy:
-    image: raulcnadal/applivery-soar:legacy-arm64-advanced
-    container_name: applivery-soar-legacy
+  soar-frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: soar-frontend
     restart: unless-stopped
-    # ports:
-    #   - "2026:8000"
-    expose:
-      - 8000
-    networks:
-      - npm-network
-      - db-network
+    ports:
+      - "8080:80"
+    depends_on:
+      - soar-backend
+
+  soar-backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: soar-backend
+    restart: unless-stopped
+    ports:
+      # Published for direct API access/debugging; soar-frontend reaches
+      # this over the internal Compose network regardless (see nginx.conf's
+      # proxy_pass http://soar-backend:8000).
+      - "8000:8000"
     environment:
       - DASHBOARD_SECRET=${DASHBOARD_SECRET}
-      - DATABASE_URL=postgresql://applivery:${POSTGRES_PASSWORD}@applivery-soar-legacy-db:5432/applivery_big_picture
-      # Optional — see .env for what these unlock.
-      # - AUTOMATION_ORG_SLUG=${AUTOMATION_ORG_SLUG}
-      # - AUTOMATION_API_TOKEN=${AUTOMATION_API_TOKEN}
-      # - TRIGGER_SECRET=${TRIGGER_SECRET}
-    volumes:
-      # Maps a local 'data' folder to the app's internal storage
-      - ./data:/app/data
+      - DATABASE_URL=postgresql://soar:${POSTGRES_PASSWORD}@soar-db:5432/soar?schema=public
+      - APPLIVERY_API_URL=${APPLIVERY_API_URL:-https://api.applivery.io/v1}
+      - APPLIVERY_RATE_LIMIT_PER_HOUR=${APPLIVERY_RATE_LIMIT_PER_HOUR:-10000}
+      - APPLIVERY_RATE_LIMIT_BURST=${APPLIVERY_RATE_LIMIT_BURST:-100}
+      - TRIGGER_SECRET=${TRIGGER_SECRET:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # Optional — leave unset for a single soar-backend replica (the
+      # default; needs no Redis). Set to enable the queue-backed job path,
+      # e.g. if you scale soar-backend to multiple replicas.
+      - REDIS_URL=${REDIS_URL:-}
     depends_on:
-      applivery-soar-legacy-db:
+      soar-db:
         condition: service_healthy
 
-  applivery-soar-legacy-db:
+  soar-db:
     image: postgres:16-alpine
-    container_name: applivery-soar-legacy-db
+    container_name: soar-db
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=applivery
+      - POSTGRES_USER=soar
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=applivery_big_picture
+      - POSTGRES_DB=soar
     volumes:
       - ./pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U applivery -d applivery_big_picture"]
+      test: ["CMD-SHELL", "pg_isready -U soar -d soar"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - db-network
+    ports:
+      # Exposed on the host for local Prisma Studio / psql access during
+      # development — remove in a real production deployment.
+      - "5432:5432"
 
-networks:
-  npm-network:
-    external: true
-  # Private network shared only between the app and its database — Postgres
-  # is never exposed on npm-network, so nothing else on that shared network
-  # can reach it.
-  db-network:
-    driver: bridge
+  soar-redis:
+    image: redis:7-alpine
+    container_name: soar-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./redisdata:/data

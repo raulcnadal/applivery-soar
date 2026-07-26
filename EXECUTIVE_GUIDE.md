@@ -10,7 +10,7 @@ Applivery SOAR is Applivery's security-operations module, built natively on the 
 
 Every device action SOAR takes calls Applivery's own management API directly, using the same device inventory and the same collaborator identities Applivery UEM already manages — there is no separate device database, no separate credential system, and no reconciliation between two vendors' data. It is the automation and decision-making layer built directly on top of the device control Applivery already has, by the team that built that control in the first place.
 
-The module is delivered as a single, self-hosted Docker image (a React dashboard and a FastAPI backend shipped together) that an Applivery customer deploys alongside their workspace, with no separate user database — every admin authenticates with their real Applivery credentials, and access is governed by roles SOAR manages on top of that identity.
+The module is delivered as a self-hosted Docker deployment (a Vue 3 dashboard and a Node.js/Express backend, either combined in one image or split into separate frontend/backend services) that an Applivery customer deploys alongside their workspace, with no separate user database — every admin authenticates with their real Applivery credentials, and access is governed by roles SOAR manages on top of that identity.
 
 ## 2. The business case
 

@@ -1,12 +1,10 @@
-// Applivery SOAR — BlueSky stack Prisma schema.
-// Source of truth: /migration-plan.md §3. Every model here maps onto one of
-// the 39 persisted store "kinds" in the original FastAPI app (see
-// migration-plan.md §7.1 for the full traceability list) or a durable-workflow
-// table that's new (previously handled by an optional side Postgres instance).
+// Applivery SOAR — Prisma schema.
+// Every model here maps onto one of the app's ~39 persisted store "kinds",
+// or a durable-workflow table backing the workflow `wait` step.
 //
 // Tenancy: `workspaceSlug` is a plain column (not a separate schema-per-tenant)
-// on every tenant-scoped model, replacing the original "one SQLite file per
-// workspace slug" design now that everything lives in one Postgres instance.
+// on every tenant-scoped model — every workspace's data lives in one shared
+// Postgres instance.
 // Models with no `workspaceSlug` are intentionally global (shared catalogs
 // refreshed once for every workspace, mirroring the original app's "_global"
 // pseudo-slug).

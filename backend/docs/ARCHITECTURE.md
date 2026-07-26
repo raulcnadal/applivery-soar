@@ -1,6 +1,6 @@
 # Architecture — Applivery SOAR (BlueSky stack)
 
-This is the migrated build of Applivery SOAR: a Vue 3 + TypeScript single-page frontend and a Node.js/Express + TypeScript backend, backed by Postgres via Prisma ORM. It replaces an earlier FastAPI + React + per-workspace-SQLite build (the `big-picture-api/`/`wow-dashboard/` trees still present in this repo, kept only as historical migration reference — nothing in the running app depends on them).
+This is Applivery SOAR: a Vue 3 + TypeScript single-page frontend and a Node.js/Express + TypeScript backend, backed by Postgres via Prisma ORM.
 
 Every account is an existing Applivery Collaborator — there's no local user database. Every device/policy/app action ultimately calls Applivery's own management API on the caller's behalf, using their own forwarded Applivery session token.
 

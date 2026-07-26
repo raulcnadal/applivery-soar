@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-big-picture-api/venv/
 
 # Build output
 dist/
@@ -11,18 +10,10 @@ dist.old.*/
 .env
 .env.*
 !.env.example
-!.env.newstack.example
-
-# Python
-__pycache__/
-*.pyc
-.pytest_cache/
 
 # Data / local persistence
 pgdata/
-pgdata-newstack/
-big-picture-api/data/
-big-picture-api/locations_cache.json
+redisdata/
 
 # Editor / OS
 .DS_Store

@@ -1,12 +1,12 @@
-# Applivery SOAR — split-deployment frontend image (BlueSky stack). Serves
-# the built Vue 3 SPA via Nginx and reverse-proxies /api/* to the backend
-# service, so the browser only ever talks to one origin (no CORS
-# configuration needed on the backend). Pairs with docker-compose.newstack.yml's
-# `soar-frontend` + `soar-backend` services — the backend still uses the
-# existing backend/Dockerfile unchanged (it doubles as both the single-image
-# reference build docker-publish.yml ships, and the API-only backend service
-# here; its own bundled frontend/dist just goes unused in split mode since
-# this image's Nginx is what actually serves the SPA).
+# Applivery SOAR — split-deployment frontend image. Serves the built Vue 3
+# SPA via Nginx and reverse-proxies /api/* to the backend service, so the
+# browser only ever talks to one origin (no CORS configuration needed on the
+# backend). Pairs with docker-compose.yml's `soar-frontend` + `soar-backend`
+# services — the backend still uses the existing backend/Dockerfile
+# unchanged (it doubles as both the single-image reference build
+# docker-publish.yml ships, and the API-only backend service here; its own
+# bundled frontend/dist just goes unused in split mode since this image's
+# Nginx is what actually serves the SPA).
 #
 # Build from the repo root: `docker build -f frontend/Dockerfile .`
 

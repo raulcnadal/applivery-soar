@@ -1,6 +1,7 @@
-# Applivery SOAR — BlueSky stack image. Mirrors the original single-image
-# pattern (see /Dockerfile for the FastAPI+React version being replaced):
-# one container, Node serves both the API and the built Vue frontend.
+# Applivery SOAR — single-image build: one container, Node serves both the
+# API and the built Vue frontend. This is the image docker-publish.yml ships
+# to Docker Hub, and it also doubles as the API-only backend service in the
+# split-deployment topology (see docker-compose.yml / frontend/Dockerfile).
 # Build from the repo root: `docker build -f backend/Dockerfile .`
 
 # ==========================================
