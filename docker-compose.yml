@@ -25,6 +25,13 @@
 services:
   soar-frontend:
     image: raulcnadal/applivery-soar-frontend:latest
+    # Forces a manifest re-check against Docker Hub on every deploy/redeploy
+    # (Portainer's "re-pull image" option, `docker compose up --pull always`,
+    # etc.), instead of silently reusing whatever digest is already cached
+    # locally under the `:latest` tag. Without this, some orchestrators only
+    # pull when the tag is entirely absent locally, so a new image published
+    # under the same `:latest` tag can go unnoticed on redeploy.
+    pull_policy: always
     container_name: soar-frontend
     restart: unless-stopped
     ports:
@@ -34,6 +41,7 @@ services:
 
   soar-backend:
     image: raulcnadal/applivery-soar:latest
+    pull_policy: always
     container_name: soar-backend
     restart: unless-stopped
     ports:
