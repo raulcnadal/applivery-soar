@@ -34,12 +34,17 @@ git clone <this repo>
 cd "Applivery SOAR"
 cp .env.example .env
 # edit .env and fill in DASHBOARD_SECRET / POSTGRES_PASSWORD — see below
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
+
+`soar-frontend` and `soar-backend` both pull pre-built multi-arch images from Docker Hub (`raulcnadal/applivery-soar-frontend` and `raulcnadal/applivery-soar`, published by `docker-publish.yml` on every push to `main`) — no local build or full repo checkout required to deploy, `docker-compose.yml` and `.env.example` are all you actually need.
 
 This runs four services: `soar-frontend` (Nginx, serving the built Vue app and reverse-proxying `/api/*` to the backend — published on host port `8080`), `soar-backend` (the Node/Express API, published on `8000` for direct access/debugging), `soar-db` (Postgres), and `soar-redis` (only used if you scale `soar-backend` to more than one replica — see [Background jobs at scale](#background-jobs-at-scale) below). Open `http://localhost:8080` once it's up.
 
-If you'd rather run one container instead of the split topology above, `backend/Dockerfile` alone still builds and serves the complete app (frontend bundled in, Express serving it as static files) — the same image `docker-publish.yml` publishes to Docker Hub as `raulcnadal/applivery-soar`.
+If you'd rather run one container instead of the split topology above, `raulcnadal/applivery-soar` alone (built from `backend/Dockerfile`) still serves the complete app — frontend bundled in, Express serving it as static files.
+
+If you're working on the source and want to build locally instead of pulling, layer `docker-compose.build.yml` on top: `docker compose -f docker-compose.yml -f docker-compose.build.yml up --build`.
 
 ### Environment variables
 
@@ -77,8 +82,8 @@ On first login, whoever holds the **Owner** role in your Applivery workspace get
 ### Upgrading
 
 ```bash
-git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 Prisma migrations apply automatically at container start (`prisma migrate deploy`, baked into the backend image's `CMD`) — no separate migration step is required.

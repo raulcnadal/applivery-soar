@@ -50,10 +50,12 @@ Inbound, three tiers of per-IP rate limiting (`middleware/rateLimiter.middleware
 
 ## 7. Deployment topology
 
-Two supported shapes, both defined in `docker-compose.newstack.yml`:
+`docker-publish.yml` publishes two multi-arch images to Docker Hub on every push to `main`: `raulcnadal/applivery-soar` (backend/Dockerfile) and `raulcnadal/applivery-soar-frontend` (frontend/Dockerfile). Two supported deployment shapes both pull from these, no local build required:
 
-- **Split services (current default)** — `soar-frontend` (Nginx serving the built Vue SPA, reverse-proxying `/api/*` to the backend so the browser only ever talks to one origin — no CORS needed), `soar-backend` (API-only Node/Express), `soar-db` (Postgres), and `soar-redis` (optional — only needed if `soar-backend` is scaled to more than one replica, see §5).
-- **Single container** — the backend's own `Dockerfile` still builds and bundles the frontend too (`COPY --from=frontend-builder ... /app/frontend/dist`) and Express falls back to serving it as static files for any non-`/api` route (`app.ts`) if no separate frontend service is fronting it. This is also the exact image `docker-publish.yml` publishes to Docker Hub as the single all-in-one reference build.
+- **Split services (current default, `docker-compose.yml`)** — `soar-frontend` (`raulcnadal/applivery-soar-frontend`, Nginx serving the built Vue SPA, reverse-proxying `/api/*` to the backend so the browser only ever talks to one origin — no CORS needed), `soar-backend` (`raulcnadal/applivery-soar`, API-only), `soar-db` (Postgres), and `soar-redis` (optional — only needed if `soar-backend` is scaled to more than one replica, see §5).
+- **Single container** — `raulcnadal/applivery-soar` alone also bundles the frontend (`COPY --from=frontend-builder ... /app/frontend/dist`) and Express falls back to serving it as static files for any non-`/api` route (`app.ts`) if no separate frontend service is fronting it. Same image either way — it's just unused static files when `soar-frontend`'s Nginx is what's actually serving traffic.
+
+Building from local source instead of pulling (e.g. to test unreleased changes) is a `docker-compose.build.yml` override layered on top of `docker-compose.yml`.
 
 Either way, the backend refuses to start without `DASHBOARD_SECRET` and `DATABASE_URL` set.
 

@@ -4,27 +4,47 @@ on:
   push:
     branches: [main]
 
-env:
-  IMAGE: raulcnadal/applivery-soar
-
 jobs:
-  # Builds each architecture natively (no QEMU) in parallel: linux/amd64 on
-  # a standard x86 runner, linux/arm64 on GitHub's hosted arm64 runner
-  # (ubuntu-24.04-arm — free-for-public/standard-billed-for-private since
-  # the Jan 2026 GA). QEMU-emulated arm64 was taking 20+ minutes because
-  # emulation is brutally slow for anything doing lots of small-file I/O
-  # (three separate `npm install`s); native arm64 hardware avoids that
-  # entirely. Each job pushes its single-arch image by digest only (no
-  # tag yet) — the `merge` job below combines both digests into one
-  # multi-arch manifest under the real tags.
+  # Builds each (component, architecture) combination natively (no QEMU) in
+  # parallel: linux/amd64 on a standard x86 runner, linux/arm64 on GitHub's
+  # hosted arm64 runner (ubuntu-24.04-arm — free-for-public/standard-billed-
+  # for-private since the Jan 2026 GA). QEMU-emulated arm64 was taking 20+
+  # minutes because emulation is brutally slow for anything doing lots of
+  # small-file I/O (three separate `npm install`s); native arm64 hardware
+  # avoids that entirely. Each job pushes its single-arch image by digest
+  # only (no tag yet) — the `merge` job below combines each component's two
+  # digests into one multi-arch manifest under the real tags.
+  #
+  # Two images are published: `applivery-soar` (backend/Dockerfile — the
+  # single-container build, frontend bundled in and served by Express; this
+  # is also the API-only image used for the `soar-backend` service in the
+  # split-deployment topology) and `applivery-soar-frontend`
+  # (frontend/Dockerfile — Nginx serving the built Vue SPA, used only by the
+  # split topology's `soar-frontend` service). See docker-compose.yml.
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: linux/amd64
+          - component: backend
+            image: raulcnadal/applivery-soar
+            dockerfile: backend/Dockerfile
+            platform: linux/amd64
             runner: ubuntu-latest
-          - platform: linux/arm64
+          - component: backend
+            image: raulcnadal/applivery-soar
+            dockerfile: backend/Dockerfile
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - component: frontend
+            image: raulcnadal/applivery-soar-frontend
+            dockerfile: frontend/Dockerfile
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - component: frontend
+            image: raulcnadal/applivery-soar-frontend
+            dockerfile: frontend/Dockerfile
+            platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
@@ -49,11 +69,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: backend/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          outputs: type=image,name=${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.platform }}
 
       - name: Export digest
         run: |
@@ -64,7 +84,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
+          name: digests-${{ matrix.component }}-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -72,12 +92,20 @@ jobs:
   merge:
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            image: raulcnadal/applivery-soar
+          - component: frontend
+            image: raulcnadal/applivery-soar-frontend
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-*
+          pattern: digests-${{ matrix.component }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
@@ -93,7 +121,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE }}
+          images: ${{ matrix.image }}
           tags: |
             type=raw,value=latest
             type=sha,format=short
@@ -103,7 +131,7 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+            $(printf '${{ matrix.image }}@sha256:%s ' *)
 
       - name: Inspect pushed manifest
-        run: docker buildx imagetools inspect ${{ env.IMAGE }}:latest
+        run: docker buildx imagetools inspect ${{ matrix.image }}:latest

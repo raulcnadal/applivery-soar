@@ -32,14 +32,19 @@ For how any of these actually work as an admin, start with the guide for that vi
 ```bash
 git clone <this repo>
 cd "Applivery SOAR"
-cp .env.newstack.example .env.newstack
-# edit .env.newstack and fill in DASHBOARD_SECRET / POSTGRES_PASSWORD — see below
-docker compose -f docker-compose.newstack.yml --env-file .env.newstack up -d --build
+cp .env.example .env
+# edit .env and fill in DASHBOARD_SECRET / POSTGRES_PASSWORD — see below
+docker compose pull
+docker compose up -d
 ```
+
+`soar-frontend` and `soar-backend` both pull pre-built multi-arch images from Docker Hub (`raulcnadal/applivery-soar-frontend` and `raulcnadal/applivery-soar`, published by `docker-publish.yml` on every push to `main`) — no local build or full repo checkout required to deploy, `docker-compose.yml` and `.env.example` are all you actually need.
 
 This runs four services: `soar-frontend` (Nginx, serving the built Vue app and reverse-proxying `/api/*` to the backend — published on host port `8080`), `soar-backend` (the Node/Express API, published on `8000` for direct access/debugging), `soar-db` (Postgres), and `soar-redis` (only used if you scale `soar-backend` to more than one replica — see [Background jobs at scale](#background-jobs-at-scale) below). Open `http://localhost:8080` once it's up.
 
-If you'd rather run one container instead of the split topology above, `backend/Dockerfile` alone still builds and serves the complete app (frontend bundled in, Express serving it as static files) — the same image `docker-publish.yml` publishes to Docker Hub as `raulcnadal/applivery-soar`.
+If you'd rather run one container instead of the split topology above, `raulcnadal/applivery-soar` alone (built from `backend/Dockerfile`) still serves the complete app — frontend bundled in, Express serving it as static files.
+
+If you're working on the source and want to build locally instead of pulling, layer `docker-compose.build.yml` on top: `docker compose -f docker-compose.yml -f docker-compose.build.yml up --build`.
 
 ### Environment variables
 
@@ -54,11 +59,21 @@ If you'd rather run one container instead of the split topology above, `backend/
 | `REDIS_URL` | Optional | Set this (and point it at the bundled `soar-redis` service, or your own) only if you scale `soar-backend` to more than one replica — see below. Leave unset for a single replica. |
 | `CORS_ORIGINS` | Optional | Only matters if you call the backend directly from a different origin than `soar-frontend`'s Nginx proxy. Defaults to `*`. |
 
-Copy `.env.newstack.example` to `.env.newstack` and fill these in.
+Copy `.env.example` to `.env` and fill these in (`docker-compose.yml` reads them via `${VAR}` substitution).
+
+### Data & persistence
+
+Postgres data lives under `./pgdata`, bind-mounted by `docker-compose.yml` — **back this up**, it's the entire application state (every workspace's Compliance Policies, Workflows, Cases, Roles, and Settings configuration). If you run `soar-redis`, its data lives under `./redisdata`, but that's disposable job-queue state, not something you need to back up.
+
+Losing `./pgdata` loses every Compliance Policy, Workflow, Case, Role, and Settings configuration across every workspace on this deployment. It does **not** lose anything in Applivery itself (devices, policies pushed to Applivery, App Distribution) — that data stays in Applivery's own systems and is re-fetched live.
 
 ### Background jobs at scale
 
-Background jobs (the compliance evaluator, workflow-wait resumer, ticket sync, intelligence-catalog refreshers, and more — 17 in total) run in-process by default, which is correct and sufficient for a single `soar-backend` replica. If you scale `soar-backend` out (`docker compose -f docker-compose.newstack.yml up --scale soar-backend=3`), set `REDIS_URL` so these jobs run through the bundled `soar-redis` service instead — otherwise every replica's own copy of each job would fire independently, and the compliance evaluator, workflow resumer, etc. would all run multiple times per tick instead of once.
+Background jobs (the compliance evaluator, workflow-wait resumer, ticket sync, intelligence-catalog refreshers, and more — 17 in total) run in-process by default, which is correct and sufficient for a single `soar-backend` replica. If you scale `soar-backend` out (`docker compose up --scale soar-backend=3`), set `REDIS_URL` so these jobs run through the bundled `soar-redis` service instead — otherwise every replica's own copy of each job would fire independently, and the compliance evaluator, workflow resumer, etc. would all run multiple times per tick instead of once.
+
+### Building without the bundled Postgres service
+
+If you already run Postgres elsewhere, drop the `soar-db` service from `docker-compose.yml`, and set `DATABASE_URL` on `soar-backend` to point at your own instance instead. Everything else is unchanged.
 
 ### First login and RBAC bootstrap
 
@@ -67,15 +82,15 @@ On first login, whoever holds the **Owner** role in your Applivery workspace get
 ### Upgrading
 
 ```bash
-git pull
-docker compose -f docker-compose.newstack.yml up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 Prisma migrations apply automatically at container start (`prisma migrate deploy`, baked into the backend image's `CMD`) — no separate migration step is required.
 
 ### Health checks
 
-[Settings → System Health](docs/settings.md#system-health) (inside the app, once logged in) is the fastest way to confirm every background job is actually running after a deploy. The `soar-db` Postgres service has a `pg_isready` healthcheck baked into `docker-compose.newstack.yml`, which `soar-backend` waits on before starting.
+[Settings → System Health](docs/settings.md#system-health) (inside the app, once logged in) is the fastest way to confirm every background job is actually running after a deploy. The `soar-db` Postgres service has a `pg_isready` healthcheck baked into `docker-compose.yml`, which `soar-backend` waits on before starting.
 
 ## Further reading
 

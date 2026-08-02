@@ -1,0 +1,22 @@
+# Override for docker-compose.yml — builds soar-frontend and soar-backend
+# from local source instead of pulling the published Docker Hub images.
+# Use this if you've made changes to frontend/ or backend/ and want to test
+# them before they're published (docker-publish.yml only builds/pushes on a
+# push to main), or if you're running a fork with local modifications.
+#
+# When both `build` and `image` are set for a service, Compose builds the
+# image locally and tags it with the `image` value instead of pulling it —
+# so no need to unset the base file's `image:` here.
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.build.yml up --build
+
+services:
+  soar-frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+
+  soar-backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile

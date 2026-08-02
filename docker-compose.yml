@@ -2,11 +2,16 @@
 #
 # Split-service topology: soar-frontend (Nginx) serves the built Vue SPA and
 # reverse-proxies /api/* to soar-backend, so the browser only ever talks to
-# one origin (no CORS needed). soar-backend builds from the existing
-# backend/Dockerfile — the same image docker-publish.yml ships as the
-# single-container reference build to Docker Hub — it just runs API-only
-# here; its own bundled frontend/dist goes unused since soar-frontend's
-# Nginx is what actually serves the SPA in this topology.
+# one origin (no CORS needed). soar-backend runs API-only; its own bundled
+# frontend/dist goes unused since soar-frontend's Nginx is what actually
+# serves the SPA in this topology.
+#
+# Both services pull pre-built multi-arch images from Docker Hub
+# (docker-publish.yml publishes both on every push to main) — no local
+# build or repo checkout required to deploy. If you're working on the
+# source and want to build locally instead, layer
+# docker-compose.build.yml on top: `docker compose -f docker-compose.yml
+# -f docker-compose.build.yml up --build`.
 #
 # soar-redis is optional-but-provisioned: only matters if soar-backend is
 # scaled to more than one replica (`docker compose up --scale soar-backend=3`),
@@ -15,13 +20,11 @@
 # exactly once cluster-wide — instead of each replica's own in-process
 # setInterval loop firing independently.
 #
-# Usage: docker compose up --build
+# Usage: docker compose pull && docker compose up -d
 
 services:
   soar-frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
+    image: raulcnadal/applivery-soar-frontend:latest
     container_name: soar-frontend
     restart: unless-stopped
     ports:
@@ -30,9 +33,7 @@ services:
       - soar-backend
 
   soar-backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: raulcnadal/applivery-soar:latest
     container_name: soar-backend
     restart: unless-stopped
     ports:
