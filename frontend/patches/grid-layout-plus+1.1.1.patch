@@ -1,0 +1,52 @@
+diff --git a/node_modules/grid-layout-plus/es/helpers/common.mjs b/node_modules/grid-layout-plus/es/helpers/common.mjs
+index 98c9c1d..05b82b4 100644
+--- a/node_modules/grid-layout-plus/es/helpers/common.mjs
++++ b/node_modules/grid-layout-plus/es/helpers/common.mjs
+@@ -26,17 +26,27 @@ function $(r, n, t) {
+   return o;
+ }
+ function E(r, n, t, e) {
++  const __safetyCap = r.length + 200;
++  let __i0 = 0;
+   if (t)
+-    for (; n.y > 0 && !h(r, n); )
++    for (; n.y > 0 && !h(r, n); ) {
+       n.y--;
++      if (++__i0 > __safetyCap) break;
++    }
+   else if (e) {
+     const o = e[n.i].y;
+-    for (; n.y > o && !h(r, n); )
++    __i0 = 0;
++    for (; n.y > o && !h(r, n); ) {
+       n.y--;
++      if (++__i0 > __safetyCap) break;
++    }
+   }
+   let i;
+-  for (; i = h(r, n); )
++  __i0 = 0;
++  for (; i = h(r, n); ) {
+     n.y = i.y + i.h;
++    if (++__i0 > __safetyCap) break;
++  }
+   return n;
+ }
+ function _(r, n) {
+@@ -44,9 +54,14 @@ function _(r, n) {
+   for (let e = 0, i = r.length; e < i; e++) {
+     const o = r[e];
+     if (o.x + o.w > n.cols && (o.x = n.cols - o.w), o.x < 0 && (o.x = 0, o.w = n.cols), !o.static) t.push(o);
+-    else
+-      for (; h(t, o); )
++    else {
++      const __safetyCap = t.length + 200;
++      let __i1 = 0;
++      for (; h(t, o); ) {
+         o.y++;
++        if (++__i1 > __safetyCap) break;
++      }
++    }
+   }
+   return r;
+ }
