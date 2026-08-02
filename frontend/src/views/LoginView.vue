@@ -43,7 +43,15 @@ async function submitCredentials() {
     const result = await auth.login({ email: email.value, password: password.value });
     handleLoginResult(result);
   } catch (err: any) {
-    const detail = err?.response?.data?.error;
+    // Backend errors are wrapped as { detail: { error: "..." } } (see
+    // errorHandler.middleware.ts), matching the original FastAPI app's
+    // HTTPException(detail=...) envelope — NOT { error: "..." } at the top
+    // level. Reading err.response.data.error directly (as this used to)
+    // always came back undefined, so the TWO_FACTOR_REQUIRED sentinel from
+    // Applivery's error code 4014 never matched and MFA-enabled accounts
+    // just saw a generic "Invalid email or password." instead of the MFA
+    // step — see main.py:940-941 / App.jsx:6549 for the original behavior.
+    const detail = err?.response?.data?.detail?.error;
     if (detail === "TWO_FACTOR_REQUIRED") {
       step.value = "mfa";
     } else {
@@ -61,7 +69,7 @@ async function submitMfa() {
     const result = await auth.login({ email: email.value, password: password.value, twoFactorCode: twoFactorCode.value });
     handleLoginResult(result);
   } catch (err: any) {
-    error.value = err?.response?.data?.error || "Invalid two-factor code.";
+    error.value = err?.response?.data?.detail?.error || "Invalid two-factor code.";
   } finally {
     isLoading.value = false;
   }
