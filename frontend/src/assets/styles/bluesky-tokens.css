@@ -21,7 +21,10 @@
 }
 
 :root {
-  --background: #f8fafc;
+  /* Matches the original app's light-theme page background (App.jsx's
+     THEME.light.bg) — was Tailwind's neutral slate-50 (#f8fafc), a visibly
+     different, less blue-tinted shade. */
+  --background: #f3f7fe;
   --foreground: #0f172a;
 }
 
