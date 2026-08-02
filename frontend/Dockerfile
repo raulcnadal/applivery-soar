@@ -25,6 +25,16 @@ COPY packages/bluesky-vue ./packages/bluesky-vue
 RUN cd packages/bluesky-vue && npm install
 
 COPY frontend/package*.json ./frontend/
+# patches/ must be present BEFORE `npm install` runs, since patch-package
+# (frontend/package.json's postinstall script) applies grid-layout-plus's
+# safety-cap patch (frontend/patches/grid-layout-plus+1.1.1.patch) during
+# install — copying it only in the later `COPY frontend/ ./` step below
+# means postinstall silently finds no patches/ directory yet and no-ops
+# (patch-package doesn't fail the build when there's nothing to apply), so
+# the build would silently ship the original unpatched, hang-prone library
+# every time despite the source fix being committed. Bit us for real: every
+# rebuild kept producing the pre-fix bundle until this copy was reordered.
+COPY frontend/patches ./frontend/patches
 WORKDIR /app/frontend
 RUN npm install
 COPY frontend/ ./

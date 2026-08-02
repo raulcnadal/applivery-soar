@@ -21,6 +21,11 @@ COPY packages/bluesky-vue ./packages/bluesky-vue
 RUN cd packages/bluesky-vue && npm install
 
 COPY frontend/package*.json ./frontend/
+# See frontend/Dockerfile's matching comment: patches/ must exist before
+# `npm install` runs, or patch-package's postinstall step silently no-ops
+# and the build ships grid-layout-plus's original unpatched (hang-prone)
+# code with no error or CI failure.
+COPY frontend/patches ./frontend/patches
 WORKDIR /app/frontend
 RUN npm install
 COPY frontend/ ./
