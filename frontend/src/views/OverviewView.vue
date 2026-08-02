@@ -70,8 +70,32 @@ onMounted(async () => {
   await loadAllWidgets();
 });
 
+// grid-layout-plus emits "layout-updated" after every internal compact
+// pass — including the automatic one that runs right after mount, not just
+// genuine user drag/resize edits. Reassigning `layout.value` unconditionally
+// here created an infinite reactive loop: the new array reference feeds
+// back into GridLayout's `v-model:layout` prop, which the library's own
+// `watch(() => [layout, layout.length], ...)` picks up (array reference
+// always differs, even when content is identical), triggering another
+// internal compact + "layout-updated" emit, which reassigns `layout.value`
+// again, forever — a genuine unyielding freeze (confirmed by reproducing
+// this exact watch/emit cycle in isolation with Vue's reactivity system
+// directly; grid-layout-plus's compact()/correctBounds() themselves return
+// instantly and were not the culprit despite superficially looking like
+// one). Only reassigning when the content actually changed lets the loop
+// settle after its first (mount-time) cycle, same as any normal v-model
+// consumer should.
 function onLayoutUpdated(next: GridLayoutItem[]) {
-  layout.value = next.map((l) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: !!l.static }));
+  const normalized = next.map((l) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: !!l.static }));
+  const current = layout.value;
+  const unchanged =
+    normalized.length === current.length &&
+    normalized.every((l, idx) => {
+      const c = current[idx];
+      return c && c.i === l.i && c.x === l.x && c.y === l.y && c.w === l.w && c.h === l.h && !!c.static === l.static;
+    });
+  if (unchanged) return;
+  layout.value = normalized;
   isDirty.value = true;
 }
 
