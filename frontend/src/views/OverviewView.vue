@@ -4,12 +4,18 @@
 // placeholder is fully replaced here (see migration-plan.md §8 Phase 7).
 import { Alert, Button, Card, EmptyState, PageHeader, RichSelect } from "@applivery/bluesky-vue";
 import { GridLayout, GridItem } from "grid-layout-plus";
+import { AddCircle, Calendar, EyeClosed, Lock, LockUnlocked, MenuDots, Widget as WidgetIcon } from "@solar-icons/vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import WidgetCard from "../components/overview/WidgetCard.vue";
 import { useDashboardStateStore } from "../stores/dashboardState";
 import { CHART_TYPES, WIDGET_CATALOG, WIDGET_SIZES, defaultChartTypeFor, type ChartType, type DashboardWidget, type GridLayoutItem } from "../lib/analyticsCatalog";
 import { fetchWidgetData, type WidgetResponse } from "../lib/widgetData";
+
+// App.jsx's WidgetHeader (~470-533) — top blue #0241E3, used here for the
+// icon badge tint and the text-only "Add widget" action to match the
+// original's non-solid button treatment.
+const PRIMARY_BLUE = "#0241E3";
 
 const store = useDashboardStateStore();
 
@@ -109,6 +115,25 @@ function removeWidget(id: string) {
   layout.value = layout.value.filter((l) => l.i !== id);
   delete widgetSlots[id];
   isDirty.value = true;
+  openMenuFor.value = null;
+}
+
+// Port of WidgetOptionsMenu's Hide/Lock actions (App.jsx ~534-560) — the
+// original also has Move/Edit entries, but those duplicate functionality
+// grid-layout-plus already exposes via drag/resize in edit mode, so only
+// Hide and Lock are reimplemented here.
+const openMenuFor = ref<string | null>(null);
+function toggleMenu(id: string) {
+  openMenuFor.value = openMenuFor.value === id ? null : id;
+}
+function toggleWidgetLock(id: string) {
+  const item = layout.value.find((l) => l.i === id);
+  if (item) item.static = !item.static;
+  isDirty.value = true;
+  openMenuFor.value = null;
+}
+function isWidgetLocked(id: string): boolean {
+  return !!layout.value.find((l) => l.i === id)?.static;
 }
 
 // ── Add widget modal ──
@@ -156,12 +181,29 @@ watch(pickedSource, (src) => {
       </template>
       <template #action>
         <div class="flex items-center gap-2">
-          <select v-model="range" class="rounded-lg px-3 py-2 text-sm border border-gray-200">
-            <option v-for="o in rangeOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-          </select>
+          <!-- Date-range control: original's DateRangePickerDropdown trigger
+               is a solid brand-600 pill with a calendar icon (App.jsx
+               ~4520-4540) rather than a bare <select>. -->
+          <div class="relative flex items-center gap-2 rounded-md pl-3 pr-2 h-9 text-white text-sm font-medium" style="background-color: #0241e3">
+            <Calendar :size="15" weight="Linear" />
+            <select v-model="range" class="bg-transparent border-none outline-none text-sm font-medium pr-1 [color-scheme:dark]">
+              <option v-for="o in rangeOptions" :key="o.value" :value="o.value" class="text-gray-900">{{ o.label }}</option>
+            </select>
+          </div>
           <Button variant="ghost" size="sm" @click="loadAllWidgets">Refresh</Button>
           <Button variant="ghost" size="sm" @click="isEditMode = !isEditMode">{{ isEditMode ? "Done editing" : "Edit layout" }}</Button>
-          <Button v-if="isEditMode" size="sm" @click="openAddModal">Add widget</Button>
+          <!-- Original's "Add widget" is a text-only PRIMARY_BLUE button with
+               a plus icon, not a solid button (App.jsx WidgetHeader area). -->
+          <button
+            v-if="isEditMode"
+            type="button"
+            class="flex items-center gap-1.5 h-9 px-3 rounded-md text-sm font-medium transition-colors hover:bg-black/5"
+            style="color: #0241e3"
+            @click="openAddModal"
+          >
+            <AddCircle :size="17" weight="Linear" />
+            Add widget
+          </button>
           <Button v-if="isDirty" size="sm" @click="saveDashboard" :disabled="store.isSaving">{{ store.isSaving ? "Saving…" : "Save layout" }}</Button>
         </div>
       </template>
@@ -185,21 +227,43 @@ watch(pickedSource, (src) => {
       :use-css-transforms="true"
       @layout-updated="onLayoutUpdated"
     >
-      <GridItem v-for="item in layout" :key="item.i" :i="item.i" :x="item.x" :y="item.y" :w="item.w" :h="item.h">
-        <Card class="h-full w-full !p-4 relative group">
-          <div class="flex items-center justify-between mb-2">
-            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide truncate pr-2">
-              {{ widgets.find((w) => w.id === item.i)?.title }}
-            </p>
-            <button
-              v-if="isEditMode"
-              class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 text-xs transition-opacity"
-              @click="removeWidget(item.i)"
-            >
-              Remove
-            </button>
+      <GridItem v-for="item in layout" :key="item.i" :i="item.i" :x="item.x" :y="item.y" :w="item.w" :h="item.h" :static="item.static">
+        <Card class="h-full w-full !p-0 relative group overflow-visible flex flex-col">
+          <!-- 1:1 port of WidgetHeader (App.jsx ~470-533): icon badge tinted
+               with the widget's own accent color, 13px title, and an
+               options-menu (kebab) button instead of a bare "Remove" link. -->
+          <div class="px-5 pt-4 pb-3 flex items-center justify-between border-b border-gray-100 shrink-0">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: PRIMARY_BLUE + '18' }">
+                <WidgetIcon :size="15" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
+              </div>
+              <p class="text-[13px] font-medium text-gray-900 truncate">
+                {{ widgets.find((w) => w.id === item.i)?.title }}
+              </p>
+            </div>
+            <div v-if="isEditMode" class="relative shrink-0">
+              <button
+                type="button"
+                class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 transition-colors hover:bg-black/5"
+                :class="{ 'bg-black/5 text-gray-600': openMenuFor === item.i }"
+                @click="toggleMenu(item.i)"
+              >
+                <MenuDots :size="15" weight="Linear" />
+              </button>
+              <div v-if="openMenuFor === item.i" class="fixed inset-0 z-[199]" @click="openMenuFor = null" />
+              <div v-if="openMenuFor === item.i" class="absolute right-0 top-full mt-1 w-44 rounded-lg shadow-xl border border-gray-100 bg-white z-[200] overflow-hidden">
+                <button type="button" class="w-full text-left px-3 py-2 flex items-center gap-2 text-[13px] text-gray-700 hover:bg-black/5" @click="toggleWidgetLock(item.i)">
+                  <component :is="isWidgetLocked(item.i) ? LockUnlocked : Lock" :size="14" weight="Linear" class="text-gray-400" />
+                  {{ isWidgetLocked(item.i) ? "Unlock position" : "Lock position" }}
+                </button>
+                <button type="button" class="w-full text-left px-3 py-2 flex items-center gap-2 text-[13px] text-red-500 hover:bg-red-50" @click="removeWidget(item.i)">
+                  <EyeClosed :size="14" weight="Linear" />
+                  Hide widget
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="h-[calc(100%-24px)]">
+          <div class="flex-1 min-h-0 p-4">
             <WidgetCard
               v-if="widgets.find((w) => w.id === item.i)"
               :widget="widgets.find((w) => w.id === item.i)!"
