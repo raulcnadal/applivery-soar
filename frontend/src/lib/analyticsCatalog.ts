@@ -86,29 +86,212 @@ export const WIDGET_LABEL_BY_ID: Record<string, string> = Object.fromEntries(WID
 
 export type ChartType = "scorecard" | "gauge" | "donut" | "pie" | "bar" | "line" | "radar" | "list" | "progress";
 
-export const CHART_TYPES: Array<{ id: ChartType; label: string }> = [
-  { id: "scorecard", label: "Scorecard" },
-  { id: "gauge", label: "Gauge" },
-  { id: "donut", label: "Donut" },
-  { id: "pie", label: "Pie" },
-  { id: "bar", label: "Bar" },
-  { id: "line", label: "Line" },
-  { id: "radar", label: "Radar" },
-  { id: "list", label: "List" },
-  { id: "progress", label: "Bars" },
+export const CHART_TYPES: Array<{ id: ChartType; label: string; desc: string }> = [
+  { id: "scorecard", label: "Scorecard", desc: "Total count" },
+  { id: "gauge", label: "Gauge", desc: "Count vs total arc" },
+  { id: "donut", label: "Donut", desc: "Grouped by category" },
+  { id: "pie", label: "Pie", desc: "Proportions filled" },
+  { id: "bar", label: "Bar", desc: "Compare categories" },
+  { id: "line", label: "Line", desc: "Time-series" },
+  { id: "radar", label: "Radar", desc: "Multi-axis" },
+  { id: "list", label: "List", desc: "Breakdown rows" },
+  { id: "progress", label: "Bars", desc: "Horizontal fill bars" },
 ];
+
+// 1:1 port of SHAPES / SOURCE_SHAPES (App.jsx:1544-1616) — restricts which
+// chart types are offered for a given data source in the widget builder, and
+// drives the "prefer 1x1" default chart-type selection.
+type Shape = "analyticsKeyed" | "analyticsTrend" | "analyticsDiscrete" | "analyticsManyKeys" | "listGrouped" | "listApps" | "listUsers" | "listCountOnly" | "orgProfile";
+
+export const SHAPES: Record<Shape, ChartType[]> = {
+  analyticsKeyed: ["scorecard", "donut", "pie", "bar", "radar", "list", "progress", "gauge"],
+  analyticsTrend: ["line"],
+  analyticsDiscrete: ["scorecard", "donut", "pie", "bar", "list", "progress", "gauge"],
+  analyticsManyKeys: ["scorecard", "bar", "list", "progress"],
+  listGrouped: ["scorecard", "gauge", "donut", "list", "progress"],
+  listApps: ["scorecard", "donut", "list", "progress"],
+  listUsers: ["scorecard", "donut", "list", "progress"],
+  listCountOnly: ["scorecard"],
+  orgProfile: ["scorecard"],
+};
+
+export const SOURCE_SHAPES: Record<string, Shape> = {
+  stats_devices_os: "analyticsKeyed",
+  stats_devices_status: "analyticsKeyed",
+  stats_builds_os: "analyticsKeyed",
+  stats_collaborators: "analyticsKeyed",
+  stats_downloads_trend: "analyticsTrend",
+  stats_builds_trend: "analyticsTrend",
+  stats_devices_trend: "analyticsTrend",
+  stats_compliance: "analyticsDiscrete",
+  stats_battery: "analyticsDiscrete",
+  stats_models: "analyticsManyKeys",
+  stats_os_updates_all: "analyticsManyKeys",
+  stats_os_versions: "analyticsManyKeys",
+  stats_sync_errors: "listGrouped",
+  mdm_devices: "listGrouped",
+  mdm_users: "listGrouped",
+  mdm_collaborators: "listGrouped",
+  app_dist_collaborators: "listGrouped",
+  app_dist_store_users: "listUsers",
+  app_dist_apps: "listApps",
+  org_profile: "orgProfile",
+  mdm_segments: "listGrouped",
+  compliance_policies_summary: "analyticsDiscrete",
+  compliance_devices_violating: "analyticsDiscrete",
+  compliance_violations_by_policy: "analyticsKeyed",
+  compliance_violations_trend: "analyticsTrend",
+  compliance_review_queue: "analyticsDiscrete",
+  autorun_safety_summary: "analyticsDiscrete",
+  compliance_framework_coverage: "analyticsKeyed",
+  iso27001_compliance_status: "analyticsKeyed",
+  ens_compliance_status: "analyticsKeyed",
+  nis2_compliance_status: "analyticsKeyed",
+  cases_summary: "analyticsDiscrete",
+  cases_by_severity: "analyticsKeyed",
+  cases_by_source: "analyticsKeyed",
+  cases_trend: "analyticsTrend",
+  cases_sla_summary: "analyticsKeyed",
+  cases_mttr_trend: "analyticsTrend",
+  applivery_events_by_type: "analyticsKeyed",
+  applivery_events_trend: "analyticsTrend",
+  applivery_automation_outcomes: "analyticsKeyed",
+  system_health_summary: "analyticsKeyed",
+  os_updates_catalog_summary: "analyticsKeyed",
+  os_updates_device_status_summary: "analyticsKeyed",
+  vuln_catalog_summary: "analyticsKeyed",
+  vuln_device_status_summary: "analyticsKeyed",
+  vuln_service_device_status_summary: "analyticsKeyed",
+  os_lifecycle_summary: "analyticsKeyed",
+  os_lifecycle_device_status_summary: "analyticsKeyed",
+  apple_app_updates_summary: "analyticsKeyed",
+  triggers_summary: "analyticsKeyed",
+  triggers_fired_trend: "analyticsTrend",
+  workflow_runs_summary: "analyticsDiscrete",
+  workflow_runs_trend: "analyticsTrend",
+  device_risk_distribution: "analyticsKeyed",
+  device_risk_trend: "analyticsTrend",
+  mitre_coverage: "analyticsDiscrete",
+  threat_intel_summary: "analyticsKeyed",
+  ticketing_summary: "analyticsDiscrete",
+};
+
+export function chartTypesFor(stat: string): ChartType[] {
+  const shape = SOURCE_SHAPES[stat] ?? "listCountOnly";
+  return SHAPES[shape] ?? ["scorecard"];
+}
+
+// 1:1 port of selectSource's default-chart heuristic (App.jsx:3666-3676):
+// prefer 'list' for grouped/app/user sources, otherwise the shape's first
+// chart type — but keep the widget's current type if it's still valid for
+// the newly picked source.
+export function defaultChartTypeForSource(stat: string, currentType?: ChartType): ChartType {
+  const shape = SOURCE_SHAPES[stat] ?? "listCountOnly";
+  const available = SHAPES[shape] ?? ["scorecard"];
+  if (currentType && available.includes(currentType)) return currentType;
+  const preferList = available.includes("list") && shape !== "analyticsKeyed" && shape !== "analyticsDiscrete";
+  return preferList ? "list" : available[0];
+}
+
+// 1:1 port of the per-source icon/color badge map used by WidgetHeader
+// (App.jsx:4610-4669). Icon names reference @solar-icons/vue exports (the
+// migrated stack's icon set — original used lucide-react, which isn't
+// available here, so each entry below is the closest semantic equivalent).
+export interface WidgetIconDef {
+  icon: string;
+  color: string;
+  bg: string;
+}
+const PRIMARY_BLUE = "#0241E3";
+const SUCCESS = "#22C55E";
+const WARNING = "#F59E0B";
+const DANGER = "#EF4444";
+
+export const WIDGET_ICON_MAP: Record<string, WidgetIconDef> = {
+  stats_devices_os: { icon: "Smartphone", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  stats_devices_status: { icon: "Pulse", color: SUCCESS, bg: `${SUCCESS}15` },
+  stats_builds_os: { icon: "Smartphone", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  stats_collaborators: { icon: "UsersGroupRounded", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  stats_downloads_trend: { icon: "GraphUp", color: "#8B5CF6", bg: "#8B5CF615" },
+  stats_builds_trend: { icon: "GraphUp", color: "#06B6D4", bg: "#06B6D415" },
+  stats_devices_trend: { icon: "GraphUp", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  stats_compliance: { icon: "ShieldWarning", color: SUCCESS, bg: `${SUCCESS}15` },
+  stats_battery: { icon: "BatteryCharge", color: WARNING, bg: `${WARNING}15` },
+  stats_models: { icon: "Smartphone", color: "#6B7280", bg: "#6B728015" },
+  stats_os_updates_all: { icon: "Refresh", color: WARNING, bg: `${WARNING}15` },
+  stats_os_versions: { icon: "Widget2", color: "#06B6D4", bg: "#06B6D415" },
+  stats_sync_errors: { icon: "DangerTriangle", color: DANGER, bg: `${DANGER}15` },
+  mdm_devices: { icon: "Smartphone", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  mdm_users: { icon: "UsersGroupRounded", color: "#8B5CF6", bg: "#8B5CF615" },
+  mdm_collaborators: { icon: "Case", color: "#06B6D4", bg: "#06B6D415" },
+  app_dist_store_users: { icon: "UsersGroupRounded", color: SUCCESS, bg: `${SUCCESS}15` },
+  app_dist_apps: { icon: "Box", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  app_dist_collaborators: { icon: "Case", color: "#F59E0B", bg: "#F59E0B15" },
+  org_profile: { icon: "Buildings2", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  mdm_segments: { icon: "Layers", color: "#8B5CF6", bg: "#8B5CF615" },
+  compliance_policies_summary: { icon: "ShieldCheck", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  compliance_devices_violating: { icon: "ShieldWarning", color: DANGER, bg: `${DANGER}15` },
+  compliance_violations_by_policy: { icon: "Chart2", color: WARNING, bg: `${WARNING}15` },
+  compliance_violations_trend: { icon: "GraphUp", color: DANGER, bg: `${DANGER}15` },
+  compliance_review_queue: { icon: "Checklist", color: "#8B5CF6", bg: "#8B5CF615" },
+  autorun_safety_summary: { icon: "ShieldCheck", color: WARNING, bg: `${WARNING}15` },
+  compliance_framework_coverage: { icon: "ShieldCheck", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  iso27001_compliance_status: { icon: "History", color: "#14B8A6", bg: "#14B8A615" },
+  ens_compliance_status: { icon: "Flag", color: "#DC2626", bg: "#DC262615" },
+  nis2_compliance_status: { icon: "Global", color: "#3B82F6", bg: "#3B82F615" },
+  cases_summary: { icon: "Folder", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  cases_by_severity: { icon: "DangerTriangle", color: DANGER, bg: `${DANGER}15` },
+  cases_by_source: { icon: "Chart2", color: "#8B5CF6", bg: "#8B5CF615" },
+  cases_trend: { icon: "GraphUp", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  cases_sla_summary: { icon: "ClockCircle", color: WARNING, bg: `${WARNING}15` },
+  cases_mttr_trend: { icon: "GraphUp", color: "#8B5CF6", bg: "#8B5CF615" },
+  applivery_events_by_type: { icon: "Satellite", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  applivery_events_trend: { icon: "GraphUp", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  applivery_automation_outcomes: { icon: "Checklist", color: "#8B5CF6", bg: "#8B5CF615" },
+  system_health_summary: { icon: "Pulse", color: SUCCESS, bg: `${SUCCESS}15` },
+  os_updates_catalog_summary: { icon: "Cpu", color: "#0078D4", bg: "#0078D415" },
+  os_updates_device_status_summary: { icon: "ShieldWarning", color: "#0078D4", bg: "#0078D415" },
+  vuln_catalog_summary: { icon: "Bug", color: "#8B5CF6", bg: "#8B5CF615" },
+  vuln_device_status_summary: { icon: "ShieldWarning", color: "#8B5CF6", bg: "#8B5CF615" },
+  vuln_service_device_status_summary: { icon: "ShieldWarning", color: "#DC2626", bg: "#DC262615" },
+  os_lifecycle_summary: { icon: "Hourglass", color: "#EC4899", bg: "#EC489915" },
+  os_lifecycle_device_status_summary: { icon: "Hourglass", color: "#EC4899", bg: "#EC489915" },
+  apple_app_updates_summary: { icon: "Box", color: "#22C55E", bg: "#22C55E15" },
+  triggers_summary: { icon: "PlugCircle", color: "#F97316", bg: "#F9731615" },
+  triggers_fired_trend: { icon: "GraphUp", color: "#F97316", bg: "#F9731615" },
+  workflow_runs_summary: { icon: "Routing", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  workflow_runs_trend: { icon: "GraphUp", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  device_risk_distribution: { icon: "ShieldWarning", color: DANGER, bg: `${DANGER}15` },
+  device_risk_trend: { icon: "GraphUp", color: DANGER, bg: `${DANGER}15` },
+  mitre_coverage: { icon: "Target", color: "#8B5CF6", bg: "#8B5CF615" },
+  threat_intel_summary: { icon: "Radar", color: "#8B5CF6", bg: "#8B5CF615" },
+  ticketing_summary: { icon: "ChatRound", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+};
+export const DEFAULT_WIDGET_ICON: WidgetIconDef = { icon: "Chart2", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` };
+
+// Filter field defs per source — 1:1 port of the Builder panel's Filters
+// section (App.jsx:5681-5726). Rendered dynamically by WidgetBuilderPanel.
+export const FILTER_SOURCES_WITH_OS = new Set(["mdm_devices", "app_dist_apps"]);
+export const FILTER_SOURCES_WITH_COMPLIANCE = new Set(["mdm_devices"]);
+export const FILTER_SOURCES_WITH_ROLE = new Set(["app_dist_collaborators"]);
+export const FILTER_SOURCES_WITH_AUTH_ORIGIN = new Set(["app_dist_collaborators", "mdm_collaborators", "app_dist_store_users"]);
+export function hasAnyFilters(stat: string): boolean {
+  return FILTER_SOURCES_WITH_OS.has(stat) || FILTER_SOURCES_WITH_COMPLIANCE.has(stat) || FILTER_SOURCES_WITH_ROLE.has(stat) || FILTER_SOURCES_WITH_AUTH_ORIGIN.has(stat);
+}
 
 export interface WidgetSizeDef {
   id: "small" | "half" | "full";
   label: string;
+  desc: string;
   w: number;
   h: number;
 }
 
+// 1:1 port of SIZES (App.jsx:1722-1726).
 export const WIDGET_SIZES: WidgetSizeDef[] = [
-  { id: "small", label: "Small (3×2)", w: 3, h: 2 },
-  { id: "half", label: "Wide (6×3)", w: 6, h: 3 },
-  { id: "full", label: "Large (12×3)", w: 12, h: 3 },
+  { id: "small", label: "Small", desc: "1×1", w: 3, h: 2 },
+  { id: "half", label: "Wide", desc: "2×1", w: 6, h: 3 },
+  { id: "full", label: "Large", desc: "4×1", w: 12, h: 3 },
 ];
 
 export interface DashboardWidget {
