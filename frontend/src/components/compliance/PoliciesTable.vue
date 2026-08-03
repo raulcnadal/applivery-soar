@@ -20,6 +20,11 @@ const PRIMARY_BLUE = "#0241E3";
 const props = defineProps<{
   policies: CompliancePolicy[];
   isLoading?: boolean;
+  // Segment-scoping context (CompliancePoliciesView.jsx:452-457) — lets the
+  // empty state tell "no policies exist at all" apart from "none in this
+  // Segment", same distinction the original makes.
+  totalPoliciesCount?: number;
+  segmentName?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -83,8 +88,12 @@ async function remove(p: CompliancePolicy) {
 <template>
   <EmptyState
     v-if="!isLoading && policies.length === 0"
-    title="No Compliance Policies yet"
-    description="Define what &quot;out of compliance&quot; means and link it to a workflow to run automatically."
+    :title="(totalPoliciesCount ?? 0) === 0 ? 'No Compliance Policies yet' : `No policies in ${segmentName || 'this segment'}`"
+    :description="
+      (totalPoliciesCount ?? 0) === 0
+        ? 'Define what &quot;out of compliance&quot; means and link it to a workflow to run automatically.'
+        : 'Switch to Global or another segment to see more, or create one scoped to this segment.'
+    "
   />
   <div v-else class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
     <div v-for="p in policies" :key="p.id" class="rounded-xl p-4 shadow-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">

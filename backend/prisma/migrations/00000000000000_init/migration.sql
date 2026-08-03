@@ -82,6 +82,7 @@ CREATE TABLE "CompliancePolicy" (
     "framework" TEXT,
     "controlRef" TEXT,
     "targetDeviceAudienceId" TEXT,
+    "segmentId" TEXT,
     "evaluationIntervalMinutes" INTEGER NOT NULL DEFAULT 60,
     "autoRunBatchCap" INTEGER DEFAULT 15,
     "autoRunDestructiveAck" BOOLEAN NOT NULL DEFAULT false,

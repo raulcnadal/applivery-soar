@@ -111,6 +111,14 @@ model CompliancePolicy {
   framework                   String?
   controlRef                  String?
   targetDeviceAudienceId        String?
+  // Administrative/visibility scope only (docs/compliance.md: "does not
+  // filter which devices get checked") — which Segment owns this policy,
+  // used to scope the Policies list to whatever Segment is selected in the
+  // Segments panel (PolicyBuilder.jsx segmentId / CompliancePoliciesView.jsx
+  // collectSegmentIds). Bare string column, no relation — matches
+  // Case.segmentId's pattern, since Segments aren't a local Prisma model
+  // (fetched live from Applivery).
+  segmentId                   String?
   evaluationIntervalMinutes    Int       @default(60)
   autoRunBatchCap              Int?      @default(15)
   autoRunDestructiveAck         Boolean   @default(false)

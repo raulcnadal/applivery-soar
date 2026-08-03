@@ -5,18 +5,13 @@
 // Policies sub-view (above/below the policy grid), and the Template
 // Gallery is a modal opened via "New from Template", not a persistent tab.
 //
-// Segment scoping (roadmap Phase 9) — KNOWN, DISCLOSED GAP: the original
-// assigns each Compliance Policy an administrative/visibility Segment
-// (docs/compliance.md: "Segment — administrative/visibility scope only. It
-// does not filter which devices get checked") and scopes the policy list to
-// the Segments panel's selection. Our migrated `CompliancePolicy` Prisma
-// model has no segmentId field yet, so this policy list is NOT segment-
-// filtered — the Segments panel is still reachable from this page (it's
-// visible/hoverable, matching the original's currentView check) but has no
-// effect here. Closing this requires a schema migration adding
-// CompliancePolicy.segmentId plus a PolicyBuilder UI field — deferred as its
-// own follow-up rather than faked.
-import { onMounted, ref } from "vue";
+// Segment scoping (docs/compliance.md: "Segment — administrative/visibility
+// scope only. It does not filter which devices get checked") — each policy
+// is assigned an owning Segment in PolicyBuilderDrawer.vue, and this list is
+// scoped to whatever Segment is selected in the Segments panel, same
+// collectSegmentIds pattern as DevicesView.vue/CasesView.vue
+// (CompliancePoliciesView.jsx:245-253).
+import { computed, onMounted, ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import AppListsPanel from "../components/compliance/AppListsPanel.vue";
@@ -25,11 +20,19 @@ import PolicyBuilderDrawer from "../components/compliance/PolicyBuilderDrawer.vu
 import TemplateGallery from "../components/compliance/TemplateGallery.vue";
 import ViolationsQueue from "../components/compliance/ViolationsQueue.vue";
 import { useComplianceStore, type CompliancePolicy, type ComplianceTemplate } from "../stores/compliance";
+import { useSegmentsStore } from "../stores/segments";
 
 const PRIMARY_BLUE = "#0241E3";
 const DANGER = "#EF4444";
 
 const store = useComplianceStore();
+const segmentsStore = useSegmentsStore();
+
+const visiblePolicies = computed(() => {
+  const ids = segmentsStore.collectSegmentIds(segmentsStore.selectedSegment.id);
+  if (ids === null) return store.policies;
+  return store.policies.filter((p) => ids.has(String(p.segmentId ?? "0")));
+});
 
 const subView = ref<"policies" | "app-lists">("policies");
 
@@ -110,6 +113,13 @@ onMounted(async () => {
         <div class="flex items-center gap-2">
           <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white">Compliance</h1>
           <HelpIcon slug="compliance" title="Compliance admin guide" />
+          <span
+            v-if="String(segmentsStore.selectedSegment.id) !== '0'"
+            class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }"
+          >
+            <component :is="ICONS.Layers" :size="10" weight="Linear" /> {{ segmentsStore.selectedSegment.name }}
+          </span>
         </div>
         <p class="text-sm mt-1 text-gray-400">Policies watch device conditions and fire a linked Workflow the moment a device falls out of compliance.</p>
       </div>
@@ -121,7 +131,7 @@ onMounted(async () => {
           class="px-2.5 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-50 focus:ring-2 focus:ring-brand-500"
         >
           <option value="">All policies</option>
-          <option v-for="p in store.policies" :key="p.id" :value="p.id">{{ p.name }}</option>
+          <option v-for="p in visiblePolicies" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
         <button :disabled="isEvaluating" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50" @click="evaluateNow">
           <component :is="ICONS.Refresh" :size="14" weight="Linear" :class="isEvaluating ? 'animate-spin' : ''" /> {{ isEvaluating ? "Evaluating…" : "Evaluate now" }}
@@ -176,7 +186,14 @@ onMounted(async () => {
         <div class="w-8 h-8 border-2 rounded-full animate-spin mb-4" :style="{ borderColor: `${PRIMARY_BLUE}30`, borderTopColor: PRIMARY_BLUE }" />
         <span class="text-xs uppercase tracking-widest font-bold text-gray-400">Loading policies…</span>
       </div>
-      <PoliciesTable v-else :policies="store.policies" :is-loading="store.isLoadingPolicies" @edit="editPolicy" />
+      <PoliciesTable
+        v-else
+        :policies="visiblePolicies"
+        :is-loading="store.isLoadingPolicies"
+        :total-policies-count="store.policies.length"
+        :segment-name="segmentsStore.selectedSegment.name"
+        @edit="editPolicy"
+      />
     </template>
     <AppListsPanel v-else />
 

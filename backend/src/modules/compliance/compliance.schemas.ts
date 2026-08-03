@@ -30,6 +30,7 @@ export const compliancePolicySchema = z.object({
   framework: z.string().nullable().optional(),
   controlRef: z.string().nullable().optional(),
   targetDeviceAudienceId: z.string().nullable().optional(),
+  segmentId: z.string().nullable().optional(),
   evaluationIntervalMinutes: z.number().int().nullable().optional(),
   autoRunBatchCap: z.number().int().nullable().optional().default(15),
   autoRunDestructiveAck: z.boolean().default(false),

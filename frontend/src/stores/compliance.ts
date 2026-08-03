@@ -25,6 +25,7 @@ export interface CompliancePolicy {
   framework?: string | null;
   controlRef?: string | null;
   targetDeviceAudienceId?: string | null;
+  segmentId?: string | null;
   evaluationIntervalMinutes?: number | null;
   autoRunBatchCap?: number | null;
   autoRunDestructiveAck: boolean;

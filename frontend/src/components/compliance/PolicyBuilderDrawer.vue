@@ -8,19 +8,18 @@
 // ATT&CK tagging with condition-derived suggestions, "Apply to devices"
 // (Device Audience) scoping with a live "devices that will receive this
 // policy" preview, and a read-only framework/control badge for
-// template-originated policies.
-//
-// Deliberately NOT ported: the original's "Segment" field (administrative
-// scope only, no device-targeting effect) — there's no `segmentId` column
-// on CompliancePolicy in this stack's schema yet, and no Segments
-// navigation panel to select one from (roadmap Phase 9); sending it today
-// would be silently dropped by the backend's zod schema. Safe to add once
-// Phase 9 lands.
+// template-originated policies. Also includes the "Segment" field
+// (PolicyBuilder.jsx:688-706) — administrative/visibility scope only, no
+// device-targeting effect (docs/compliance.md) — which Segment owns this
+// policy, matching whatever was selected in the Segments panel when
+// "Create" was clicked; defaults to the currently-selected segment for new
+// policies, an existing policy keeps its own assigned segment untouched.
 import { Modal } from "@applivery/bluesky-vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useComplianceStore, type CompliancePolicy, type ConditionRule, type MatchedDevice, type MatchedDevicesDiagnostics } from "../../stores/compliance";
 import { useDevicesStore } from "../../stores/devices";
+import { useSegmentsStore } from "../../stores/segments";
 import { useWorkflowsStore } from "../../stores/workflows";
 import AudiencePickerField from "./AudiencePickerField.vue";
 import ConditionRow from "./ConditionRow.vue";
@@ -47,6 +46,7 @@ const emit = defineEmits<{ close: []; saved: [] }>();
 
 const store = useComplianceStore();
 const devicesStore = useDevicesStore();
+const segmentsStore = useSegmentsStore();
 const workflowsStore = useWorkflowsStore();
 
 const form = reactive({
@@ -68,6 +68,7 @@ const form = reactive({
   autoResolveCaseOnRecovery: false,
   mitreTechniques: [] as string[],
   targetDeviceAudienceId: "",
+  segmentId: "0",
   evalUnit: "hours" as "minutes" | "hours",
   evalAmount: "" as string | number,
 });
@@ -116,6 +117,11 @@ function resetForm() {
   form.autoResolveCaseOnRecovery = p?.autoResolveCaseOnRecovery ?? false;
   form.mitreTechniques = [...(p?.mitreTechniques ?? [])];
   form.targetDeviceAudienceId = p?.targetDeviceAudienceId ?? "";
+  // New policies are internally assigned to whichever Segment is selected in
+  // the left-hand Segments panel at creation time (PolicyBuilder.jsx:336-345)
+  // — editing an existing policy keeps its already-assigned segment untouched
+  // unless explicitly changed below.
+  form.segmentId = p?.segmentId != null ? String(p.segmentId) : String(segmentsStore.selectedSegment.id ?? 0);
   const initialMinutes = p?.evaluationIntervalMinutes ?? null;
   form.evalUnit = initialMinutes && initialMinutes % 60 === 0 ? "hours" : "minutes";
   form.evalAmount = initialMinutes == null ? "" : initialMinutes % 60 === 0 ? initialMinutes / 60 : initialMinutes;
@@ -280,6 +286,7 @@ async function save() {
       autoResolveCaseOnRecovery: form.autoResolveCaseOnRecovery,
       mitreTechniques: form.mitreTechniques,
       targetDeviceAudienceId: form.targetDeviceAudienceId || null,
+      segmentId: form.segmentId,
       evaluationIntervalMinutes,
       framework: templateFramework.value,
       controlRef: templateControlRef.value,
@@ -388,6 +395,19 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
             </select>
           </div>
         </div>
+      </div>
+
+      <div class="mb-5">
+        <p class="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5 text-gray-400">
+          <component :is="ICONS.Layers" :size="12" weight="Linear" /> Segment
+        </p>
+        <select v-model="form.segmentId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500">
+          <option value="0">Global</option>
+          <option v-for="s in devicesStore.segments" :key="s.id" :value="String(s.id)">{{ s.name }}</option>
+        </select>
+        <p class="text-[11px] mt-1.5 leading-relaxed text-gray-400">
+          Which Segment owns this policy administratively — matches whatever was selected in the segment panel when you clicked "Create". This doesn't by itself limit which devices are checked; use "Apply to devices" further down for that.
+        </p>
       </div>
 
       <div class="mb-5">
