@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { Button, EmptyState, StatusPill } from "@applivery/bluesky-vue";
 import type { ThreatIntelProvider } from "../../stores/threatIntel";
+import { useAuthStore } from "../../stores/auth";
 
 defineProps<{ providers: ThreatIntelProvider[]; isLoading: boolean }>();
 const emit = defineEmits<{ edit: [ThreatIntelProvider]; delete: [ThreatIntelProvider] }>();
+
+const auth = useAuthStore();
+const canEdit = () => auth.hasRiskyAction("canEditIntegrationSecrets");
 </script>
 
 <template>
@@ -23,8 +27,8 @@ const emit = defineEmits<{ edit: [ThreatIntelProvider]; delete: [ThreatIntelProv
           <td class="px-4 py-3 text-gray-700">{{ p.type }}</td>
           <td class="px-4 py-3"><StatusPill :label="p.enabled ? 'Enabled' : 'Disabled'" :color="p.enabled ? 'green' : 'gray'" /></td>
           <td class="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-            <Button size="sm" variant="ghost" @click="emit('edit', p)">Edit</Button>
-            <Button size="sm" variant="ghost" @click="emit('delete', p)">Delete</Button>
+            <Button size="sm" variant="ghost" :disabled="!canEdit()" @click="emit('edit', p)">Edit</Button>
+            <Button size="sm" variant="ghost" :disabled="!canEdit()" @click="emit('delete', p)">Delete</Button>
           </td>
         </tr>
       </tbody>

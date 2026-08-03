@@ -3,12 +3,15 @@
 // (main.py:13300-13340) — config shape depends on `type`.
 import { Alert, Button, Input, Modal } from "@applivery/bluesky-vue";
 import { reactive, ref, watch } from "vue";
+import { useAuthStore } from "../../stores/auth";
 import { useIntegrationsStore, type Integration } from "../../stores/integrations";
 
 const props = defineProps<{ open: boolean; integration: Integration | null }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
 const store = useIntegrationsStore();
+const auth = useAuthStore();
+const canEdit = () => auth.hasRiskyAction("canEditIntegrationSecrets");
 
 interface IntegrationForm {
   name: string; type: string; enabled: boolean;
@@ -117,7 +120,9 @@ async function runTest(dryRun: boolean) {
     <div class="space-y-3">
       <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
       <Alert v-if="testResult" type="info">{{ testResult }}</Alert>
+      <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — every control below is disabled.</Alert>
 
+      <div class="space-y-3" :class="canEdit() ? '' : 'opacity-60 pointer-events-none'">
       <Input v-model="form.name" label="Name" />
       <Input
         :model-value="form.type"
@@ -183,11 +188,12 @@ async function runTest(dryRun: boolean) {
         <label v-if="form.type === 'jira' || form.type === 'servicenow'" class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.autoCloseCaseOnRemoteResolve" /> Auto-close case when ticket resolves</label>
         <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.notifyOnSystemHealth" /> Page on background-job failure</label>
       </div>
+      </div>
 
       <div class="flex items-center gap-2 pt-2">
-        <Button :loading="isSaving" :disabled="!form.name" @click="save">{{ integration ? "Save changes" : "Create integration" }}</Button>
-        <Button v-if="integration" variant="secondary" :loading="isTesting" @click="runTest(true)">Validate config</Button>
-        <Button v-if="integration && form.type !== 'jira' && form.type !== 'servicenow'" variant="ghost" :loading="isTesting" @click="runTest(false)">Send test</Button>
+        <Button :loading="isSaving" :disabled="!canEdit() || !form.name" @click="save">{{ integration ? "Save changes" : "Create integration" }}</Button>
+        <Button v-if="integration" variant="secondary" :disabled="!canEdit()" :loading="isTesting" @click="runTest(true)">Validate config</Button>
+        <Button v-if="integration && form.type !== 'jira' && form.type !== 'servicenow'" variant="ghost" :disabled="!canEdit()" :loading="isTesting" @click="runTest(false)">Send test</Button>
         <Button variant="ghost" @click="emit('close')">Cancel</Button>
       </div>
     </div>

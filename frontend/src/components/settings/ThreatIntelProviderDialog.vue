@@ -3,12 +3,15 @@
 // (main.py:14228-14235).
 import { Alert, Button, Input, Modal } from "@applivery/bluesky-vue";
 import { reactive, ref, watch } from "vue";
+import { useAuthStore } from "../../stores/auth";
 import { useThreatIntelStore, type ThreatIntelProvider } from "../../stores/threatIntel";
 
 const props = defineProps<{ open: boolean; provider: ThreatIntelProvider | null }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
 const store = useThreatIntelStore();
+const auth = useAuthStore();
+const canEdit = () => auth.hasRiskyAction("canEditIntegrationSecrets");
 
 const form = reactive({ name: "", type: "virustotal", enabled: true, apiKey: "", urlTemplate: "", headers: "" });
 const isSaving = ref(false);
@@ -73,11 +76,13 @@ async function runTest() {
     <div class="space-y-3">
       <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
       <Alert v-if="testResult" type="info">{{ testResult }}</Alert>
+      <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — every control below is disabled.</Alert>
 
-      <Input v-model="form.name" label="Name" />
+      <Input v-model="form.name" label="Name" :disabled="!canEdit()" />
       <Input
         :model-value="form.type"
         type="select"
+        :disabled="!canEdit()"
         :options="[
           { value: 'virustotal', label: 'VirusTotal' },
           { value: 'abuseipdb', label: 'AbuseIPDB' },
@@ -89,18 +94,18 @@ async function runTest() {
       />
 
       <template v-if="form.type === 'generic_rest'">
-        <Input v-model="form.urlTemplate" label="URL template" placeholder="https://api.example.com/lookup?q={{ ioc }}" />
-        <Input v-model="form.headers" label="Headers (JSON, optional)" />
+        <Input v-model="form.urlTemplate" label="URL template" placeholder="https://api.example.com/lookup?q={{ ioc }}" :disabled="!canEdit()" />
+        <Input v-model="form.headers" label="Headers (JSON, optional)" :disabled="!canEdit()" />
       </template>
       <template v-else>
-        <Input v-model="form.apiKey" type="password" label="API key" />
+        <Input v-model="form.apiKey" type="password" label="API key" :disabled="!canEdit()" />
       </template>
 
-      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.enabled" /> Enabled</label>
+      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.enabled" :disabled="!canEdit()" /> Enabled</label>
 
       <div class="flex items-center gap-2 pt-2">
-        <Button :loading="isSaving" :disabled="!form.name" @click="save">{{ provider ? "Save changes" : "Add provider" }}</Button>
-        <Button v-if="provider" variant="secondary" :loading="isTesting" @click="runTest">Test</Button>
+        <Button :loading="isSaving" :disabled="!canEdit() || !form.name" @click="save">{{ provider ? "Save changes" : "Add provider" }}</Button>
+        <Button v-if="provider" variant="secondary" :disabled="!canEdit()" :loading="isTesting" @click="runTest">Test</Button>
         <Button variant="ghost" @click="emit('close')">Cancel</Button>
       </div>
     </div>

@@ -6,11 +6,15 @@
 // the right — replacing the earlier left-sidebar layout, which never matched the
 // original design.
 import { Widget, Smartphone, ShieldWarning, Folder, Routing, FileText, Settings, History, Logout } from "@solar-icons/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import { useAuthStore, type FeatureArea } from "../stores/auth";
 import { api } from "../api/http";
 import WorkspaceOnboardingModal from "../components/onboarding/WorkspaceOnboardingModal.vue";
+// Lazy-loaded — Settings pulls in ~20 sub-panels' worth of code that most
+// sessions never open; keeping it out of the eagerly-loaded shell chunk
+// matches how every other view is already route-level code-split.
+const SettingsModal = defineAsyncComponent(() => import("../components/settings/SettingsModal.vue"));
 
 const PRIMARY_BLUE = "#0241E3";
 
@@ -64,6 +68,11 @@ const activeId = computed(() => (typeof route.name === "string" ? route.name : "
 function goTo(id: string) {
   router.push({ name: id });
 }
+
+// Settings is a modal overlay on top of whatever page is currently open —
+// not a routable page — matching the original (App.jsx's isSettingsModalOpen
+// state, opened from this same gear icon, App.jsx:4377-4382).
+const isSettingsModalOpen = ref(false);
 
 const userDisplayName = computed(() => auth.fullName || auth.email || "");
 const userInitials = computed(() => {
@@ -126,9 +135,9 @@ function onCloned() {
           <button
             type="button"
             class="relative flex h-10 w-10 items-center justify-center rounded-md transition select-none text-white hover:bg-white/10"
-            :class="{ 'bg-white/15': activeId === 'settings' }"
+            :class="{ 'bg-white/15': isSettingsModalOpen }"
             title="Settings"
-            @click="goTo('settings')"
+            @click="isSettingsModalOpen = true"
           >
             <Settings :size="19" weight="Linear" />
           </button>
@@ -225,5 +234,6 @@ function onCloned() {
     </main>
 
     <WorkspaceOnboardingModal v-if="isOnboardingModalOpen" @close="isOnboardingModalOpen = false" @cloned="onCloned" />
+    <SettingsModal v-if="isSettingsModalOpen" @close="isSettingsModalOpen = false" />
   </div>
 </template>

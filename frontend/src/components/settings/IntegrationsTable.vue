@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { Button, EmptyState, StatusPill } from "@applivery/bluesky-vue";
 import type { Integration } from "../../stores/integrations";
+import { useAuthStore } from "../../stores/auth";
 
 defineProps<{ integrations: Integration[]; isLoading: boolean }>();
 const emit = defineEmits<{ edit: [Integration]; delete: [Integration] }>();
+
+const auth = useAuthStore();
+const canEdit = () => auth.hasRiskyAction("canEditIntegrationSecrets");
 </script>
 
 <template>
@@ -28,8 +32,8 @@ const emit = defineEmits<{ edit: [Integration]; delete: [Integration] }>();
           </td>
           <td class="px-4 py-3 text-gray-500">{{ i.lastFiredAt ? new Date(i.lastFiredAt).toLocaleString() : "Never" }} ({{ i.fireCount }})</td>
           <td class="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-            <Button size="sm" variant="ghost" @click="emit('edit', i)">Edit</Button>
-            <Button size="sm" variant="ghost" @click="emit('delete', i)">Delete</Button>
+            <Button size="sm" variant="ghost" :disabled="!canEdit()" @click="emit('edit', i)">Edit</Button>
+            <Button size="sm" variant="ghost" :disabled="!canEdit()" @click="emit('delete', i)">Delete</Button>
           </td>
         </tr>
       </tbody>
