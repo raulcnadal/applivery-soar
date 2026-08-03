@@ -89,6 +89,15 @@ export interface MitreTechnique {
   name: string;
   tactic: string;
   triggeredByFields?: string[];
+  revoked?: boolean;
+  deprecated?: boolean;
+  liveDataAvailable?: boolean;
+}
+
+export interface MitreCatalogMeta {
+  lastFetchedAt: string | null;
+  lastError: string | null;
+  techniqueCount: number;
 }
 
 export interface ComplianceTemplate {
@@ -136,6 +145,7 @@ export const useComplianceStore = defineStore("compliance", () => {
   const fields = ref<ComplianceFieldDef[]>([]);
   const mitreTechniques = ref<MitreTechnique[]>([]);
   const mitreTactics = ref<Array<{ key: string; name: string; order: number }>>([]);
+  const mitreCatalogMeta = ref<MitreCatalogMeta>({ lastFetchedAt: null, lastError: null, techniqueCount: 0 });
 
   const templates = ref<ComplianceTemplate[]>([]);
   const frameworks = ref<Array<{ key: string; name: string; description?: string }>>([]);
@@ -310,6 +320,20 @@ export const useComplianceStore = defineStore("compliance", () => {
     const res = await api.get("/mitre/techniques");
     mitreTechniques.value = res.data.items ?? [];
     mitreTactics.value = res.data.tactics ?? [];
+    mitreCatalogMeta.value = {
+      lastFetchedAt: res.data.catalogLastFetchedAt ?? null,
+      lastError: res.data.catalogLastError ?? null,
+      techniqueCount: res.data.catalogTechniqueCount ?? 0,
+    };
+  }
+
+  // Cross-checks the curated technique list against MITRE's live STIX feed
+  // (see backend/src/modules/catalogs/mitreCatalog.ts) — surfaces fresher
+  // names/revoked/deprecated flags without replacing the curated id set.
+  async function refreshMitreCatalogNow() {
+    const { api } = await import("../api/http");
+    await api.post("/mitre/refresh");
+    await fetchMitreTechniques();
   }
 
   async function fetchTemplates(framework?: string) {
@@ -381,6 +405,7 @@ export const useComplianceStore = defineStore("compliance", () => {
     fields,
     mitreTechniques,
     mitreTactics,
+    mitreCatalogMeta,
     templates,
     frameworks,
     appCatalog,
@@ -409,6 +434,7 @@ export const useComplianceStore = defineStore("compliance", () => {
     fetchFields,
     suggestMitreTechniques,
     fetchMitreTechniques,
+    refreshMitreCatalogNow,
     fetchTemplates,
     fetchAppCatalog,
     addAppCatalogEntry,
