@@ -316,16 +316,15 @@ export interface RiskResult {
  * Additive, fully-explainable device risk score (0-100) — port of
  * `_compute_device_risk` (main.py:3239). `openCases`/`activeViolations` are
  * passed by the caller (devices.service.ts's getDevicesFull), which loads
- * them once per fleet-wide call. In this phase both are ALWAYS empty
- * arrays — TODO(Phase5): Cases don't exist yet; TODO(Phase3): Compliance
- * Policy violations don't exist yet — this exactly matches how the
- * original scores a device before either subsystem has ever run.
+ * them once per fleet-wide call from the live Case/complianceEvaluationState
+ * tables.
  *
  * The OS-update/vuln/lifecycle/app-update/vuln-service fields read off
  * `device` (osUpdateStatus, vulnStatus, osLifecycleStatus,
- * appleAppUpdateStatus, vulnServiceStatus) are TODO(Phase3): always null
- * until the catalog-refresher background jobs exist, so those scoring
- * branches never fire yet — again matching cold-start original behavior.
+ * appleAppUpdateStatus, vulnServiceStatus) are populated by
+ * getDevicesFull from the OS-update/vuln/lifecycle/GDMF catalog services
+ * and their background-refresher jobs (backend/src/jobs/backgroundJobs.ts),
+ * so every scoring branch below is live, not a stub.
  */
 export function computeDeviceRisk(
   device: NormalizedDevice,
@@ -426,11 +425,10 @@ export function computeDeviceRisk(
     factors.push({ label: `${openCaseCount} open case${openCaseCount !== 1 ? "s" : ""}`, points });
   }
 
-  // TODO(Phase3): all five blocks below never fire yet — osUpdateStatus /
-  // vulnStatus / vulnServiceStatus / osLifecycleStatus / appleAppUpdateStatus
-  // are always null until the OS-update/vuln/lifecycle/GDMF/vuln-service
-  // catalog-refresher jobs exist. Kept verbatim (not deleted) so wiring
-  // Phase 3 in later just means populating these fields on `device`.
+  // osUpdateStatus / vulnStatus / vulnServiceStatus / osLifecycleStatus /
+  // appleAppUpdateStatus are populated on `device` by getDevicesFull from
+  // the live catalog services before this function runs, so all five
+  // blocks below fire normally.
   const osUpdateStatus = device.osUpdateStatus;
   if (osUpdateStatus && (osUpdateStatus.pendingCount ?? 0) > 0) {
     const pending = osUpdateStatus.pendingCount;

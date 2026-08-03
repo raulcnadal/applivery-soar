@@ -51,12 +51,10 @@ export interface NormalizedDevice {
   riskScore: number;
   riskTier: RiskTier;
   riskFactors: RiskFactor[];
-  // TODO(Phase3, backend): osUpdateStatus/vulnStatus/vulnServiceStatus/
-  // osLifecycleStatus/appleAppUpdateStatus are declared and rendered here
-  // (deviceNormalize.ts computes them), but the underlying catalog-refresher
-  // jobs don't exist yet — see devices.service.ts's getDevicesFull, which
-  // currently always produces null for these five. The mini-badges/drawer
-  // sections below are wired to render real data the moment that lands.
+  // osUpdateStatus/vulnStatus/vulnServiceStatus/osLifecycleStatus/
+  // appleAppUpdateStatus — populated by the backend's OS-update/vuln/
+  // lifecycle/GDMF/vuln-service catalog jobs (backgroundJobs.ts) and
+  // computed per-device in devices.service.ts's getDevicesFull.
   osUpdateStatus: Record<string, any> | null;
   vulnStatus: Record<string, any> | null;
   vulnServiceStatus: Record<string, any> | null;

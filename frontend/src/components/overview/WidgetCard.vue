@@ -11,6 +11,13 @@ import { Spinner } from "@applivery/bluesky-vue";
 import type { ChartType, DashboardWidget } from "../../lib/analyticsCatalog";
 import type { WidgetResponse } from "../../lib/widgetData";
 import { useUiStore } from "../../stores/ui";
+// Shared semantic color/label helpers — same ones WidgetInfoModal.vue uses
+// (roadmap Phase 10/11 gap-closure: this component used to carry its own
+// plain index-based palette while the zoom modal already used the real
+// _colorFor/_humanLabel port, so a widget's colors/labels would visibly
+// change between the live card and its zoomed-in modal. Ported from
+// App.jsx:3757-3799 — see lib/widgetVisuals.ts.
+import { colorFor, humanLabel } from "../../lib/widgetVisuals";
 
 const props = defineProps<{
   widget: DashboardWidget;
@@ -18,11 +25,6 @@ const props = defineProps<{
   isLoading: boolean;
   error: string | null;
 }>();
-
-const PALETTE = ["#0E4FF5", "#A855F7", "#0078D4", "#EC4899", "#14B8A6", "#F59E0B", "#EF4444", "#3DDC84", "#6366F1", "#84CC16"];
-function colorFor(idx: number): string {
-  return PALETTE[idx % PALETTE.length];
-}
 
 // Live widget cards render via ECharts (SVG canvas, not DOM), so Tailwind's
 // `dark:` classes can't reach the chart itself — theme-aware colors here
@@ -53,7 +55,7 @@ const chartOption = computed(() => {
           radius: t === "donut" ? ["55%", "80%"] : ["0%", "80%"],
           avoidLabelOverlap: true,
           label: { show: false },
-          data: chartData.value.map((d, i) => ({ name: d.name, value: d.value, itemStyle: { color: colorFor(i) } })),
+          data: chartData.value.map((d, i) => ({ name: humanLabel(d.name), value: d.value, itemStyle: { color: colorFor(props.widget.stat, d.name, i) } })),
         },
       ],
       graphic: t === "donut" ? [{ type: "text", left: "center", top: "center", style: { text: total.value.toLocaleString(), fontSize: 22, fontWeight: 700, fill: th.text } }] : [],
@@ -63,9 +65,9 @@ const chartOption = computed(() => {
     return {
       tooltip: { trigger: "item", ...tooltipBase },
       grid: { top: 16, bottom: 32, left: 40, right: 16 },
-      xAxis: { type: "category", data: chartData.value.map((d) => d.name), axisLabel: { ...axisLabelStyle, rotate: chartData.value.length > 5 ? 30 : 0 }, axisLine: { lineStyle: { color: th.border } } },
+      xAxis: { type: "category", data: chartData.value.map((d) => humanLabel(d.name)), axisLabel: { ...axisLabelStyle, rotate: chartData.value.length > 5 ? 30 : 0 }, axisLine: { lineStyle: { color: th.border } } },
       yAxis: { type: "value", axisLabel: axisLabelStyle, splitLine: { lineStyle: { color: th.gridLine } } },
-      series: [{ type: "bar", data: chartData.value.map((d, i) => ({ value: d.value, itemStyle: { color: colorFor(i), borderRadius: [4, 4, 0, 0] } })) }],
+      series: [{ type: "bar", data: chartData.value.map((d, i) => ({ value: d.value, itemStyle: { color: colorFor(props.widget.stat, d.name, i), borderRadius: [4, 4, 0, 0] } })) }],
     };
   }
   if (t === "line") {
@@ -81,7 +83,7 @@ const chartOption = computed(() => {
     return {
       tooltip: { ...tooltipBase },
       radar: {
-        indicator: chartData.value.map((d) => ({ name: d.name, max: Math.max(total.value, 1) })),
+        indicator: chartData.value.map((d) => ({ name: humanLabel(d.name), max: Math.max(total.value, 1) })),
         axisName: { color: th.textMuted, fontSize: 10 },
         splitLine: { lineStyle: { color: th.gridLine } },
         axisLine: { lineStyle: { color: th.border } },
@@ -100,7 +102,7 @@ const chartOption = computed(() => {
           endAngle: 0,
           min: 0,
           max: 100,
-          progress: { show: true, roundCap: true, itemStyle: { color: colorFor(0) } },
+          progress: { show: true, roundCap: true, itemStyle: { color: colorFor(props.widget.stat, primary?.name ?? "", 0) } },
           pointer: { show: false },
           axisLine: { lineStyle: { width: 12, color: [[1, th.border]] } },
           axisTick: { show: false },
@@ -131,7 +133,7 @@ const chartOption = computed(() => {
 
       <div v-else-if="chartType === 'list'" class="flex-1 overflow-y-auto text-sm divide-y divide-gray-100 dark:divide-gray-700">
         <div v-for="row in chartData" :key="row.name" class="flex justify-between py-1.5">
-          <span class="text-gray-600 dark:text-gray-300 truncate pr-2">{{ row.name }}</span>
+          <span class="text-gray-600 dark:text-gray-300 truncate pr-2">{{ humanLabel(row.name) }}</span>
           <span class="font-medium text-gray-900 dark:text-white">{{ row.value }}</span>
         </div>
         <p v-if="!chartData.length" class="text-gray-400 text-xs py-2">No data.</p>
@@ -140,7 +142,7 @@ const chartOption = computed(() => {
       <div v-else-if="chartType === 'progress'" class="flex-1 overflow-y-auto space-y-2">
         <div v-for="row in chartData" :key="row.name">
           <div class="flex justify-between text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
-            <span class="truncate pr-2">{{ row.name }}</span><span>{{ row.value }}</span>
+            <span class="truncate pr-2">{{ humanLabel(row.name) }}</span><span>{{ row.value }}</span>
           </div>
           <div class="w-full h-2 bg-gray-100 dark:bg-gray-700 rounded-full">
             <div class="h-2 bg-brand-600 rounded-full" :style="{ width: (total ? (row.value / Math.max(...chartData.map((d) => d.value), 1)) * 100 : 0) + '%' }" />

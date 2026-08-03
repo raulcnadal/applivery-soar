@@ -118,14 +118,11 @@ async function fetchDeviceAudienceMembershipMap(
  * one for the compliant subset, no per-device requests. Cached for
  * DEVICES_CACHE_TTL_SECONDS (15 min); pass refresh=true to force a live pull.
  *
- * Phase 3 (Compliance Policy violations/state, OS-update/vuln/lifecycle/GDMF
- * catalogs, installed-apps store, Vulnerability Service) and Phase 5 (Cases)
- * don't exist yet in this incremental migration — every dependency on them
- * below is stubbed to the exact empty/null shape the original produces
- * before those subsystems have ever run for a workspace, with a
- * `TODO(PhaseN)` marking exactly what wiring replaces the stub. This is not
- * an approximation of the original's behavior in that state — it's the same
- * code path.
+ * Every dependency below is live: Compliance Policy violations/state (from
+ * `complianceEvaluationState`), the OS-update/vuln/lifecycle/GDMF catalogs
+ * and their background-refresher jobs, the installed-apps store, the
+ * Vulnerability Service integration, and Cases (open-case lookup against
+ * the `Case` table) — see the per-field loads below.
  */
 export async function getDevicesFull(
   authorization: string,
@@ -301,9 +298,10 @@ export async function getDeviceCompliance(authorization: string, workspaceSlug: 
 /**
  * Port of `get_device_firewall_state` (main.py:5488). Reads
  * FirewallRemediationState rows for this device (one row per ruleset
- * applied) into the original's `{active: [...]}` shape.
- * TODO(Phase4): always empty until the Workflows engine's firewall actions
- * (applyFirewallRuleSet) exist to ever write a row here.
+ * applied) into the original's `{active: [...]}` shape. Populated once the
+ * Workflows engine's firewall actions (applyFirewallRuleSet/
+ * restoreFirewallRuleSet, firewallRuleSets.service.ts) have dispatched at
+ * least once for this device.
  */
 export async function getDeviceFirewallState(workspaceSlug: string, deviceId: string) {
   const slugKey = workspaceSlug || "global";

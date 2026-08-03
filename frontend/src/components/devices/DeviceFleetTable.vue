@@ -299,9 +299,10 @@ function riskMeta(tier: string) {
 }
 
 // OS-version mini-badges — each returns null (render nothing) or
-// {text,color,title}. Fields are TODO(Phase3) on the backend today (always
-// null), so these render nothing until that catalog-refresher work lands —
-// see the NormalizedDevice comment in stores/devices.ts.
+// {text,color,title}. Backed by live data from the backend's OS-update/
+// vuln/lifecycle/GDMF/vuln-service catalog jobs — see the NormalizedDevice
+// comment in stores/devices.ts. Still returns null per-device whenever a
+// device's own platform/OS version has nothing pending, same as the original.
 function osUpdateBadge(status: any) {
   if (!status) return null;
   if (status.confidence === "unknown") return { text: "Patch level unconfirmed", color: "#6B7280", title: "A newer Windows security update may exist for this build, but we couldn't confirm the exact patch level from Microsoft's catalog." };
