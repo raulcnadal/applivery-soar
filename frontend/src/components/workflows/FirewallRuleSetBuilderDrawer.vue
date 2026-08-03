@@ -83,8 +83,12 @@ async function save() {
       <div class="space-y-3">
         <Input v-model="form.name" label="Name" />
         <Input v-model="form.description" label="Description" />
-        <label class="flex items-center gap-2 text-sm text-gray-700">
-          <input type="checkbox" v-model="form.ensureFirewallEnabled" /> No EDR present — ensure Windows Firewall itself is enabled when applying
+        <label class="flex items-start gap-2 text-xs p-2 rounded-lg bg-gray-50 text-gray-700">
+          <input type="checkbox" class="mt-0.5" v-model="form.ensureFirewallEnabled" />
+          <span>
+            <span class="font-semibold">Ensure Windows Firewall is enabled when applying</span><br />
+            <span class="text-gray-400">Turn this off for devices with a 3rd-party EDR — EDR agents commonly require Windows Firewall to stay off to avoid conflicting with their own driver-level rules. When off, this rule set only adds/removes its own rules and never touches the firewall's on/off state.</span>
+          </span>
         </label>
         <div class="grid grid-cols-2 gap-3">
           <Input
@@ -102,7 +106,7 @@ async function save() {
             @update:model-value="form.defaultOutboundAction = $event as string"
           />
         </div>
-        <p class="text-xs text-gray-500">Changing the profile's default action (not a rule) is what makes a genuine "block everything except these exceptions" posture possible — Windows Firewall always lets an explicit Block rule beat an explicit Allow rule regardless of order.</p>
+        <p class="text-xs text-gray-500">Windows Firewall always lets an explicit Block rule beat an explicit Allow rule, regardless of order — so a genuine "block everything except these exceptions" posture only works by changing the default action here, then adding Allow rules below as the exceptions. Leave both "as-is" for rule sets that just add specific Block/Allow rules (e.g. blocking one port) without changing the fleet-wide default. Restore reverts these to Windows' own out-of-box defaults (inbound Block, outbound Allow).</p>
       </div>
 
       <section>
@@ -145,7 +149,7 @@ async function save() {
               <Input
                 :model-value="rule.profile"
                 type="select"
-                :options="['Any', 'Domain', 'Private', 'Public'].map((p) => ({ value: p, label: p }))"
+                :options="['Any', 'Domain', 'Private', 'Public', 'Domain,Private', 'Domain,Public', 'Private,Public'].map((p) => ({ value: p, label: p }))"
                 label="Profile"
                 @update:model-value="rule.profile = $event as string"
               />

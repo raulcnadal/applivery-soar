@@ -1,55 +1,43 @@
 <script setup lang="ts">
-// Workflows top-level view — Workflows / Run History / Action Library /
-// Firewall Policies / Script Repos / Triggers tabs. Port of the original
-// app's Workflows view (Phase 4a: builder/dry-run/run/versions; Phase 4b:
-// Action Library, Firewall Rule Sets, Script Repos, Triggers).
-import { Alert, Button, PageHeader, Tabs } from "@applivery/bluesky-vue";
+// Workflows top-level view — port of WorkflowsView.jsx: exactly 3 sub-views
+// reached via a ViewSwitcher pill (Workflows / Script & OMA-URI Library /
+// Firewall Policy Library — NOT the 6 flat tabs this file used to have).
+// "Recent runs" lives inline below the workflow grid on the Workflows tab,
+// not as a separate tab. Script Repos has no persistent tab in the
+// original — it's a modal reached from the Library tab's "Import from Git
+// repo" button. Triggers is not part of this view at all in the original —
+// it's Settings' "Inbound Webhooks" tab; moved there in this same pass.
+import { Alert } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref } from "vue";
+import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import DryRunDialog from "../components/workflows/DryRunDialog.vue";
-import RunHistoryTable from "../components/workflows/RunHistoryTable.vue";
+import RecentRunsSection from "../components/workflows/RecentRunsSection.vue";
 import RunWorkflowDialog from "../components/workflows/RunWorkflowDialog.vue";
-import VersionHistoryDrawer from "../components/workflows/VersionHistoryDrawer.vue";
-import WorkflowBuilderDrawer from "../components/workflows/WorkflowBuilderDrawer.vue";
+import VersionHistoryModal from "../components/workflows/VersionHistoryModal.vue";
+import WorkflowBuilderModal from "../components/workflows/WorkflowBuilderModal.vue";
 import WorkflowsTable from "../components/workflows/WorkflowsTable.vue";
 import ActionLibraryTable from "../components/workflows/ActionLibraryTable.vue";
 import ActionLibraryEntryDialog from "../components/workflows/ActionLibraryEntryDialog.vue";
 import ScriptBrowseImportDialog from "../components/workflows/ScriptBrowseImportDialog.vue";
+import ScriptRepoImportModal from "../components/workflows/ScriptRepoImportModal.vue";
 import FirewallRuleSetsTable from "../components/workflows/FirewallRuleSetsTable.vue";
 import FirewallRuleSetBuilderDrawer from "../components/workflows/FirewallRuleSetBuilderDrawer.vue";
-import ScriptReposTable from "../components/workflows/ScriptReposTable.vue";
-import ScriptRepoDialog from "../components/workflows/ScriptRepoDialog.vue";
-import ScriptRepoBrowseDialog from "../components/workflows/ScriptRepoBrowseDialog.vue";
-import TriggersTable from "../components/workflows/TriggersTable.vue";
-import TriggerDialog from "../components/workflows/TriggerDialog.vue";
 import { useWorkflowsStore, type Workflow } from "../stores/workflows";
 import { useActionLibraryStore, type ActionLibraryEntry } from "../stores/actionLibrary";
 import { useFirewallRuleSetsStore, type FirewallRuleSet } from "../stores/firewallRuleSets";
-import { useScriptReposStore, type ScriptRepo } from "../stores/scriptRepos";
-import { useTriggersStore, type Trigger } from "../stores/triggers";
 
 const store = useWorkflowsStore();
 const actionLibraryStore = useActionLibraryStore();
 const firewallStore = useFirewallRuleSetsStore();
-const scriptReposStore = useScriptReposStore();
-const triggersStore = useTriggersStore();
 
-const tabs = [
-  { id: "workflows", label: "Workflows" },
-  { id: "runs", label: "Run History" },
-  { id: "action-library", label: "Action Library" },
-  { id: "firewall", label: "Firewall Policies" },
-  { id: "script-repos", label: "Script Repos" },
-  { id: "triggers", label: "Triggers" },
-];
-const activeTab = ref("workflows");
-// Port of WORKFLOWS_TAB_ANCHORS (WorkflowsView.jsx) — the original had 3
-// tabs (workflows/library/firewall); Run History/Script Repos/Triggers are
-// new tabs merged into this same view and land at the doc's top.
-const WORKFLOWS_TAB_ANCHORS: Record<string, string> = {
-  workflows: "workflow-list", "action-library": "script--oma-uri-library", firewall: "firewall-policy-library",
+type Tab = "workflows" | "library" | "firewall";
+const tab = ref<Tab>("workflows");
+// Port of WORKFLOWS_TAB_ANCHORS (WorkflowsView.jsx:11).
+const WORKFLOWS_TAB_ANCHORS: Record<Tab, string> = {
+  workflows: "workflow-list", library: "script--oma-uri-library", firewall: "firewall-policy-library",
 };
-const helpAnchor = computed<string | null>(() => WORKFLOWS_TAB_ANCHORS[activeTab.value] ?? null);
+const helpAnchor = computed(() => WORKFLOWS_TAB_ANCHORS[tab.value]);
 
 const builderOpen = ref(false);
 const editingWorkflow = ref<Workflow | null>(null);
@@ -60,17 +48,11 @@ const activeWorkflow = ref<Workflow | null>(null);
 
 const libraryEntryOpen = ref(false);
 const editingEntry = ref<ActionLibraryEntry | null>(null);
-const browseImportOpen = ref(false);
+const browseApplivertOpen = ref(false);
+const scriptRepoImportOpen = ref(false);
 
 const firewallBuilderOpen = ref(false);
 const editingRuleSet = ref<FirewallRuleSet | null>(null);
-
-const scriptRepoDialogOpen = ref(false);
-const scriptRepoBrowseOpen = ref(false);
-const activeRepo = ref<ScriptRepo | null>(null);
-
-const triggerDialogOpen = ref(false);
-const editingTrigger = ref<Trigger | null>(null);
 
 function openNew() {
   editingWorkflow.value = null;
@@ -111,93 +93,100 @@ function openEditRuleSet(r: FirewallRuleSet) {
   firewallBuilderOpen.value = true;
 }
 
-function openBrowseRepo(r: ScriptRepo) {
-  activeRepo.value = r;
-  scriptRepoBrowseOpen.value = true;
-}
-
-function openNewTrigger() {
-  editingTrigger.value = null;
-  triggerDialogOpen.value = true;
-}
-function openEditTrigger(t: Trigger) {
-  editingTrigger.value = t;
-  triggerDialogOpen.value = true;
+async function selectTab(t: Tab) {
+  tab.value = t;
+  if (t === "library" && actionLibraryStore.entries.length === 0) await actionLibraryStore.fetchEntries();
+  if (t === "firewall" && firewallStore.ruleSets.length === 0) await firewallStore.fetchRuleSets();
 }
 
 onMounted(async () => {
   await store.fetchWorkflows();
 });
-
-async function onTabChange(tabId: string) {
-  activeTab.value = tabId;
-  if (tabId === "action-library" && actionLibraryStore.entries.length === 0) await actionLibraryStore.fetchEntries();
-  if (tabId === "firewall" && firewallStore.ruleSets.length === 0) await firewallStore.fetchRuleSets();
-  if (tabId === "script-repos" && scriptReposStore.repos.length === 0) await scriptReposStore.fetchRepos();
-  if (tabId === "triggers" && triggersStore.triggers.length === 0) await triggersStore.fetchTriggers();
-}
 </script>
 
 <template>
-  <div class="p-8 space-y-6 animate-page-enter">
-    <PageHeader title="Workflows" :description="`${store.workflows.length} workflow${store.workflows.length === 1 ? '' : 's'} configured`">
-      <template #title-suffix>
-        <HelpIcon slug="workflows" :anchor="helpAnchor" title="Workflows admin guide" />
-      </template>
-      <template #action>
-        <Button v-if="activeTab === 'workflows'" @click="openNew">New workflow</Button>
-        <Button v-else-if="activeTab === 'action-library'" variant="secondary" class="mr-2" @click="browseImportOpen = true">Fetch from Applivery</Button>
-        <Button v-if="activeTab === 'action-library'" @click="openNewLibraryEntry">New entry</Button>
-        <Button v-if="activeTab === 'firewall'" @click="openNewRuleSet">New rule set</Button>
-        <Button v-if="activeTab === 'script-repos'" @click="scriptRepoDialogOpen = true">Connect repo</Button>
-        <Button v-if="activeTab === 'triggers'" @click="openNewTrigger">New trigger</Button>
-      </template>
-    </PageHeader>
+  <main class="p-8 pb-16">
+    <header class="flex justify-between items-start mb-8 gap-4 flex-wrap">
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-semibold leading-tight text-gray-900">Workflows</h1>
+          <HelpIcon slug="workflows" :anchor="helpAnchor" title="Workflows admin guide" />
+        </div>
+        <p class="text-sm mt-1 text-gray-400">
+          Chained actions — MDM commands, API calls, and notifications. Run manually, auto-fired by Compliance Policies on violation, or launched directly from a Case.
+        </p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0 ml-auto">
+        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 bg-gray-50 shrink-0">
+          <button
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
+            :class="tab === 'workflows' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+            @click="selectTab('workflows')"
+          >
+            <component :is="ICONS.Structure" :size="14" weight="Linear" /> Workflows
+          </button>
+          <button
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
+            :class="tab === 'library' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+            @click="selectTab('library')"
+          >
+            <component :is="ICONS.Library" :size="14" weight="Linear" /> Script &amp; OMA-URI Library
+          </button>
+          <button
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
+            :class="tab === 'firewall' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+            @click="selectTab('firewall')"
+          >
+            <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> Firewall Policy Library
+          </button>
+        </div>
+        <!-- Always rendered (rather than conditionally mounted) so its layout
+             space stays reserved on non-Workflows tabs — otherwise the pill
+             switcher next to it visibly shifts position, since removing this
+             button changes the row's total width. Port of the original's
+             identical `invisible pointer-events-none` trick. -->
+        <button
+          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200 shrink-0"
+          :class="tab === 'workflows' ? '' : 'invisible pointer-events-none'"
+          :aria-hidden="tab !== 'workflows'"
+          :tabindex="tab === 'workflows' ? 0 : -1"
+          @click="openNew"
+        >
+          <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Workflow
+        </button>
+      </div>
+    </header>
 
-    <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
-
-    <Tabs :tabs="tabs" :model-value="activeTab" variant="pill" @update:model-value="onTabChange($event as string)" />
-
-    <WorkflowsTable
-      v-if="activeTab === 'workflows'"
-      :workflows="store.workflows"
-      :is-loading="store.isLoading"
-      @edit="openEdit"
-      @dry-run="openDryRun"
-      @run="openRun"
-      @versions="openVersions"
-    />
-    <RunHistoryTable v-else-if="activeTab === 'runs'" />
-    <template v-else-if="activeTab === 'action-library'">
+    <template v-if="tab === 'library'">
       <Alert v-if="actionLibraryStore.error" type="danger">{{ actionLibraryStore.error }}</Alert>
-      <ActionLibraryTable :entries="actionLibraryStore.entries" :is-loading="actionLibraryStore.isLoading" @edit="openEditLibraryEntry" />
+      <ActionLibraryTable
+        :entries="actionLibraryStore.entries"
+        :is-loading="actionLibraryStore.isLoading"
+        @edit="openEditLibraryEntry"
+        @new="openNewLibraryEntry"
+        @fetch-applivery="browseApplivertOpen = true"
+        @import-git-repo="scriptRepoImportOpen = true"
+      />
     </template>
-    <template v-else-if="activeTab === 'firewall'">
+    <template v-else-if="tab === 'firewall'">
       <Alert v-if="firewallStore.error" type="danger">{{ firewallStore.error }}</Alert>
-      <FirewallRuleSetsTable :rule-sets="firewallStore.ruleSets" :is-loading="firewallStore.isLoading" @edit="openEditRuleSet" />
+      <FirewallRuleSetsTable :rule-sets="firewallStore.ruleSets" :is-loading="firewallStore.isLoading" @edit="openEditRuleSet" @new="openNewRuleSet" />
     </template>
-    <template v-else-if="activeTab === 'script-repos'">
-      <Alert v-if="scriptReposStore.error" type="danger">{{ scriptReposStore.error }}</Alert>
-      <ScriptReposTable :repos="scriptReposStore.repos" :is-loading="scriptReposStore.isLoading" @browse="openBrowseRepo" />
-    </template>
-    <template v-else-if="activeTab === 'triggers'">
-      <Alert v-if="triggersStore.error" type="danger">{{ triggersStore.error }}</Alert>
-      <TriggersTable :triggers="triggersStore.triggers" :is-loading="triggersStore.isLoading" @edit="openEditTrigger" />
+    <template v-else>
+      <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
+      <WorkflowsTable :workflows="store.workflows" :is-loading="store.isLoading" @edit="openEdit" @dry-run="openDryRun" @run="openRun" @versions="openVersions" />
+      <RecentRunsSection />
     </template>
 
-    <WorkflowBuilderDrawer :open="builderOpen" :workflow="editingWorkflow" @close="builderOpen = false" @saved="store.fetchWorkflows()" />
+    <WorkflowBuilderModal :open="builderOpen" :workflow="editingWorkflow" @close="builderOpen = false" @saved="store.fetchWorkflows()" />
     <DryRunDialog :open="dryRunOpen" :workflow="activeWorkflow" @close="dryRunOpen = false" />
     <RunWorkflowDialog :open="runDialogOpen" :workflow="activeWorkflow" @close="runDialogOpen = false" />
-    <VersionHistoryDrawer :open="versionsOpen" :workflow="activeWorkflow" @close="versionsOpen = false" @restored="store.fetchWorkflows()" />
+    <VersionHistoryModal :open="versionsOpen" :workflow="activeWorkflow" @close="versionsOpen = false" @restored="store.fetchWorkflows()" />
 
     <ActionLibraryEntryDialog :open="libraryEntryOpen" :entry="editingEntry" @close="libraryEntryOpen = false" @saved="actionLibraryStore.fetchEntries()" />
-    <ScriptBrowseImportDialog :open="browseImportOpen" @close="browseImportOpen = false" @imported="actionLibraryStore.fetchEntries()" />
+    <ScriptBrowseImportDialog :open="browseApplivertOpen" @close="browseApplivertOpen = false" @imported="actionLibraryStore.fetchEntries()" />
+    <ScriptRepoImportModal :open="scriptRepoImportOpen" @close="scriptRepoImportOpen = false" @imported="actionLibraryStore.fetchEntries()" />
 
     <FirewallRuleSetBuilderDrawer :open="firewallBuilderOpen" :rule-set="editingRuleSet" @close="firewallBuilderOpen = false" @saved="firewallStore.fetchRuleSets()" />
-
-    <ScriptRepoDialog :open="scriptRepoDialogOpen" @close="scriptRepoDialogOpen = false" @saved="scriptReposStore.fetchRepos()" />
-    <ScriptRepoBrowseDialog :open="scriptRepoBrowseOpen" :repo="activeRepo" @close="scriptRepoBrowseOpen = false" @imported="actionLibraryStore.fetchEntries()" />
-
-    <TriggerDialog :open="triggerDialogOpen" :trigger="editingTrigger" @close="triggerDialogOpen = false" @saved="triggersStore.fetchTriggers()" />
-  </div>
+  </main>
 </template>

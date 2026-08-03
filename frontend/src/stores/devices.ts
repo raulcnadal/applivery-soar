@@ -206,6 +206,14 @@ export const useDevicesStore = defineStore("devices", () => {
     return res.data.items ?? [];
   }
 
+  // Backs the mdm_action step editor's app_select fields (Install/Uninstall
+  // App actions) — WorkflowBuilder.jsx:328-339's `apps` fetch.
+  async function getApps(platform: string): Promise<PickerItem[]> {
+    const { api } = await import("../api/http");
+    const res = await api.get("/apps", { params: { platform } });
+    return res.data.items ?? [];
+  }
+
   async function getDeviceCompliance(deviceId: string) {
     const { api } = await import("../api/http");
     const res = await api.get(`/devices/${deviceId}/compliance`);
@@ -269,6 +277,7 @@ export const useDevicesStore = defineStore("devices", () => {
     fetchDevices,
     fetchPickers,
     getPolicies,
+    getApps,
     getDeviceCompliance,
     getFirewallState,
     updateSegment,

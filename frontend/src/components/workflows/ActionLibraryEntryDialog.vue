@@ -139,14 +139,14 @@ async function save() {
           <Input
             :model-value="form.action"
             type="select"
-            :options="['Add', 'Replace', 'Delete', 'Get', 'Exec'].map((a) => ({ value: a, label: a }))"
+            :options="['Add', 'Replace', 'Delete', 'Exec', 'Get', 'Copy'].map((a) => ({ value: a, label: a }))"
             label="Action"
             @update:model-value="form.action = $event as string"
           />
           <Input
             :model-value="form.format"
             type="select"
-            :options="['chr', 'int', 'bool', 'node', 'null'].map((f) => ({ value: f, label: f }))"
+            :options="['chr', 'int', 'bool', 'xml', 'b64', 'bin', 'node', 'null', 'date', 'time', 'float'].map((f) => ({ value: f, label: f }))"
             label="Format"
             @update:model-value="form.format = $event as string"
           />

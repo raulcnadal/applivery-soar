@@ -179,11 +179,14 @@ export const useWorkflowsStore = defineStore("workflows", () => {
     return res.data;
   }
 
-  async function fetchRuns(limit = 50) {
+  async function fetchRuns(limit = 10, dateFrom?: string, dateTo?: string) {
     isLoadingRuns.value = true;
     try {
       const { api } = await import("../api/http");
-      const res = await api.get("/workflows/runs", { params: { limit } });
+      const params: Record<string, string | number> = { limit };
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      const res = await api.get("/workflows/runs", { params });
       runs.value = res.data.items ?? [];
       runsTotal.value = res.data.total ?? 0;
     } finally {
@@ -191,8 +194,12 @@ export const useWorkflowsStore = defineStore("workflows", () => {
     }
   }
 
-  function exportRunsUrl(): string {
-    return "/api/workflows/runs/export";
+  function exportRunsUrl(dateFrom?: string, dateTo?: string): string {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    const qs = params.toString();
+    return `/api/workflows/runs/export${qs ? `?${qs}` : ""}`;
   }
 
   async function fetchMdmActions() {

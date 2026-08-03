@@ -41,10 +41,11 @@ export const useScriptReposStore = defineStore("scriptRepos", () => {
     }
   }
 
-  async function createRepo(payload: { name: string; owner: string; repo: string; branch?: string; path?: string }) {
+  async function createRepo(payload: { name: string; owner: string; repo: string; branch?: string; path?: string }): Promise<ScriptRepo> {
     const { api } = await import("../api/http");
-    await api.post("/script-repos", payload);
+    const res = await api.post("/script-repos", payload);
     await fetchRepos();
+    return res.data as ScriptRepo;
   }
 
   async function deleteRepo(repoId: string) {

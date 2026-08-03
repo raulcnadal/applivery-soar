@@ -4,8 +4,9 @@
 // Recovery steps (see WorkflowBuilderDrawer) run linearly, no branching, so
 // `showBranching` is off there.
 import { Button, Input } from "@applivery/bluesky-vue";
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useComplianceStore } from "../../stores/compliance";
+import { useDevicesStore, type PickerItem } from "../../stores/devices";
 import { useWorkflowsStore, type MdmActionDef, type WorkflowStep } from "../../stores/workflows";
 import { useActionLibraryStore } from "../../stores/actionLibrary";
 import { useFirewallRuleSetsStore } from "../../stores/firewallRuleSets";
@@ -28,13 +29,48 @@ const store = useWorkflowsStore();
 const complianceStore = useComplianceStore();
 const actionLibraryStore = useActionLibraryStore();
 const firewallStore = useFirewallRuleSetsStore();
+const devicesStore = useDevicesStore();
 
 onMounted(async () => {
   if (store.mdmActions.length === 0) await store.fetchMdmActions();
   if (complianceStore.policies.length === 0) await complianceStore.fetchPolicies();
   if (actionLibraryStore.entries.length === 0) await actionLibraryStore.fetchEntries();
   if (firewallStore.ruleSets.length === 0) await firewallStore.fetchRuleSets();
+  await loadMdmPolicies();
 });
+
+// Applivery MDM Policies (distinct from Compliance Policies above) for the
+// policy_replace/policy_add step pickers — platform-specific if a target
+// is locked in, otherwise fetched across every platform and tagged so the
+// admin can still pick one (WorkflowBuilder.jsx:328-336). Real dropdown
+// rather than a free-text policy-id input.
+const mdmPolicies = ref<Array<PickerItem & { platform: string }>>([]);
+const PLATFORM_VALUES = ["apple", "macos", "android", "windows", "aosp"];
+async function loadMdmPolicies() {
+  const platformsToFetch = props.targetPlatform ? [props.targetPlatform] : PLATFORM_VALUES;
+  const results = await Promise.all(
+    platformsToFetch.map((pf) => devicesStore.getPolicies(pf).then((items) => items.map((p) => ({ ...p, platform: pf }))).catch(() => [])),
+  );
+  mdmPolicies.value = results.flat();
+}
+watch(() => props.targetPlatform, loadMdmPolicies);
+
+const PLATFORM_LABELS: Record<string, string> = { apple: "iOS", macos: "macOS", android: "Android", windows: "Windows", aosp: "AOSP" };
+function mdmPolicyLabel(p: PickerItem & { platform: string }): string {
+  return props.targetPlatform ? p.name : `[${PLATFORM_LABELS[p.platform] || p.platform}] ${p.name}`;
+}
+
+// Apps for the mdm_action step's app_select fields (Install/Uninstall App
+// actions) — always platform-specific since mdm_action only exists once a
+// target is chosen (WorkflowBuilder.jsx:338-346).
+const apps = ref<PickerItem[]>([]);
+watch(
+  () => props.targetPlatform,
+  async (platform) => {
+    apps.value = platform ? await devicesStore.getApps(platform).catch(() => []) : [];
+  },
+  { immediate: true },
+);
 
 const STEP_TYPES = [
   { value: "mdm_action", label: "MDM action" },
@@ -70,11 +106,13 @@ function setFieldValue(fieldKey: string, value: unknown) {
   props.step.config.params[fieldKey] = value;
 }
 
-const branchOptions = computed(() => [
-  { value: "", label: "(default — next step in the list)" },
-  { value: "end", label: "End" },
-  ...props.allSteps.filter((s) => s.id !== props.step.id).map((s) => ({ value: s.id, label: s.name || s.id })),
-]);
+// Port of BranchSelect (WorkflowBuilder.jsx:65-80) — On Success's unset
+// default falls through to the next step; On Failure's unset default is
+// Stop (a failed step halts that device's run unless redirected). Both
+// store the same empty/null value; only the option label differs.
+const jumpTargets = computed(() => props.allSteps.filter((s) => s.id !== props.step.id).map((s) => ({ value: s.id, label: `Jump to: ${s.name || "Untitled step"}` })));
+const branchOptions = computed(() => [{ value: "", label: "Next step (default)" }, { value: "end", label: "End workflow" }, ...jumpTargets.value]);
+const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)" }, { value: "end", label: "End workflow" }, ...jumpTargets.value]);
 </script>
 
 <template>
@@ -131,9 +169,15 @@ const branchOptions = computed(() => [
             :label="f.label"
             @update:model-value="setFieldValue(f.key, $event)"
           />
-          <div v-else-if="f.type === 'app_select'">
-            <Input :model-value="fieldValue(f.key)" :label="`${f.label} (id)`" placeholder="Paste app id" @update:model-value="setFieldValue(f.key, $event)" />
-          </div>
+          <Input
+            v-else-if="f.type === 'app_select'"
+            :model-value="fieldValue(f.key)"
+            type="select"
+            :options="apps.map((a) => ({ value: a.id, label: a.name }))"
+            :label="f.label"
+            :placeholder="apps.length ? undefined : 'No apps found in App Distribution'"
+            @update:model-value="setFieldValue(f.key, $event)"
+          />
           <Input v-else :model-value="fieldValue(f.key)" :label="f.label" :placeholder="f.placeholder" @update:model-value="setFieldValue(f.key, $event)" />
         </template>
       </div>
@@ -191,10 +235,14 @@ const branchOptions = computed(() => [
 
     <!-- policy_replace / policy_add -->
     <div v-else-if="step.type === 'policy_replace' || step.type === 'policy_add'" class="space-y-2 pl-8">
-      <div class="grid grid-cols-2 gap-2">
-        <Input v-model="step.config.policyId" label="Policy id" />
-        <Input v-model="step.config.policyName" label="Policy name (label only)" />
-      </div>
+      <Input
+        :model-value="step.config.policyId || ''"
+        type="select"
+        :options="mdmPolicies.map((p) => ({ value: p.id, label: mdmPolicyLabel(p) }))"
+        :label="step.type === 'policy_replace' ? 'Replacement policy' : 'Policy to add'"
+        @update:model-value="step.config.policyId = $event; step.config.policyName = mdmPolicies.find((p) => p.id === $event)?.name || ''"
+      />
+      <p v-if="step.type === 'policy_replace'" class="text-xs text-gray-500">Quarantine — replaces ALL of the device's current policies with this one. The original stack is snapshotted automatically.</p>
       <Input
         v-if="step.type === 'policy_add'"
         :model-value="step.config.priority || 'bottom'"
@@ -260,11 +308,11 @@ const branchOptions = computed(() => [
         @update:model-value="step.onSuccess = ($event as string) || null"
       />
       <Input
-        :model-value="step.onFailure || 'end'"
+        :model-value="step.onFailure || ''"
         type="select"
-        :options="branchOptions.filter((o) => o.value !== '')"
+        :options="failureBranchOptions"
         label="On failure →"
-        @update:model-value="step.onFailure = ($event as string) || 'end'"
+        @update:model-value="step.onFailure = ($event as string) || null"
       />
     </div>
   </div>
