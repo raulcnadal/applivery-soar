@@ -11,6 +11,7 @@ import { onMounted, reactive, ref, watch } from "vue";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import WidgetCard from "../components/overview/WidgetCard.vue";
 import WidgetBuilderPanel from "../components/overview/WidgetBuilderPanel.vue";
+import WidgetInfoModal from "../components/overview/WidgetInfoModal.vue";
 import DateRangePicker, { type DateRangeValue } from "../components/overview/DateRangePicker.vue";
 import { useDashboardStateStore } from "../stores/dashboardState";
 import { useSegmentsStore } from "../stores/segments";
@@ -154,14 +155,15 @@ function iconFor(stat: string) {
   return { component: resolveIcon(def.icon), color: def.color, bg: def.bg };
 }
 
-// ── Widget info popover — a simplified stand-in for the original's
-// full zoomed-chart WidgetInfoModal (App.jsx's WidgetInfoModal re-renders
-// the chart full-size with a description). Not yet ported 1:1; this shows
-// the same underlying metadata (source, chart type, date range, filters)
-// without the full chart replay, until that follow-up pass happens. ──
-const infoFor = ref<string | null>(null);
-function toggleInfo(id: string) {
-  infoFor.value = infoFor.value === id ? null : id;
+// ── Widget info modal — 1:1 port of App.jsx's WidgetInfoModal trigger
+// (setWidgetInfoModal({ widget: w, dataBlock }), App.jsx:4684): clicking
+// the ⓘ button re-renders that widget's chart full-size with a
+// "How is it calculated?" description (roadmap Phase 10). Mounted once at
+// the view root (below), same as the original renders it outside every
+// card's own z-index/overflow context. ──
+const widgetInfoModalFor = ref<string | null>(null);
+function openWidgetInfo(id: string) {
+  widgetInfoModalFor.value = id;
 }
 
 // ── Add / Edit widget builder panel ──
@@ -277,18 +279,9 @@ async function saveWidgetForm(w: DashboardWidget) {
               <span class="text-[13px] font-medium text-gray-900 truncate">{{ widgets.find((w) => w.id === item.i)?.title }}</span>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
-              <div class="relative">
-                <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 transition-colors text-gray-500" @click="toggleInfo(item.i)">
-                  <component :is="ICONS.InfoCircle" :size="13" weight="Linear" />
-                </button>
-                <div v-if="infoFor === item.i" class="fixed inset-0 z-[199]" @click="infoFor = null" />
-                <div v-if="infoFor === item.i" class="absolute right-0 top-full mt-1 w-64 rounded-xl shadow-xl border border-gray-100 bg-white z-[200] p-4 text-[12px] text-gray-600 space-y-1.5">
-                  <p class="font-semibold text-gray-900 text-[13px]">{{ widgets.find((w) => w.id === item.i)?.title }}</p>
-                  <p>Source: <span class="text-gray-900 font-medium">{{ widgets.find((w) => w.id === item.i)?.stat }}</span></p>
-                  <p>Chart: <span class="text-gray-900 font-medium capitalize">{{ widgets.find((w) => w.id === item.i)?.type }}</span></p>
-                  <p>Range: <span class="text-gray-900 font-medium">{{ fmtRangeDate(dateRange.from) }} – {{ fmtRangeDate(dateRange.to) }}</span></p>
-                </div>
-              </div>
+              <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 transition-colors text-gray-500" @click="openWidgetInfo(item.i)">
+                <component :is="ICONS.InfoCircle" :size="13" weight="Linear" />
+              </button>
               <div class="relative">
                 <button
                   type="button"
@@ -339,5 +332,12 @@ async function saveWidgetForm(w: DashboardWidget) {
     </GridLayout>
 
     <WidgetBuilderPanel :open="isBuilderOpen" :widget="editingWidget" @close="closeBuilder" @save="saveWidgetForm" />
+    <WidgetInfoModal
+      v-if="widgetInfoModalFor && widgets.find((w) => w.id === widgetInfoModalFor)"
+      :widget="widgets.find((w) => w.id === widgetInfoModalFor)!"
+      :data="widgetSlots[widgetInfoModalFor]?.data ?? null"
+      :date-range="dateRange"
+      @close="widgetInfoModalFor = null"
+    />
   </div>
 </template>
