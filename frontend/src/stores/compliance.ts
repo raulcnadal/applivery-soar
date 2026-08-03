@@ -62,6 +62,26 @@ export interface ComplianceFieldDef {
   label: string;
   type: string;
   operators: string[];
+  options?: string[];
+}
+
+export interface SmartAttributeDef {
+  id: string;
+  name: string;
+}
+
+export interface MatchedDevice {
+  id: string;
+  displayName?: string | null;
+  platformLabel?: string | null;
+  isCompliant?: boolean;
+}
+
+export interface MatchedDevicesDiagnostics {
+  error?: string | null;
+  httpStatus?: number | null;
+  rawMemberCount?: number;
+  rawMembers?: Array<{ id: string; displayName?: string | null; platformKey?: string }>;
 }
 
 export interface MitreTechnique {
@@ -122,6 +142,12 @@ export const useComplianceStore = defineStore("compliance", () => {
 
   const appCatalog = ref<AppCatalogEntry[]>([]);
   const appLists = ref<AppList[]>([]);
+
+  const smartAttributeNames = ref<string[]>([]);
+  const selfReportedAttributeNames = ref<string[]>([]);
+  const smartAttributes = ref<SmartAttributeDef[]>([]);
+  // policyId -> live violator device count, for the policy grid cards.
+  const violatorCounts = ref<Record<string, number | null>>({});
 
   async function fetchPolicies() {
     isLoadingPolicies.value = true;
@@ -234,6 +260,45 @@ export const useComplianceStore = defineStore("compliance", () => {
     fields.value = res.data.items ?? [];
   }
 
+  async function fetchSmartAttributeNames(platform?: string) {
+    const { api } = await import("../api/http");
+    const res = await api.get("/compliance/smart-attribute-names", { params: platform ? { platform } : {} });
+    smartAttributeNames.value = res.data.items ?? [];
+  }
+
+  async function fetchSelfReportedAttributeNames(platform?: string) {
+    const { api } = await import("../api/http");
+    const res = await api.get("/compliance/self-reported-attribute-names", { params: platform ? { platform } : {} });
+    selfReportedAttributeNames.value = res.data.items ?? [];
+  }
+
+  async function fetchSmartAttributes() {
+    const { api } = await import("../api/http");
+    const res = await api.get("/smart-attributes");
+    smartAttributes.value = res.data.items ?? [];
+  }
+
+  async function fetchMatchedDevices(deviceAudienceId: string): Promise<{ items: MatchedDevice[]; diagnostics: MatchedDevicesDiagnostics | null }> {
+    const { api } = await import("../api/http");
+    const res = await api.get(`/device-audiences/${deviceAudienceId}/matched-devices`);
+    return { items: res.data.items ?? [], diagnostics: res.data.diagnostics ?? null };
+  }
+
+  async function refreshViolatorCounts(policyIds: string[]) {
+    const { api } = await import("../api/http");
+    const entries = await Promise.all(
+      policyIds.map(async (id) => {
+        try {
+          const res = await api.get(`/compliance/policies/${id}/violating-device-ids`);
+          return [id, (res.data?.deviceIds ?? []).length] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }),
+    );
+    violatorCounts.value = Object.fromEntries(entries);
+  }
+
   async function suggestMitreTechniques(conditions: ConditionRule[]): Promise<MitreTechnique[]> {
     const { api } = await import("../api/http");
     const res = await api.post("/compliance/suggest-mitre-techniques", { conditions });
@@ -320,6 +385,15 @@ export const useComplianceStore = defineStore("compliance", () => {
     frameworks,
     appCatalog,
     appLists,
+    smartAttributeNames,
+    selfReportedAttributeNames,
+    smartAttributes,
+    violatorCounts,
+    fetchSmartAttributeNames,
+    fetchSelfReportedAttributeNames,
+    fetchSmartAttributes,
+    fetchMatchedDevices,
+    refreshViolatorCounts,
     fetchPolicies,
     createPolicy,
     updatePolicy,

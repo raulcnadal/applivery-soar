@@ -1,10 +1,23 @@
 <script setup lang="ts">
-// Compliance Policies list — enable/disable, evaluate now, edit, delete.
-import { Button, EmptyState, StatusPill } from "@applivery/bluesky-vue";
-import { ref } from "vue";
+// Compliance Policies grid — port of the policy cards in
+// CompliancePoliciesView.jsx (lines ~458-540): icon badge, condition
+// summary, linked workflow name, last-evaluated, live violator count, three
+// toggle chips (Enabled/Disabled, Auto-run/Review first, Cases on/off/
+// auto-resolve), an autoRun-tripped badge, and quick evaluate/edit/delete
+// actions. Was a plain table before this pass — the original has no table
+// view for policies at all.
+import { EmptyState } from "@applivery/bluesky-vue";
+import { computed, onMounted, ref } from "vue";
+import { ICONS } from "../../lib/solarIcons";
 import { useComplianceStore, type CompliancePolicy } from "../../stores/compliance";
+import { useWorkflowsStore } from "../../stores/workflows";
 
-defineProps<{
+const SUCCESS = "#22C55E";
+const DANGER = "#EF4444";
+const WARNING = "#F59E0B";
+const PRIMARY_BLUE = "#0241E3";
+
+const props = defineProps<{
   policies: CompliancePolicy[];
   isLoading?: boolean;
 }>();
@@ -14,80 +27,137 @@ const emit = defineEmits<{
 }>();
 
 const store = useComplianceStore();
-const runningPolicyId = ref<string | null>(null);
-const lastEvalMessage = ref<string | null>(null);
+const workflowsStore = useWorkflowsStore();
+const evaluatingPolicyId = ref<string | null>(null);
 
-const SEVERITY_COLOR: Record<string, "green" | "yellow" | "orange" | "red"> = {
-  low: "green", medium: "yellow", high: "orange", critical: "red",
-};
+const workflowsById = computed(() => Object.fromEntries(workflowsStore.workflows.map((w) => [w.id, w])));
 
-async function toggleEnabled(policy: CompliancePolicy) {
-  await store.updatePolicy(policy.id, { ...policy, enabled: !policy.enabled });
+onMounted(async () => {
+  if (workflowsStore.workflows.length === 0) await workflowsStore.fetchWorkflows();
+  if (props.policies.length > 0) await store.refreshViolatorCounts(props.policies.map((p) => p.id));
+});
+
+function conditionSummary(p: CompliancePolicy): string {
+  const n = p.conditions?.length || 0;
+  if (n === 0) return "No conditions";
+  const logic = p.conditionLogic === "all" ? "ALL" : "ANY";
+  return `${n} condition${n === 1 ? "" : "s"} (match ${logic})`;
 }
 
-async function evaluate(policy: CompliancePolicy) {
-  runningPolicyId.value = policy.id;
-  lastEvalMessage.value = null;
+function timeAgo(isoString?: string | null): string | null {
+  if (!isoString) return null;
+  const then = new Date(isoString).getTime();
+  if (Number.isNaN(then)) return null;
+  const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+async function toggleField(p: CompliancePolicy, field: "enabled" | "autoRun" | "openCaseOnViolation") {
+  await store.updatePolicy(p.id, { ...p, [field]: !p[field] });
+}
+
+async function evaluate(p: CompliancePolicy) {
+  evaluatingPolicyId.value = p.id;
   try {
-    const summary = await store.evaluateNow(policy.id);
-    lastEvalMessage.value = `"${policy.name}": ${summary.violationsFound} new violation(s) among ${summary.devicesChecked} device(s).`;
-  } catch (err: any) {
-    lastEvalMessage.value = err?.response?.data?.detail || "Evaluation failed.";
+    await store.evaluateNow(p.id);
   } finally {
-    runningPolicyId.value = null;
+    evaluatingPolicyId.value = null;
   }
 }
 
-async function remove(policy: CompliancePolicy) {
-  if (!confirm(`Delete policy "${policy.name}"? This cannot be undone.`)) return;
-  await store.deletePolicy(policy.id);
+async function remove(p: CompliancePolicy) {
+  if (!confirm(`Delete policy "${p.name}"? This cannot be undone.`)) return;
+  await store.deletePolicy(p.id);
 }
 </script>
 
 <template>
-  <div class="space-y-3">
-    <p v-if="lastEvalMessage" class="text-sm text-brand-700 bg-brand-50 border border-brand-200 rounded-lg px-3 py-2">{{ lastEvalMessage }}</p>
+  <EmptyState
+    v-if="!isLoading && policies.length === 0"
+    title="No Compliance Policies yet"
+    description="Define what &quot;out of compliance&quot; means and link it to a workflow to run automatically."
+  />
+  <div v-else class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div v-for="p in policies" :key="p.id" class="rounded-xl p-4 shadow-sm bg-white border border-gray-200">
+      <div class="flex items-start gap-2 mb-2">
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: `${WARNING}12` }">
+          <component :is="ICONS.ShieldWarning" :size="16" weight="Linear" :style="{ color: WARNING }" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold truncate text-gray-900">{{ p.name }}</p>
+          <p class="text-xs truncate text-gray-400">{{ conditionSummary(p) }}</p>
+        </div>
+      </div>
+      <p v-if="p.description" class="text-xs mb-2 line-clamp-2 text-gray-400">{{ p.description }}</p>
+      <p class="text-xs mb-1 inline-flex items-center gap-1 text-gray-400">
+        <component :is="ICONS.TransferHorizontal" :size="11" weight="Linear" /> {{ workflowsById[p.workflowId ?? ""]?.name || "No workflow linked" }}
+      </p>
+      <p class="text-xs mb-1 inline-flex items-center gap-1 text-gray-400" :title="p.lastEvaluatedAt ? new Date(p.lastEvaluatedAt).toLocaleString() : undefined">
+        <component :is="ICONS.ClockCircle" :size="11" weight="Linear" /> {{ p.lastEvaluatedAt ? `Last evaluated ${timeAgo(p.lastEvaluatedAt)}` : "Never evaluated" }}
+      </p>
+      <p class="text-xs mb-3 inline-flex items-center gap-1" :style="{ color: (store.violatorCounts[p.id] ?? 0) > 0 ? DANGER : '#9CA3AF' }">
+        <component :is="ICONS.Smartphone" :size="11" weight="Linear" />
+        {{ store.violatorCounts[p.id] == null ? "Violator count unavailable" : `${store.violatorCounts[p.id]} device${store.violatorCounts[p.id] === 1 ? "" : "s"} currently violating` }}
+      </p>
 
-    <div class="overflow-x-auto border border-gray-200 rounded-xl bg-white">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-50 border-b border-gray-200">
-          <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Policy</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Severity</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Conditions</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">autoRun</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Last evaluated</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Status</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in policies" :key="p.id" class="border-b border-gray-100 last:border-0">
-            <td class="px-4 py-3">
-              <p class="font-medium text-gray-900">{{ p.name }}</p>
-              <p v-if="p.description" class="text-xs text-gray-400">{{ p.description }}</p>
-            </td>
-            <td class="px-4 py-3"><StatusPill :label="p.severity" :color="SEVERITY_COLOR[p.severity] ?? 'gray'" /></td>
-            <td class="px-4 py-3 text-gray-600">{{ p.conditions.length }} ({{ p.conditionLogic }})</td>
-            <td class="px-4 py-3">
-              <StatusPill v-if="p.autoRunTripped" label="Tripped" color="red" />
-              <StatusPill v-else :label="p.autoRun ? 'On' : 'Off'" :color="p.autoRun ? 'green' : 'gray'" />
-            </td>
-            <td class="px-4 py-3 text-gray-500">{{ p.lastEvaluatedAt ? new Date(p.lastEvaluatedAt).toLocaleString() : "Never" }}</td>
-            <td class="px-4 py-3">
-              <button type="button" @click="toggleEnabled(p)">
-                <StatusPill :label="p.enabled ? 'Enabled' : 'Disabled'" :color="p.enabled ? 'green' : 'gray'" />
-              </button>
-            </td>
-            <td class="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-              <Button size="sm" variant="ghost" :loading="runningPolicyId === p.id" @click="evaluate(p)">Evaluate now</Button>
-              <Button size="sm" variant="secondary" @click="emit('edit', p)">Edit</Button>
-              <Button size="sm" variant="ghost" @click="remove(p)">Delete</Button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <EmptyState v-if="!isLoading && policies.length === 0" title="No compliance policies yet" description="Create one, or start from the template gallery." />
+      <div class="flex items-center gap-1.5 mb-3 flex-wrap">
+        <button
+          class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
+          :style="{ backgroundColor: p.enabled ? `${SUCCESS}15` : '#9CA3AF15', color: p.enabled ? SUCCESS : '#9CA3AF' }"
+          @click="toggleField(p, 'enabled')"
+        >
+          <component :is="p.enabled ? ICONS.CheckCircle : ICONS.CloseCircle" :size="10" weight="Linear" /> {{ p.enabled ? "Enabled" : "Disabled" }}
+        </button>
+        <button
+          class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
+          :style="{ backgroundColor: p.autoRun ? `${DANGER}12` : '#9CA3AF15', color: p.autoRun ? DANGER : '#9CA3AF' }"
+          @click="toggleField(p, 'autoRun')"
+        >
+          <component :is="ICONS.Refresh" :size="10" weight="Linear" /> {{ p.autoRun ? "Auto-run" : "Review first" }}
+        </button>
+        <span
+          v-if="p.autoRun && p.autoRunTripped"
+          :title="p.autoRunTrippedReason || 'autoRun tripped — edit and re-save this policy to re-arm it'"
+          class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
+          :style="{ backgroundColor: `${DANGER}15`, color: DANGER }"
+        >
+          <component :is="ICONS.CloseCircle" :size="10" weight="Linear" /> autoRun tripped
+        </span>
+        <button
+          class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
+          :style="{ backgroundColor: (p.openCaseOnViolation ?? true) ? `${PRIMARY_BLUE}12` : '#9CA3AF15', color: (p.openCaseOnViolation ?? true) ? PRIMARY_BLUE : '#9CA3AF' }"
+          title="Whether violating this policy opens a Case — edit the policy to also control auto-resolve on recovery"
+          @click="toggleField(p, 'openCaseOnViolation')"
+        >
+          <component :is="ICONS.Folder" :size="10" weight="Linear" /> {{ (p.openCaseOnViolation ?? true) ? (p.autoResolveCaseOnRecovery ? "Cases: auto-resolve" : "Cases: on") : "Cases: off" }}
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button
+          title="Evaluate just this policy now"
+          class="p-1.5 rounded-lg border border-gray-200 text-gray-700 disabled:opacity-40"
+          :disabled="evaluatingPolicyId !== null"
+          @click="evaluate(p)"
+        >
+          <component :is="ICONS.Refresh" :size="13" weight="Linear" :class="evaluatingPolicyId === p.id ? 'animate-spin' : ''" />
+        </button>
+        <button class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700" @click="emit('edit', p)">
+          <component :is="ICONS.Pen" :size="12" weight="Linear" /> Edit
+        </button>
+        <button class="p-1.5 rounded-lg" style="color: #ef4444" @click="remove(p)">
+          <component :is="ICONS.TrashBinMinimalistic" :size="13" weight="Linear" />
+        </button>
+      </div>
     </div>
   </div>
 </template>

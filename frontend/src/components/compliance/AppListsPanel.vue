@@ -3,8 +3,19 @@
 // condition source. Search live catalogs (App Store/MS Store/winget/
 // Homebrew/Android known-apps) to add an entry without knowing the bundle
 // id/package name by heart, then group entries into named lists.
+//
+// Deliberately deferred vs. the original AppListsView.jsx (not built this
+// pass — flagging rather than silently dropping):
+//   - Quick-start presets (one-click common browser/collaboration app sets).
+//   - The installed-app inventory sync panel (coverage %, self-reported
+//     count, oldest sync age, "refresh now").
+// Both are additive UI over data this store doesn't currently fetch: no
+// inventory-coverage endpoint is wired up on the frontend side yet. What
+// *is* included here: manual catalog entry (name + raw identifier) and a
+// "used by N polic(ies)" indicator per list, computed from the already-
+// loaded policies' requiredAppList/disallowedAppList conditions.
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useComplianceStore, type AppCatalogEntry, type AppList } from "../../stores/compliance";
 
 const store = useComplianceStore();
@@ -22,13 +33,41 @@ const searchResults = ref<Array<{ identifier: string; name: string; iconUrl?: st
 const isSearching = ref(false);
 const searchError = ref<string | null>(null);
 
+// Manual entry — for anything the live catalog search can't find (spec:
+// "Manual entry — name + raw identifier for anything not found via
+// search").
+const manualName = ref("");
+const manualIdentifier = ref("");
+
 const listForm = reactive({ name: "", platform: "apple", appIds: [] as string[] });
 const editingListId = ref<string | null>(null);
 const listError = ref<string | null>(null);
 
+// Which Compliance Policies reference each App List, via the
+// requiredAppList/disallowedAppList condition types — spec: "Each list
+// shows ... which Compliance Policies currently reference it."
+const referencingPolicies = computed(() => {
+  const map: Record<string, string[]> = {};
+  for (const p of store.policies) {
+    for (const c of p.conditions ?? []) {
+      if ((c.field === "requiredAppList" || c.field === "disallowedAppList") && typeof c.value === "string" && c.value) {
+        (map[c.value] ??= []).push(p.name);
+      }
+    }
+  }
+  return map;
+});
+
 onMounted(async () => {
   await Promise.all([store.fetchAppCatalog(), store.fetchAppLists()]);
 });
+
+async function addManualEntry() {
+  if (!manualName.value.trim() || !manualIdentifier.value.trim()) return;
+  await store.addAppCatalogEntry({ platform: searchPlatform.value, identifier: manualIdentifier.value.trim(), name: manualName.value.trim(), source: "manual" });
+  manualName.value = "";
+  manualIdentifier.value = "";
+}
 
 async function runSearch() {
   if (searchQuery.value.trim().length < 2) return;
@@ -120,6 +159,16 @@ async function removeList(list: AppList) {
         </div>
       </div>
 
+      <!-- Manual entry — not found via search? add it by hand. -->
+      <details class="text-xs">
+        <summary class="cursor-pointer font-medium text-gray-500 select-none">Can't find it? Add manually</summary>
+        <div class="flex items-center gap-2 mt-2">
+          <Input v-model="manualName" placeholder="App name" class="flex-1" />
+          <Input v-model="manualIdentifier" placeholder="Bundle ID / package name" class="flex-1" />
+          <Button size="sm" variant="secondary" :disabled="!manualName.trim() || !manualIdentifier.trim()" @click="addManualEntry">Add</Button>
+        </div>
+      </details>
+
       <div class="border border-gray-200 rounded-xl bg-white divide-y divide-gray-100">
         <div v-for="entry in store.appCatalog" :key="entry.id" class="flex items-center justify-between px-3 py-2 text-sm">
           <div>
@@ -141,7 +190,10 @@ async function removeList(list: AppList) {
       <div v-if="editingListId" class="border border-brand-200 bg-brand-50 rounded-xl p-3 space-y-2">
         <Alert v-if="listError" type="danger">{{ listError }}</Alert>
         <Input v-model="listForm.name" placeholder="List name" />
-        <Input v-model="listForm.platform" type="select" :options="platformOptions" />
+        <!-- Platform is locked once a list is created — matches the
+             original, which never lets you change platform on an existing
+             App List (its appIds are platform-scoped). -->
+        <Input v-model="listForm.platform" type="select" :options="platformOptions" :disabled="editingListId !== '__new__'" />
         <div class="max-h-32 overflow-y-auto space-y-1 border border-white/60 rounded-lg p-2 bg-white">
           <label v-for="entry in store.appCatalog.filter((e) => e.platform === listForm.platform)" :key="entry.id" class="flex items-center gap-2 text-sm">
             <input type="checkbox" :checked="listForm.appIds.includes(entry.id)" @change="toggleAppInList(entry.id)" />
@@ -158,7 +210,10 @@ async function removeList(list: AppList) {
         <div v-for="list in store.appLists" :key="list.id" class="flex items-center justify-between px-3 py-2 text-sm">
           <div>
             <p class="text-gray-900">{{ list.name }}</p>
-            <p class="text-xs text-gray-400">{{ list.platform }} · {{ list.appIds.length }} app(s)</p>
+            <p class="text-xs text-gray-400">
+              {{ list.platform }} · {{ list.appIds.length }} app(s)
+              <template v-if="referencingPolicies[list.id]?.length"> · used by {{ referencingPolicies[list.id].length }} polic{{ referencingPolicies[list.id].length === 1 ? "y" : "ies" }}</template>
+            </p>
           </div>
           <div class="space-x-1">
             <Button size="sm" variant="secondary" @click="editList(list)">Edit</Button>

@@ -1,63 +1,114 @@
 <script setup lang="ts">
-// Compliance Policy template gallery — curated per-framework (ISO 27001,
-// ENS, NIS2) starting-point condition sets. "Use template" opens the Policy
-// Builder pre-filled with that template's conditions, so the admin can
-// tweak before saving rather than creating a hidden/opaque policy.
-import { Button, StatusPill } from "@applivery/bluesky-vue";
-import { onMounted, ref } from "vue";
+// Compliance Policy Template gallery — port of TemplateGallery.jsx: a
+// modal (not a persistent tab — see ComplianceView.vue's "New from
+// Template" button), framework filter chips (All/ISO 27001/ENS/NIS2) each
+// with its own scope-caveat callout, and a card per template that opens
+// the Policy Builder pre-filled via templateToPolicyDraft.
+import { Modal } from "@applivery/bluesky-vue";
+import { computed, onMounted, ref } from "vue";
+import { ICONS } from "../../lib/solarIcons";
 import { useComplianceStore, type ComplianceTemplate } from "../../stores/compliance";
 
-const emit = defineEmits<{
-  use: [template: ComplianceTemplate];
-}>();
+const PRIMARY_BLUE = "#0241E3";
+const SEVERITY_COLORS: Record<string, string> = { low: "#64748B", medium: "#F59E0B", high: "#EF4444", critical: "#B91C1C" };
+
+defineProps<{ open: boolean }>();
+const emit = defineEmits<{ close: []; use: [template: ComplianceTemplate, frameworkLabel: string] }>();
 
 const store = useComplianceStore();
-const frameworkFilter = ref<string>("");
+const activeFramework = ref("all");
+const isLoading = ref(true);
+const error = ref<string | null>(null);
 
 onMounted(async () => {
-  if (store.templates.length === 0) await store.fetchTemplates();
+  isLoading.value = true;
+  error.value = null;
+  try {
+    await store.fetchTemplates();
+  } catch (err: any) {
+    error.value = err?.response?.data?.detail || "Failed to load compliance templates.";
+  } finally {
+    isLoading.value = false;
+  }
 });
 
-const SEVERITY_COLOR: Record<string, "green" | "yellow" | "orange" | "red"> = {
-  low: "green", medium: "yellow", high: "orange", critical: "red",
-};
+const frameworksByKey = computed(() => Object.fromEntries(store.frameworks.map((f: any) => [f.key, f])));
+const visibleTemplates = computed(() => (activeFramework.value === "all" ? store.templates : store.templates.filter((t) => t.framework === activeFramework.value)));
 
-function frameworkName(key: string): string {
-  return store.frameworks.find((f) => f.key === key)?.name ?? key;
+// Port of templateToPolicyDraft (TemplateGallery.jsx:16-26) — deliberately
+// id-less so PolicyBuilderDrawer's existing create path (no policy.id)
+// handles it like any other new policy.
+function useTemplate(t: ComplianceTemplate) {
+  const fw = (frameworksByKey.value as any)[t.framework];
+  emit("use", t, fw?.label || t.framework);
 }
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex flex-wrap gap-2">
-      <button
-        v-for="fw in [{ key: '', name: 'All frameworks' }, ...store.frameworks]"
-        :key="fw.key"
-        type="button"
-        class="text-xs px-3 py-1.5 rounded-full border"
-        :class="frameworkFilter === fw.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200'"
-        @click="frameworkFilter = fw.key"
-      >
-        {{ fw.name }}
+  <Modal :open="open" size="lg" class="max-w-3xl" @close="emit('close')">
+    <div class="flex items-center justify-between gap-2 mb-4 -mt-1">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-900">Compliance Policy Templates</h3>
+        <p class="text-xs mt-0.5 text-gray-400">Starting points mapped to well-known frameworks. Pick one to pre-fill the policy builder for review.</p>
+      </div>
+      <button class="p-1 rounded-lg hover:bg-gray-100 text-gray-400 shrink-0" @click="emit('close')">
+        <component :is="ICONS.CloseCircle" :size="18" weight="Linear" />
       </button>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div
-        v-for="t in store.templates.filter((tpl) => !frameworkFilter || tpl.framework === frameworkFilter)"
-        :key="t.id"
-        class="border border-gray-200 rounded-xl p-4 bg-white space-y-2"
+    <div class="flex items-center gap-2 pb-3 mb-3 overflow-x-auto border-b border-gray-200">
+      <button
+        class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors"
+        :style="activeFramework === 'all' ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : { border: '1px solid #E5E7EB', color: '#111827' }"
+        @click="activeFramework = 'all'"
       >
-        <div class="flex items-center justify-between">
-          <StatusPill :label="frameworkName(t.framework)" color="brand" />
-          <StatusPill :label="t.severity" :color="SEVERITY_COLOR[t.severity] ?? 'gray'" />
+        All frameworks
+      </button>
+      <button
+        v-for="f in store.frameworks"
+        :key="f.key"
+        class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors"
+        :style="activeFramework === f.key ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : { border: '1px solid #E5E7EB', color: '#111827' }"
+        @click="activeFramework = f.key"
+      >
+        {{ (f as any).shortLabel || f.name }}
+      </button>
+    </div>
+
+    <div class="max-h-[60vh] overflow-y-auto">
+      <div v-if="error" class="mb-4 px-3 py-2 rounded-lg text-xs font-medium flex items-start gap-2" style="background-color: #ef444412; color: #ef4444; border: 1px solid #ef444430">
+        <component :is="ICONS.DangerTriangle" :size="14" weight="Linear" class="shrink-0 mt-0.5" /> {{ error }}
+      </div>
+
+      <p v-if="isLoading" class="text-xs text-gray-400">Loading templates…</p>
+
+      <div v-if="!isLoading && activeFramework !== 'all' && (frameworksByKey as any)[activeFramework]?.caveats" class="mb-4 px-3 py-2 rounded-lg text-xs border text-gray-900" :style="{ backgroundColor: `${PRIMARY_BLUE}08`, borderColor: `${PRIMARY_BLUE}25` }">
+        <strong>Scope note:</strong> {{ (frameworksByKey as any)[activeFramework].caveats }}
+      </div>
+
+      <div class="space-y-3">
+        <div v-for="t in visibleTemplates" :key="t.id" class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }">
+                  {{ (frameworksByKey as any)[t.framework]?.shortLabel || t.framework }}
+                </span>
+                <span class="text-[10px] font-medium text-gray-400">{{ t.controlRef }}</span>
+                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full uppercase" :style="{ backgroundColor: `${SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.medium}15`, color: SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.medium }">
+                  {{ t.severity }}
+                </span>
+              </div>
+              <p class="text-sm font-medium mt-1.5 text-gray-900">{{ t.title }}</p>
+              <p class="text-xs mt-1 text-gray-400">{{ t.description }}</p>
+            </div>
+            <button class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 transition-colors" @click="useTemplate(t)">
+              <component :is="ICONS.ShieldCheck" :size="13" weight="Linear" /> Use template
+            </button>
+          </div>
         </div>
-        <p class="font-medium text-gray-900">{{ t.title }}</p>
-        <p class="text-xs text-gray-400">{{ t.controlRef }}</p>
-        <p class="text-sm text-gray-600">{{ t.description }}</p>
-        <p class="text-xs text-gray-400">{{ t.conditions.length }} condition(s), match {{ t.conditionLogic }}</p>
-        <Button size="sm" @click="emit('use', t)">Use this template</Button>
+        <p v-if="!isLoading && !error && visibleTemplates.length === 0" class="text-xs text-center py-8 text-gray-400">No templates for this framework yet.</p>
       </div>
     </div>
-  </div>
+  </Modal>
 </template>
