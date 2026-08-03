@@ -316,6 +316,89 @@ export function invalidateDevicesCache(workspaceSlug: string) {
   liveCacheInvalidateSource(workspaceSlug || "global", DEVICES_CACHE_SOURCE);
 }
 
+/**
+ * Maps a normalized platform to the URL segment Applivery's `mdm/locations`,
+ * `mdm/network-status`, and `mdm/agent-logs` endpoints expect (distinct from
+ * `platformPathSegment`'s apple/android/windows segment, used for a
+ * different set of `mdm/{platform}/enterprise/...` device-management URLs).
+ * Mirrors the original frontend's own local mapping (App.jsx's
+ * DeviceInsightCard extras effect: apple/ios/mac/ipad -> admDevice,
+ * win -> winDevice, else -> emmDevice) — now server-side, see below.
+ */
+function mdmTypeSegment(platform: string): string {
+  if (platform === "apple" || platform === "macos") return "admDevice";
+  if (platform === "windows") return "winDevice";
+  return "emmDevice";
+}
+
+/**
+ * The Playground device-insight card's 4 "extras" fetches — location
+ * history, network status, agent logs, and segment assets. The original
+ * frontend (App.jsx:2262-2300) called these directly from the browser
+ * against `https://api.applivery.io/...` using the user's own Applivery API
+ * token, bypassing its Python backend entirely. This migration originally
+ * ported that same direct-from-browser pattern 1:1 for Phase 8, but on
+ * review that's worse practice for this stack (it means shipping the raw
+ * Applivery bearer token to client JS beyond what's already unavoidable,
+ * and bypasses this backend's own request logging/error handling) — so
+ * these were moved server-side as proper proxy endpoints, following the
+ * same resolveOrgBase + appliveryClient pattern as every other device
+ * proxy call in this file. Each fails soft (empty `items`, logged) rather
+ * than throwing, since this is supplementary detail-card content, not
+ * critical path — matches the original's own `.catch(() => null)` per-call
+ * failure handling.
+ */
+export async function getDeviceLocations(authorization: string, workspaceSlug: string, deviceId: string, platform: string) {
+  const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };
+  try {
+    const orgBase = await resolveOrgBase(headers, workspaceSlug);
+    const mdmType = mdmTypeSegment(platform);
+    const res = await appliveryClient.get<any>(`${orgBase}/mdm/locations/${mdmType}/${deviceId}`, { headers, params: { limit: 50, sort: "createdAt:desc" } });
+    return { items: extractItems(res.data) };
+  } catch (e) {
+    console.warn(`[Devices] getDeviceLocations(${deviceId}) failed: ${e}`);
+    return { items: [] };
+  }
+}
+
+export async function getDeviceNetworkStatus(authorization: string, workspaceSlug: string, deviceId: string, platform: string) {
+  const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };
+  try {
+    const orgBase = await resolveOrgBase(headers, workspaceSlug);
+    const mdmType = mdmTypeSegment(platform);
+    const res = await appliveryClient.get<any>(`${orgBase}/mdm/network-status/${mdmType}/${deviceId}`, { headers, params: { limit: 1, sort: "createdAt:desc" } });
+    return { items: extractItems(res.data) };
+  } catch (e) {
+    console.warn(`[Devices] getDeviceNetworkStatus(${deviceId}) failed: ${e}`);
+    return { items: [] };
+  }
+}
+
+export async function getDeviceAgentLogs(authorization: string, workspaceSlug: string, deviceId: string, platform: string) {
+  const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };
+  try {
+    const orgBase = await resolveOrgBase(headers, workspaceSlug);
+    const mdmType = mdmTypeSegment(platform);
+    const res = await appliveryClient.get<any>(`${orgBase}/mdm/agent-logs/`, { headers, params: { deviceId, deviceType: mdmType, limit: 50, sort: "createdAt:desc" } });
+    return { items: extractItems(res.data) };
+  } catch (e) {
+    console.warn(`[Devices] getDeviceAgentLogs(${deviceId}) failed: ${e}`);
+    return { items: [] };
+  }
+}
+
+export async function getDeviceAssets(authorization: string, workspaceSlug: string, segmentId: string | null) {
+  const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };
+  try {
+    const orgBase = await resolveOrgBase(headers, workspaceSlug);
+    const res = await appliveryClient.get<any>(`${orgBase}/mdm/assets/`, { headers, params: { limit: 100, segmentId: segmentId ?? "", expandTo: "ancestors" } });
+    return { items: extractItems(res.data) };
+  } catch (e) {
+    console.warn(`[Devices] getDeviceAssets(${segmentId}) failed: ${e}`);
+    return { items: [] };
+  }
+}
+
 /** Move a device to a different segment — port of `update_device_segment` (main.py:4085). */
 export async function updateDeviceSegment(authorization: string, workspaceSlug: string, deviceId: string, payload: SegmentUpdatePayload) {
   const platformPath = platformPathSegment(payload.platform);

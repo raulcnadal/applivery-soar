@@ -4,10 +4,8 @@
 // modal (ModalBackdrop/ModalShell/ModalHeader, App.jsx:5405-5412), NOT the
 // Devices table's own drawer — a separate, 4-tab card (Overview / Compliance
 // / Assets / Agent) reached only from Playground's globe/map clicks.
-import axios from "axios";
 import { computed, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
-import { useAuthStore } from "../../stores/auth";
 
 const PRIMARY_BLUE = "#0241E3";
 const SUCCESS = "#22C55E";
@@ -16,8 +14,6 @@ const DANGER = "#EF4444";
 
 const props = defineProps<{ device: Record<string, any> | null }>();
 const emit = defineEmits<{ close: [] }>();
-
-const auth = useAuthStore();
 
 const RISK_TIER_META: Record<string, { label: string; color: string }> = {
   low: { label: "Low", color: SUCCESS },
@@ -35,26 +31,12 @@ const showLocationHistory = ref(false);
 const summary = computed(() => props.device?.summary ?? {});
 const deviceId = computed(() => props.device?.id ?? props.device?._id ?? "");
 
-// mdmType resolution — same mapping as App.jsx's extras effect: apple/ios/
-// mac/ipad -> admDevice, win -> winDevice, else -> emmDevice.
-const mdmType = computed(() => {
-  const p = String(props.device?.platform_normalized || "").toLowerCase();
-  if (p === "apple" || p === "macos") return "admDevice";
-  if (p === "windows") return "winDevice";
-  return "emmDevice";
-});
-
-function appliveryHeaders() {
-  return { Authorization: `Bearer ${auth.apiToken}` };
-}
-function orgBase() {
-  return `https://api.applivery.io/v1/organizations/${auth.orgSlug}`;
-}
-
-// ── Extras (locations/network/agent-logs/assets) — direct-to-Applivery
-// calls with the user's own Applivery API token, same as the original
-// (App.jsx:2262-2300): this data was never proxied through the app's own
-// backend, so neither is this port.
+// ── Extras (locations/network/agent-logs/assets) — proxied through this
+// app's own backend (GET /api/devices/:id/locations|network-status|
+// agent-logs|assets, devices.service.ts). The original frontend called
+// api.applivery.io directly from the browser with the user's own Applivery
+// token for these (App.jsx:2262-2300); this migration moved that
+// server-side instead — same data, no client-side Applivery calls.
 const loadingExtras = ref(true);
 const locations = ref<any[]>([]);
 const network = ref<any | null>(null);
@@ -64,16 +46,17 @@ const assets = ref<any[]>([]);
 async function loadExtras() {
   loadingExtras.value = true;
   const id = deviceId.value;
-  if (!id || !auth.apiToken || !auth.orgSlug) {
+  if (!id) {
     loadingExtras.value = false;
     return;
   }
-  const headers = appliveryHeaders();
+  const platform = props.device?.platform_normalized ?? "";
+  const { api } = await import("../../api/http");
   const [locRes, netRes, logsRes, assetsRes] = await Promise.all([
-    axios.get(`${orgBase()}/mdm/locations/${mdmType.value}/${id}?limit=50&sort=createdAt:desc`, { headers }).catch(() => null),
-    axios.get(`${orgBase()}/mdm/network-status/${mdmType.value}/${id}?limit=1&sort=createdAt:desc`, { headers }).catch(() => null),
-    axios.get(`${orgBase()}/mdm/agent-logs/?deviceId=${id}&deviceType=${mdmType.value}&limit=50&sort=createdAt:desc`, { headers }).catch(() => null),
-    axios.get(`${orgBase()}/mdm/assets/?limit=100&segmentId=${props.device?.segmentId ?? ""}&expandTo=ancestors`, { headers }).catch(() => null),
+    api.get(`/devices/${id}/locations`, { params: { platform } }).catch(() => null),
+    api.get(`/devices/${id}/network-status`, { params: { platform } }).catch(() => null),
+    api.get(`/devices/${id}/agent-logs`, { params: { platform } }).catch(() => null),
+    api.get(`/devices/${id}/assets`, { params: { segmentId: props.device?.segmentId ?? "" } }).catch(() => null),
   ]);
   locations.value = locRes?.data?.items ?? [];
   network.value = netRes?.data?.items?.[0] ?? null;

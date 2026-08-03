@@ -5,8 +5,12 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { HttpError } from "../../utils/httpError";
 import {
   bulkReattestDevices,
+  getDeviceAgentLogs,
+  getDeviceAssets,
   getDeviceCompliance,
   getDeviceFirewallState,
+  getDeviceLocations,
+  getDeviceNetworkStatus,
   getDevicesFull,
   updateDevicePolicies,
   updateDeviceSegment,
@@ -45,6 +49,57 @@ devicesRouter.get(
     const workspaceSlug = req.header("X-Workspace-Slug");
     requireCreds(authorization, workspaceSlug);
     res.json(await getDeviceCompliance(authorization, workspaceSlug!, req.params.deviceId));
+  }),
+);
+
+// GET /api/devices/{device_id}/locations, /network-status, /agent-logs,
+// /assets — Playground's DeviceInsightModal "extras" tabs (Phase 8). Proxied
+// server-side (see devices.service.ts's getDeviceLocations/etc doc comment
+// for why this doesn't call api.applivery.io directly from the browser like
+// the original did) rather than a literal main.py line, since the original
+// never proxied these through its own backend at all.
+devicesRouter.get(
+  "/api/devices/:deviceId/locations",
+  ...readDevices,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    res.json(await getDeviceLocations(authorization, workspaceSlug!, req.params.deviceId, String(req.query.platform ?? "")));
+  }),
+);
+
+devicesRouter.get(
+  "/api/devices/:deviceId/network-status",
+  ...readDevices,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    res.json(await getDeviceNetworkStatus(authorization, workspaceSlug!, req.params.deviceId, String(req.query.platform ?? "")));
+  }),
+);
+
+devicesRouter.get(
+  "/api/devices/:deviceId/agent-logs",
+  ...readDevices,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    res.json(await getDeviceAgentLogs(authorization, workspaceSlug!, req.params.deviceId, String(req.query.platform ?? "")));
+  }),
+);
+
+devicesRouter.get(
+  "/api/devices/:deviceId/assets",
+  ...readDevices,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    const segmentId = typeof req.query.segmentId === "string" ? req.query.segmentId : null;
+    res.json(await getDeviceAssets(authorization, workspaceSlug!, segmentId));
   }),
 );
 
