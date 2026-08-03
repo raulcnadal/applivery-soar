@@ -10,11 +10,13 @@ import HelpIcon from "../components/shared/HelpIcon.vue";
 import DeviceDetailDrawer from "../components/devices/DeviceDetailDrawer.vue";
 import DeviceFleetTable from "../components/devices/DeviceFleetTable.vue";
 import { useDevicesStore } from "../stores/devices";
+import { useSegmentsStore } from "../stores/segments";
 
 const PRIMARY_BLUE = "#0241E3";
 const DANGER = "#EF4444";
 
 const store = useDevicesStore();
+const segmentsStore = useSegmentsStore();
 const route = useRoute();
 
 const selectedDeviceId = ref<string | null>(null);
@@ -45,7 +47,16 @@ const scopedDevices = computed(() => {
   return effectiveDevices.value.filter((d) => store.policyViolatingIds!.has(String(d.id)));
 });
 
-const nonCompliant = computed(() => scopedDevices.value.filter((d) => !d.isCompliant).length);
+// Segments panel scoping — client-side against the already-fetched fleet,
+// same as the original (utils/segments.js's collectSegmentIds; no extra
+// network round-trip when switching segments).
+const segmentScopedDevices = computed(() => {
+  const ids = segmentsStore.collectSegmentIds(segmentsStore.selectedSegment.id);
+  if (ids === null) return scopedDevices.value;
+  return scopedDevices.value.filter((d) => ids.has(String((d as any).segmentId ?? "0")));
+});
+
+const nonCompliant = computed(() => segmentScopedDevices.value.filter((d) => !d.isCompliant).length);
 const maxTrendScore = computed(() => Math.max(...store.riskTrend.map((p) => p.avgRiskScore), 1));
 
 function handleComplianceSourceChange(source: "applivery" | "policy") {
@@ -68,9 +79,16 @@ onMounted(async () => {
         <div class="flex items-center gap-2">
           <h1 class="text-2xl font-semibold leading-tight text-gray-900">Devices</h1>
           <HelpIcon slug="devices" title="Devices admin guide" />
+          <span
+            v-if="String(segmentsStore.selectedSegment.id) !== '0'"
+            class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }"
+          >
+            <component :is="ICONS.Layers" :size="10" weight="Linear" /> {{ segmentsStore.selectedSegment.name }}
+          </span>
         </div>
         <p class="text-sm mt-1 text-gray-400">
-          {{ store.isLoading ? "Loading device fleet…" : `${scopedDevices.length} device${scopedDevices.length !== 1 ? "s" : ""}${nonCompliant ? ` · ${nonCompliant} non-compliant` : ""}` }}
+          {{ store.isLoading ? "Loading device fleet…" : `${segmentScopedDevices.length} device${segmentScopedDevices.length !== 1 ? "s" : ""}${nonCompliant ? ` · ${nonCompliant} non-compliant` : ""}` }}
         </p>
       </div>
       <div class="flex items-center gap-3 shrink-0 ml-auto">
@@ -157,7 +175,7 @@ onMounted(async () => {
         <p class="text-xs mt-0.5 text-gray-400">{{ store.error }}</p>
       </div>
     </div>
-    <DeviceFleetTable v-else :devices="scopedDevices" :segments="store.segments as any" :is-loading="store.isLoading" @open-device="openDevice" />
+    <DeviceFleetTable v-else :devices="segmentScopedDevices" :segments="store.segments as any" :is-loading="store.isLoading" @open-device="openDevice" />
 
     <DeviceDetailDrawer :device="selectedDevice" :segments="store.segments as any" @close="closeDrawer" />
   </main>

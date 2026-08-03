@@ -77,6 +77,58 @@ export async function getSegments(authorization: string, workspaceSlug: string) 
   return result;
 }
 
+export interface SegmentTreeNode {
+  id: string;
+  name: string;
+  icon: string | null;
+  color: string | null;
+  children: SegmentTreeNode[];
+}
+
+function toSegmentTree(nodes: Array<Record<string, any>>): SegmentTreeNode[] {
+  const out: SegmentTreeNode[] = [];
+  for (const n of nodes ?? []) {
+    if (!n || typeof n !== "object") continue;
+    out.push({
+      id: String(n.id ?? n._id ?? ""),
+      name: n.name ?? "Unnamed segment",
+      icon: n.icon !== undefined ? String(n.icon) : n.iconId !== undefined ? String(n.iconId) : null,
+      color: n.color !== undefined ? String(n.color) : n.colorId !== undefined ? String(n.colorId) : null,
+      children: toSegmentTree(n.children ?? []),
+    });
+  }
+  return out;
+}
+
+/**
+ * Nested segment tree for the Segments panel (App.jsx's left-edge hover
+ * panel, App.jsx:4464-4515) — distinct from `getSegments` above, which
+ * flattens the same tree into breadcrumb-labeled picker options. The
+ * original fetched this directly from the browser
+ * (`https://api.applivery.io/v1/organizations/{orgId}/segments/0`, with a
+ * `/segments/by-user` fallback if that 404s) using the user's own Applivery
+ * token; ported here as a proper backend proxy instead — same reasoning as
+ * the Playground device-extras move (this app's own request logging/error
+ * handling, no raw Applivery token round-tripping through client JS beyond
+ * what's unavoidable). Reuses the same `${orgBase}/segments` call as
+ * `getSegments` (already confirmed to return the identical nested-tree
+ * shape `/segments/0` would), just without the breadcrumb flattening.
+ */
+export async function getSegmentsTree(authorization: string, workspaceSlug: string): Promise<{ items: SegmentTreeNode[] }> {
+  const slugKey = workspaceSlug || "global";
+  const cached = liveCacheGet<{ items: SegmentTreeNode[] }>(slugKey, "segments_tree");
+  if (cached !== null) return cached;
+
+  const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };
+  const orgBase = await resolveOrgBase(headers, workspaceSlug);
+  const res = await appliveryClient.get<any>(`${orgBase}/segments`, { headers });
+  if (res.status !== 200) throw new HttpError(502, `Applivery API returned ${res.status}: ${String(JSON.stringify(res.data)).slice(0, 300)}`);
+  const data = res.data && typeof res.data === "object" ? (res.data as any).data ?? res.data : res.data;
+  const result = { items: toSegmentTree(data?.children ?? []) };
+  liveCacheSet(slugKey, "segments_tree", result);
+  return result;
+}
+
 /** List Smart Attribute definitions for pickers — port of `get_smart_attributes_list` (main.py:3923). */
 export async function getSmartAttributes(authorization: string, workspaceSlug: string) {
   const slugKey = workspaceSlug || "global";

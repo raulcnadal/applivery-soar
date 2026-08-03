@@ -4,6 +4,18 @@
 // file used to have). The Violations review queue lives directly on the
 // Policies sub-view (above/below the policy grid), and the Template
 // Gallery is a modal opened via "New from Template", not a persistent tab.
+//
+// Segment scoping (roadmap Phase 9) — KNOWN, DISCLOSED GAP: the original
+// assigns each Compliance Policy an administrative/visibility Segment
+// (docs/compliance.md: "Segment — administrative/visibility scope only. It
+// does not filter which devices get checked") and scopes the policy list to
+// the Segments panel's selection. Our migrated `CompliancePolicy` Prisma
+// model has no segmentId field yet, so this policy list is NOT segment-
+// filtered — the Segments panel is still reachable from this page (it's
+// visible/hoverable, matching the original's currentView check) but has no
+// effect here. Closing this requires a schema migration adding
+// CompliancePolicy.segmentId plus a PolicyBuilder UI field — deferred as its
+// own follow-up rather than faked.
 import { onMounted, ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";

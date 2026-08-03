@@ -7,12 +7,13 @@
 import { Alert, Button, EmptyState, PageHeader } from "@applivery/bluesky-vue";
 import { GridLayout, GridItem } from "grid-layout-plus";
 import { ICONS, resolveIcon } from "../lib/solarIcons";
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import WidgetCard from "../components/overview/WidgetCard.vue";
 import WidgetBuilderPanel from "../components/overview/WidgetBuilderPanel.vue";
 import DateRangePicker, { type DateRangeValue } from "../components/overview/DateRangePicker.vue";
 import { useDashboardStateStore } from "../stores/dashboardState";
+import { useSegmentsStore } from "../stores/segments";
 import { WIDGET_ICON_MAP, DEFAULT_WIDGET_ICON, WIDGET_SIZES, type DashboardWidget, type GridLayoutItem } from "../lib/analyticsCatalog";
 import { fetchWidgetData, type WidgetResponse } from "../lib/widgetData";
 
@@ -21,6 +22,7 @@ import { fetchWidgetData, type WidgetResponse } from "../lib/widgetData";
 const PRIMARY_BLUE = "#0241E3";
 
 const store = useDashboardStateStore();
+const segmentsStore = useSegmentsStore();
 
 const widgets = ref<DashboardWidget[]>([]);
 const layout = ref<GridLayoutItem[]>([]);
@@ -53,7 +55,10 @@ async function loadWidget(w: DashboardWidget) {
   try {
     const dateIni = dateRange.value.from.toISOString().slice(0, 10);
     const dateEnd = dateRange.value.to.toISOString().slice(0, 10);
-    widgetSlots[w.id].data = await fetchWidgetData(w.stat, w.filters, dateIni, dateEnd);
+    // Segment scoping — merged into each widget's own filters, same shape
+    // the backend already expects (App.jsx:3543-3573's filters.segmentId).
+    const segmentId = String(segmentsStore.selectedSegment.id) !== "0" ? segmentsStore.selectedSegment.id : undefined;
+    widgetSlots[w.id].data = await fetchWidgetData(w.stat, { ...w.filters, segmentId }, dateIni, dateEnd);
   } catch (err: any) {
     widgetSlots[w.id].error = err?.response?.data?.detail || "Failed to load.";
   } finally {
@@ -73,6 +78,13 @@ onMounted(async () => {
   // Same 60s auto-refresh as the original's setInterval(fetchWidgetData, 60000).
   window.setInterval(loadAllWidgets, 60_000);
 });
+
+// Re-fetch every widget when the Segments panel selection changes
+// (App.jsx's own widget-fetch effect depends on selectedSegment too).
+watch(
+  () => segmentsStore.selectedSegment,
+  () => loadAllWidgets(),
+);
 
 // grid-layout-plus emits "layout-updated" after every internal compact
 // pass — including the automatic one that runs right after mount, not just
@@ -196,9 +208,19 @@ async function saveWidgetForm(w: DashboardWidget) {
          (solid brand-600) + conditional Save Changes on the right. No
          Edit-layout toggle in the original — drag/resize is always on,
          gated per-card only by that card's own lock state. -->
-    <PageHeader title="Dashboard Overview" description="Welcome back! Here's what's happening today.">
+    <PageHeader
+      title="Dashboard Overview"
+      :description="String(segmentsStore.selectedSegment.id) !== '0' ? `Filtered to segment: ${segmentsStore.selectedSegment.name}` : `Welcome back! Here's what's happening today.`"
+    >
       <template #title-suffix>
         <HelpIcon slug="overview" title="Overview admin guide" />
+        <span
+          v-if="String(segmentsStore.selectedSegment.id) !== '0'"
+          class="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+          :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }"
+        >
+          <component :is="ICONS.Layers" :size="10" weight="Linear" /> {{ segmentsStore.selectedSegment.name }}
+        </span>
       </template>
       <template #action>
         <div class="flex items-center gap-3">

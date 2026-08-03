@@ -4,10 +4,8 @@
 // an ATT&CK coverage pill strip, bulk assign/close (gated by
 // canBulkTriage), and Export CSV / New Case header actions.
 //
-// Deliberately deferred, same rationale as Devices/Compliance (Phases 1-2):
-// the original's implicit segment scoping (collectSegmentIds against a
-// selectedSegment from the global Segments nav panel) isn't ported — no
-// Segments panel exists anywhere in the migrated app yet (roadmap Phase 9).
+// Segment scoping (roadmap Phase 9): implicit collectSegmentIds filtering
+// against the Segments panel's selection, same as the original.
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { Alert } from "@applivery/bluesky-vue";
@@ -20,13 +18,16 @@ import { tacticColorMap, techniqueByIdMap } from "../lib/mitreCatalog";
 import { useAuthStore } from "../stores/auth";
 import { useCasesStore, type Case } from "../stores/cases";
 import { useComplianceStore } from "../stores/compliance";
+import { useSegmentsStore } from "../stores/segments";
 
+const PRIMARY_BLUE = "#0241E3";
 const WARNING = "#F59E0B";
 
 const route = useRoute();
 const store = useCasesStore();
 const complianceStore = useComplianceStore();
 const authStore = useAuthStore();
+const segmentsStore = useSegmentsStore();
 
 const STATUS_TABS = [
   { id: "open_investigating", label: "Open" },
@@ -56,6 +57,8 @@ const openCount = computed(() => store.cases.filter((c) => c.status === "open" |
 
 const visibleCases = computed(() => {
   let list = store.cases;
+  const segmentIds = segmentsStore.collectSegmentIds(segmentsStore.selectedSegment.id);
+  if (segmentIds !== null) list = list.filter((c) => segmentIds.has(String(c.segmentId ?? "0")));
   if (statusFilter.value === "open_investigating") list = list.filter((c) => c.status === "open" || c.status === "investigating");
   else if (statusFilter.value !== "all") list = list.filter((c) => c.status === statusFilter.value);
   if (severityFilter.value !== "all") list = list.filter((c) => c.severity === severityFilter.value);
@@ -132,6 +135,13 @@ onMounted(async () => {
         <div class="flex items-center gap-2 flex-wrap">
           <h1 class="text-2xl font-semibold leading-tight text-gray-900">Cases</h1>
           <HelpIcon slug="cases" title="Cases admin guide" />
+          <span
+            v-if="String(segmentsStore.selectedSegment.id) !== '0'"
+            class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }"
+          >
+            <component :is="ICONS.Layers" :size="10" weight="Linear" /> {{ segmentsStore.selectedSegment.name }}
+          </span>
           <span v-if="openCount > 0" class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${WARNING}15`, color: WARNING }">
             {{ openCount }} open
           </span>

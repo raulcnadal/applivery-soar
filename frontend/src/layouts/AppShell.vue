@@ -9,8 +9,14 @@ import { Widget, Smartphone, ShieldWarning, Folder, Routing, FileText, Settings,
 import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import { useAuthStore, type FeatureArea } from "../stores/auth";
+import { useSegmentsStore } from "../stores/segments";
 import { api } from "../api/http";
 import WorkspaceOnboardingModal from "../components/onboarding/WorkspaceOnboardingModal.vue";
+import SegmentsPanel from "../components/shared/SegmentsPanel.vue";
+
+// Views the Segments panel is reachable from (App.jsx:4462's currentView
+// check) — Overview/Devices/Compliance/Cases only.
+const SEGMENT_PANEL_VIEWS = ["overview", "devices", "compliance", "cases"];
 // Lazy-loaded — Settings pulls in ~20 sub-panels' worth of code that most
 // sessions never open; keeping it out of the eagerly-loaded shell chunk
 // matches how every other view is already route-level code-split.
@@ -21,6 +27,8 @@ const PRIMARY_BLUE = "#0241E3";
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const segmentsStore = useSegmentsStore();
+segmentsStore.fetchTree();
 
 // New-workspace onboarding (main.py:1802-1811's workspace-status check) —
 // checked once per landing (fresh login, or after a workspace switch's full
@@ -235,5 +243,6 @@ function onCloned() {
 
     <WorkspaceOnboardingModal v-if="isOnboardingModalOpen" @close="isOnboardingModalOpen = false" @cloned="onCloned" />
     <SettingsModal v-if="isSettingsModalOpen" @close="isSettingsModalOpen = false" />
+    <SegmentsPanel :views="SEGMENT_PANEL_VIEWS" :current-view="activeId" />
   </div>
 </template>

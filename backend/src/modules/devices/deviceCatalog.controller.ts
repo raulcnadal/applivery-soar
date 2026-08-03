@@ -11,6 +11,7 @@ import {
   getMdmUsers,
   getPolicies,
   getSegments,
+  getSegmentsTree,
   getSmartAttributes,
 } from "./deviceCatalog.service";
 import { MDM_ACTIONS } from "./mdmActions";
@@ -65,6 +66,20 @@ deviceCatalogRouter.get(
     const workspaceSlug = req.header("X-Workspace-Slug");
     requireCreds(authorization, workspaceSlug);
     res.json(await getSegments(authorization, workspaceSlug!));
+  }),
+);
+
+// GET /api/segments/tree — nested tree for the Segments panel (Phase 9).
+// See getSegmentsTree's doc comment for why this is a proxy rather than a
+// literal main.py port.
+deviceCatalogRouter.get(
+  "/api/segments/tree",
+  ...readDevices,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    res.json(await getSegmentsTree(authorization, workspaceSlug!));
   }),
 );
 
