@@ -1,3 +1,6 @@
+import { existsSync } from "fs";
+import { readFile } from "fs/promises";
+import path from "path";
 import { appliveryClient } from "../../services/appliveryClient";
 import { fetchAllPages } from "../../services/appliveryPaginate";
 import { recordAuditEvent } from "../../services/auditLog";
@@ -22,6 +25,73 @@ import { loadInstalledAppsStore, type InstalledAppsEntry } from "../appLists/ins
 import { getVulnServiceConfig, computeVulnServiceStatus } from "../catalogs/vulnService";
 import { loadDevicePushDataCache } from "./deviceData.service";
 import { LOCATION_CACHE_KEY } from "../analytics/locationsSync.service";
+import { executeMdmAction } from "../workflows/mdmActionExecutor";
+import { createScriptAsset } from "../workflows/scriptAssetUpload";
+
+// Port of `SECURITY_REPORT_SCRIPT_FILES`/`REATTEST_LIBRARY_ENTRY_NAME`
+// (main.py:7883-7899) — same script templates deviceReportScripts.controller.ts
+// already serves for the one-time scheduled-task setup; bulk-reattest reuses
+// them as the payload for an on-demand Action Library "script" entry.
+const SCRIPTS_DIR = path.resolve(__dirname, "../../../scripts");
+const SECURITY_REPORT_SCRIPT_FILES: Record<string, string> = {
+  windows: "report-security-attributes.ps1",
+  macos: "report-security-attributes.sh",
+};
+const REATTEST_LIBRARY_ENTRY_NAME: Record<string, string> = {
+  windows: "Security Attestation Reporter (Windows)",
+  macos: "Security Attestation Reporter (macOS)",
+};
+
+/**
+ * Port of `_ensure_reattest_library_entry` (main.py:7900-7931). The
+ * attestation reporter scripts are normally installed once as a scheduled
+ * task (Task Scheduler/launchd own the recurring run, not Applivery) — this
+ * finds, or the first time it's needed silently creates, an Action Library
+ * "script" entry pointing at that same script uploaded as an Applivery
+ * Asset, so a bulk "re-attest now" has something it can push via the same
+ * runScript primitive every other MDM action dispatch uses
+ * (mdmActionExecutor.ts). Idempotent — matched by (workspaceSlug, type,
+ * platform, name), same lookup the original does by name within the
+ * workspace's Action Library list.
+ */
+async function ensureReattestLibraryEntry(authorization: string, orgBase: string, workspaceSlug: string, platform: string): Promise<{ id: string } | null> {
+  const name = REATTEST_LIBRARY_ENTRY_NAME[platform];
+  if (!name) return null;
+  const existing = await prisma.actionLibraryEntry.findFirst({ where: { workspaceSlug, type: "script", platform, name } });
+  if (existing) return existing;
+
+  const scriptFilename = SECURITY_REPORT_SCRIPT_FILES[platform];
+  const scriptPath = scriptFilename ? path.join(SCRIPTS_DIR, scriptFilename) : null;
+  if (!scriptPath || !existsSync(scriptPath)) return null;
+  const content = await readFile(scriptPath, "utf-8");
+
+  const uploadBase = orgBase.replace("https://api.applivery.io", "https://upload.applivery.io");
+  const { asset, error } = await createScriptAsset(
+    authorization,
+    uploadBase,
+    name,
+    "Auto-registered so 'Re-attest now' can push this on demand.",
+    content,
+    platform,
+    null,
+    true,
+  );
+  if (error || !asset) return null;
+
+  return prisma.actionLibraryEntry.create({
+    data: {
+      workspaceSlug,
+      type: "script",
+      name,
+      description: "Auto-registered so 'Re-attest now' can push this on demand.",
+      platform,
+      assetId: asset.id,
+      assetName: asset.name,
+      arguments: "",
+      scope: "machine",
+    },
+  });
+}
 
 export const DEVICES_CACHE_SOURCE = "devices_full";
 
@@ -475,40 +545,55 @@ export async function updateDevicePolicies(authorization: string, workspaceSlug:
 }
 
 /**
- * Port of `bulk_reattest_devices` (main.py:7942). The original pushes the
- * security-attestation reporter script to each selected Windows/macOS
- * device via `_ensure_reattest_library_entry` (auto-provisions a script
- * Asset via multipart upload the first time it's needed) +
- * `_execute_mdm_action('runScript', ...)`. The MDM action dispatch itself
- * now exists (workflows/mdmActionExecutor.ts, Phase 4a), but the Action
- * Library auto-provisioning flow is Phase 4b surface that doesn't exist
- * yet. Rather than silently dropping the endpoint (a real feature the
- * Devices view's bulk-select bar calls), this returns the SAME per-device
- * result shape the original does, with an honest "not wired up yet" detail
- * instead of a fabricated success — so the frontend's existing
- * success/failure UI works unmodified once Phase 4b fills this in for real.
- * TODO(Phase4b): replace the stub below with the real
- * ensureReattestLibraryEntry + executeMdmAction('runScript') dispatch.
+ * Port of `bulk_reattest_devices` (main.py:7942-7988). Pushes the
+ * security-attestation reporter script to every selected Windows/macOS
+ * device right now, instead of waiting for its next scheduled run —
+ * `ensureReattestLibraryEntry` above handles the one-time Asset
+ * registration, `executeMdmAction('runScript', ...)` (mdmActionExecutor.ts,
+ * the same dispatch point every workflow 'mdm_action' step calls through)
+ * does the actual push. Devices on a platform with no reporter script
+ * (Android/iOS) are skipped with an explicit reason rather than silently
+ * ignored, same as the original.
  */
 export async function bulkReattestDevices(authorization: string, workspaceSlug: string, payload: BulkReattestPayload, actorEmail: string) {
   const devicesRes = await getDevicesFull(authorization, workspaceSlug, false);
   const byId = new Map(devicesRes.items.map((d) => [d.id, d]));
+  const headers = { Authorization: authorization };
+  const orgBase = await resolveOrgBase(headers, workspaceSlug);
+  const libraryEntryCache = new Map<string, { id: string } | null>();
 
-  const results = payload.deviceIds.map((deviceId) => {
+  const results: Array<{ deviceId: string; displayName?: string; ok: boolean; detail: string }> = [];
+  for (const deviceId of payload.deviceIds) {
     const device = byId.get(deviceId);
     if (!device) {
-      return { deviceId, ok: false, detail: "Device not found in current fleet" };
+      results.push({ deviceId, ok: false, detail: "Device not found in current fleet" });
+      continue;
     }
     if (!["windows", "macos"].includes(device.platform)) {
-      return { deviceId, displayName: device.displayName, ok: false, detail: `No self-report script for platform '${device.platform}'` };
+      results.push({ deviceId, displayName: device.displayName, ok: false, detail: `No self-report script for platform '${device.platform}'` });
+      continue;
     }
-    return {
+    if (!libraryEntryCache.has(device.platform)) {
+      libraryEntryCache.set(device.platform, await ensureReattestLibraryEntry(authorization, orgBase, workspaceSlug, device.platform));
+    }
+    const entry = libraryEntryCache.get(device.platform);
+    if (!entry) {
+      results.push({ deviceId, displayName: device.displayName, ok: false, detail: "Could not register the attestation script as a runnable Asset" });
+      continue;
+    }
+    const { ok, detail } = await executeMdmAction(
+      headers,
+      orgBase,
+      workspaceSlug,
+      device.platform,
+      device.platformDeviceId,
+      "runScript",
+      null,
+      { libraryId: entry.id },
       deviceId,
-      displayName: device.displayName,
-      ok: false,
-      detail: "Re-attestation dispatch isn't wired up yet — coming with the Workflows engine (Phase 4).",
-    };
-  });
+    );
+    results.push({ deviceId, displayName: device.displayName, ok, detail });
+  }
 
   const succeeded = results.filter((r) => r.ok).length;
   await recordAuditEvent(workspaceSlug || "global", {
