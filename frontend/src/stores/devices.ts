@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { ref, watch } from "vue";
 
 export type RiskTier = "low" | "medium" | "high" | "critical";
 
@@ -34,7 +34,7 @@ export interface NormalizedDevice {
   tags: string[];
   segmentId: number | string | null;
   deviceAudiences: Array<{ id: string; name: string }>;
-  mdmUser: unknown;
+  mdmUser: { name?: string; firstName?: string; lastName?: string; email?: string } | null;
   location: { lat: number; lng: number } | null;
   selfReported: unknown;
   nativeSecurity: Record<string, any> | null;
@@ -44,13 +44,24 @@ export interface NormalizedDevice {
   availableStorageGb: number | null;
   ramGb: number | null;
   activePolicies: ActivePolicy[];
-  openCases: Array<Record<string, any>>;
-  activeViolations: Array<Record<string, any>>;
-  policyViolations: Array<Record<string, any>>;
+  openCases: Array<{ id: string; title: string; severity: string; status: string }>;
+  activeViolations: Array<{ id: string; policyId: string; policyName: string | null; detectedAt: string }>;
+  policyViolations: Array<{ policyId: string; policyName: string | null; status: string; lastDetectedAt: string }>;
   policyCompliant: boolean;
   riskScore: number;
   riskTier: RiskTier;
   riskFactors: RiskFactor[];
+  // TODO(Phase3, backend): osUpdateStatus/vulnStatus/vulnServiceStatus/
+  // osLifecycleStatus/appleAppUpdateStatus are declared and rendered here
+  // (deviceNormalize.ts computes them), but the underlying catalog-refresher
+  // jobs don't exist yet — see devices.service.ts's getDevicesFull, which
+  // currently always produces null for these five. The mini-badges/drawer
+  // sections below are wired to render real data the moment that lands.
+  osUpdateStatus: Record<string, any> | null;
+  vulnStatus: Record<string, any> | null;
+  vulnServiceStatus: Record<string, any> | null;
+  osLifecycleStatus: Record<string, any> | null;
+  appleAppUpdateStatus: Record<string, any> | null;
 }
 
 export interface PickerItem {
@@ -58,50 +69,110 @@ export interface PickerItem {
   name: string;
 }
 
+export interface RiskTrendPoint {
+  date: string;
+  avgRiskScore: number;
+  [key: string]: unknown;
+}
+
+const COMPLIANCE_SOURCE_KEY = "huginn.devices.complianceSource";
+
+function loadComplianceSource(): "applivery" | "policy" {
+  try {
+    const v = window.localStorage.getItem(COMPLIANCE_SOURCE_KEY);
+    return v === "policy" ? "policy" : "applivery";
+  } catch {
+    return "applivery";
+  }
+}
+
 /**
- * Devices module state — wraps GET /api/devices (Phase 2) plus the picker
- * endpoints the fleet table/detail drawer need (segments, device tags,
- * policies, device audiences). Mirrors the original App.jsx's Devices view
- * state (fetch-on-mount, client-side filter, single in-flight fetch guard)
- * without the class-component-style prop drilling.
+ * Devices module state — wraps GET /api/devices plus the picker endpoints
+ * the fleet table/detail drawer need (segments, device tags, policies,
+ * device audiences, Compliance Policies for the source-scope dropdown).
+ * Fetch-on-mount, single in-flight fleet pull; all table-local filtering
+ * (search/platform/risk/saved-filters/selection) is owned by
+ * DeviceFleetTable.vue itself, mirroring the original App.jsx's per-
+ * component state ownership rather than lifting everything into one store.
  */
 export const useDevicesStore = defineStore("devices", () => {
   const devices = ref<NormalizedDevice[]>([]);
   const total = ref(0);
   const fetchedAt = ref<string | null>(null);
   const isLoading = ref(false);
+  const isRefreshing = ref(false);
   const error = ref<string | null>(null);
 
   const segments = ref<PickerItem[]>([]);
   const deviceTags = ref<string[]>([]);
   const deviceAudiences = ref<PickerItem[]>([]);
 
-  // Client-side filter state — the original's Devices view filters the
-  // already-fetched fleet in memory rather than re-querying per filter
-  // change (GET /api/devices is a full-fleet, cached pull).
-  const searchQuery = ref("");
-  const platformFilter = ref<string>("all");
-  const complianceFilter = ref<"all" | "compliant" | "noncompliant">("all");
-  const segmentFilter = ref<string>("all");
-  const selectedDeviceIds = ref<Set<string>>(new Set());
+  // "Compliance shown" toggle (docs/devices.md) — Applivery's own flag vs
+  // SOAR's own Compliance Policies engine. Persisted per-browser.
+  const complianceSource = ref<"applivery" | "policy">(loadComplianceSource());
+  const policies = ref<PickerItem[]>([]);
+  const selectedPolicyId = ref<string>("");
+  const policyViolatingIds = ref<Set<string> | null>(null);
+  const isLoadingPolicyFilter = ref(false);
 
-  const filteredDevices = computed(() => {
-    const q = searchQuery.value.trim().toLowerCase();
-    return devices.value.filter((d) => {
-      if (platformFilter.value !== "all" && d.platform !== platformFilter.value) return false;
-      if (complianceFilter.value === "compliant" && !d.isCompliant) return false;
-      if (complianceFilter.value === "noncompliant" && d.isCompliant) return false;
-      if (segmentFilter.value !== "all" && String(d.segmentId ?? "") !== segmentFilter.value) return false;
-      if (q) {
-        const haystack = `${d.displayName} ${d.serialNumber} ${d.model} ${d.manufacturer} ${(d.tags ?? []).join(" ")}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
-      return true;
-    });
+  const riskTrend = ref<RiskTrendPoint[]>([]);
+
+  function setComplianceSource(source: "applivery" | "policy") {
+    complianceSource.value = source;
+    try {
+      window.localStorage.setItem(COMPLIANCE_SOURCE_KEY, source);
+    } catch {
+      // storage unavailable — choice just won't persist this session
+    }
+    if (source !== "policy") selectedPolicyId.value = "";
+  }
+
+  watch(selectedPolicyId, async (policyId) => {
+    if (!policyId) {
+      policyViolatingIds.value = null;
+      return;
+    }
+    isLoadingPolicyFilter.value = true;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get(`/compliance/policies/${policyId}/violating-device-ids`);
+      policyViolatingIds.value = new Set((res.data?.deviceIds ?? []).map(String));
+    } catch {
+      policyViolatingIds.value = new Set();
+    } finally {
+      isLoadingPolicyFilter.value = false;
+    }
   });
 
+  async function fetchPolicies() {
+    if (policies.value.length > 0) return;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/compliance/policies");
+      policies.value = res.data?.items ?? [];
+    } catch {
+      policies.value = [];
+    }
+  }
+
+  async function fetchRiskTrend() {
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/analytics/device-risk-trend", { params: { days: 14 } });
+      riskTrend.value = res.data?.items ?? [];
+    } catch {
+      riskTrend.value = [];
+    }
+  }
+
+  async function syncLocations() {
+    const { api } = await import("../api/http");
+    await api.post("/analytics/locations/sync", {});
+  }
+
   async function fetchDevices(refresh = false) {
-    isLoading.value = true;
+    if (refresh) isRefreshing.value = true;
+    else isLoading.value = true;
     error.value = null;
     try {
       const { api } = await import("../api/http");
@@ -110,9 +181,10 @@ export const useDevicesStore = defineStore("devices", () => {
       total.value = res.data.total ?? devices.value.length;
       fetchedAt.value = res.data.fetchedAt ?? null;
     } catch (err: any) {
-      error.value = err?.response?.data?.detail || "Failed to load devices.";
+      error.value = err?.response?.data?.detail || "Failed to load devices from Applivery.";
     } finally {
       isLoading.value = false;
+      isRefreshing.value = false;
     }
   }
 
@@ -146,21 +218,25 @@ export const useDevicesStore = defineStore("devices", () => {
     return res.data;
   }
 
-  async function updateSegment(deviceId: string, platform: string, segmentId: number) {
+  // NOTE: all three mutations below take the Applivery-side
+  // `platformDeviceId` (not our internal normalized `id`) — the two differ
+  // for Apple/Android/Windows devices (deviceNormalize.ts), and the backend
+  // forwards this id straight through to Applivery's own device API.
+  async function updateSegment(platformDeviceId: string, platform: string, segmentId: number) {
     const { api } = await import("../api/http");
-    await api.put(`/devices/${deviceId}/segment`, { platform, segmentId });
+    await api.put(`/devices/${platformDeviceId}/segment`, { platform, segmentId });
     await fetchDevices(true);
   }
 
-  async function updateTags(deviceId: string, platform: string, tags: string[]) {
+  async function updateTags(platformDeviceId: string, platform: string, tags: string[]) {
     const { api } = await import("../api/http");
-    await api.put(`/devices/${deviceId}/tags`, { platform, tags });
+    await api.put(`/devices/${platformDeviceId}/tags`, { platform, tags });
     await fetchDevices(true);
   }
 
-  async function updatePolicies(deviceId: string, platform: string, policies: Array<{ id?: string | null; name?: string | null }>) {
+  async function updatePolicies(platformDeviceId: string, platform: string, policyList: Array<{ id?: string | null; name?: string | null }>) {
     const { api } = await import("../api/http");
-    await api.put(`/devices/${deviceId}/policies`, { platform, policies });
+    await api.put(`/devices/${platformDeviceId}/policies`, { platform, policies: policyList });
     await fetchDevices(true);
   }
 
@@ -170,32 +246,26 @@ export const useDevicesStore = defineStore("devices", () => {
     return res.data as { results: Array<{ deviceId: string; displayName?: string; ok: boolean; detail: string }>; succeeded: number; total: number };
   }
 
-  function toggleSelected(deviceId: string) {
-    const next = new Set(selectedDeviceIds.value);
-    if (next.has(deviceId)) next.delete(deviceId);
-    else next.add(deviceId);
-    selectedDeviceIds.value = next;
-  }
-
-  function clearSelection() {
-    selectedDeviceIds.value = new Set();
-  }
-
   return {
     devices,
     total,
     fetchedAt,
     isLoading,
+    isRefreshing,
     error,
     segments,
     deviceTags,
     deviceAudiences,
-    searchQuery,
-    platformFilter,
-    complianceFilter,
-    segmentFilter,
-    selectedDeviceIds,
-    filteredDevices,
+    complianceSource,
+    policies,
+    selectedPolicyId,
+    policyViolatingIds,
+    isLoadingPolicyFilter,
+    riskTrend,
+    setComplianceSource,
+    fetchPolicies,
+    fetchRiskTrend,
+    syncLocations,
     fetchDevices,
     fetchPickers,
     getPolicies,
@@ -205,7 +275,5 @@ export const useDevicesStore = defineStore("devices", () => {
     updateTags,
     updatePolicies,
     bulkReattest,
-    toggleSelected,
-    clearSelection,
   };
 });
