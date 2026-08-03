@@ -1,71 +1,95 @@
 <script setup lang="ts">
-// Playground — 3D device globe. Port of App.jsx's GlobeWidget (see
-// wow-dashboard/src/App.jsx:1805-1990) using globe.gl directly (a vanilla
-// Three.js wrapper, not a Vue component), mounted imperatively into a ref'd
-// container. Scoped down from the original for this pass: the 2D
-// zoomed-in-map fallback (PlaygroundMapView) and its auto-switch-on-zoom
-// behavior aren't ported — the 3D globe with real GPS data, sync, and
-// click-to-inspect is the core deliverable (migration-plan.md §8 Phase 7
-// checkpoint: "Playground globe").
-import Globe, { type GlobeInstance } from "globe.gl";
-import { Alert, Button, PageHeader } from "@applivery/bluesky-vue";
-import { onBeforeUnmount, onMounted, ref } from "vue";
+// Playground — the 3D device globe (+ 2D map fallback for dense regions).
+// Port of App.jsx's Playground main-view block (App.jsx:4736-4879) and its
+// supporting state (App.jsx:3330-3352, 3589-3625). A genuinely live view —
+// devices are fetched from the same `mdm_devices` widget-data source the
+// globe/map both plot, not a static demo.
+import { RouterLink } from "vue-router";
+import { computed, onMounted, ref, watch } from "vue";
+import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
+import PlaygroundGlobe from "../components/playground/PlaygroundGlobe.vue";
+import PlaygroundMapView from "../components/playground/PlaygroundMapView.vue";
+import DeviceInsightModal from "../components/playground/DeviceInsightModal.vue";
 import { fetchWidgetData } from "../lib/widgetData";
 
-const containerEl = ref<HTMLDivElement | null>(null);
-let globe: GlobeInstance | null = null;
-let resizeObserver: ResizeObserver | null = null;
+// Camera altitude (globe radii) below which the view auto-switches from the
+// 3D globe to the 2D map — App.jsx:1833's GLOBE_TO_MAP_ALTITUDE_THRESHOLD.
+const GLOBE_TO_MAP_ALTITUDE_THRESHOLD = 0.32;
 
-const isLoading = ref(true);
-const isSyncing = ref(false);
+const isLoadingGlobe = ref(true);
+const isSyncingLocations = ref(false);
 const error = ref<string | null>(null);
-const totalDevices = ref(0);
-const locatedDevices = ref(0);
+const globeDevices = ref<any[]>([]);
 const selectedDevice = ref<Record<string, any> | null>(null);
 
-interface GlobePoint {
-  lat: number;
-  lng: number;
-  color: string;
-  device: Record<string, any>;
-}
+const playgroundMode = ref<"globe" | "map">("globe");
+const playgroundMapCenter = ref({ lat: 20, lng: 0 });
+const isGlobeRotationPaused = ref(false);
 
-function colorForDevice(d: Record<string, any>): string {
-  return d.is_compliant_normalized ? "#3DDC84" : "#EF4444";
-}
+const showOnlyNonCompliantGlobe = ref(false);
+const globeCompliancePolicies = ref<Array<{ id: string; name: string }>>([]);
+const selectedGlobePolicyId = ref("");
+const globePolicyViolatingIds = ref<Set<string> | null>(null);
+const isLoadingGlobePolicyFilter = ref(false);
+
+const filterActive = computed(() => showOnlyNonCompliantGlobe.value || !!selectedGlobePolicyId.value);
+
+const filteredDevices = computed(() => {
+  let list = globeDevices.value;
+  if (globePolicyViolatingIds.value) list = list.filter((d) => globePolicyViolatingIds.value!.has(String(d.id ?? d._id)));
+  if (showOnlyNonCompliantGlobe.value) list = list.filter((d) => d.is_compliant_normalized === false);
+  return list;
+});
+
+const compliantCount = computed(() => globeDevices.value.filter((d) => d.is_compliant_normalized === true).length);
+const nonCompliantCount = computed(() => globeDevices.value.filter((d) => d.is_compliant_normalized === false).length);
+const appleCount = computed(() => globeDevices.value.filter((d) => String(d.platform_normalized || "").toLowerCase().includes("apple")).length);
+const androidCount = computed(() => globeDevices.value.filter((d) => String(d.platform_normalized || "").toLowerCase().includes("android")).length);
+const winCount = computed(() => globeDevices.value.filter((d) => String(d.platform_normalized || "").toLowerCase().includes("win")).length);
 
 async function loadDevices() {
-  isLoading.value = true;
+  isLoadingGlobe.value = true;
   error.value = null;
   try {
     const data = await fetchWidgetData("mdm_devices");
-    const items: any[] = data.items ?? [];
-    totalDevices.value = items.length;
-    const points: GlobePoint[] = items
-      .filter((d) => d.locationCache?.lat !== undefined && d.locationCache?.lng !== undefined)
-      .map((d) => ({ lat: Number(d.locationCache.lat), lng: Number(d.locationCache.lng), color: colorForDevice(d), device: d }));
-    locatedDevices.value = points.length;
-    globe
-      ?.pointsData(points)
-      .pointLat("lat")
-      .pointLng("lng")
-      .pointColor("color")
-      .pointAltitude(0.012)
-      .pointRadius(0.35)
-      .pointLabel((p: any) => `${p.device.displayName ?? "Unknown device"} — ${p.device.platform_normalized ?? p.device.type ?? ""}`)
-      .onPointClick((p: any) => {
-        selectedDevice.value = p.device;
-      });
+    globeDevices.value = data.items ?? [];
   } catch (err: any) {
     error.value = err?.response?.data?.detail || "Failed to load devices.";
   } finally {
-    isLoading.value = false;
+    isLoadingGlobe.value = false;
   }
 }
 
+async function loadCompliancePolicies() {
+  try {
+    const { api } = await import("../api/http");
+    const res = await api.get("/compliance/policies");
+    globeCompliancePolicies.value = res.data?.items ?? [];
+  } catch {
+    globeCompliancePolicies.value = [];
+  }
+}
+
+watch(selectedGlobePolicyId, async (policyId) => {
+  if (!policyId) {
+    globePolicyViolatingIds.value = null;
+    return;
+  }
+  isLoadingGlobePolicyFilter.value = true;
+  try {
+    const { api } = await import("../api/http");
+    const res = await api.get(`/compliance/policies/${policyId}/violating-device-ids`);
+    globePolicyViolatingIds.value = new Set((res.data?.deviceIds ?? []).map(String));
+  } catch {
+    globePolicyViolatingIds.value = new Set();
+  } finally {
+    isLoadingGlobePolicyFilter.value = false;
+  }
+});
+
 async function syncLocations() {
-  isSyncing.value = true;
+  isSyncingLocations.value = true;
   error.value = null;
   try {
     const { api } = await import("../api/http");
@@ -74,78 +98,130 @@ async function syncLocations() {
   } catch (err: any) {
     error.value = err?.response?.data?.detail || "Location sync failed (it's rate-limited to once every 5 minutes).";
   } finally {
-    isSyncing.value = false;
+    isSyncingLocations.value = false;
   }
 }
 
-function resizeGlobe() {
-  if (!globe || !containerEl.value) return;
-  globe.width(containerEl.value.clientWidth).height(containerEl.value.clientHeight);
+// Port of handleGlobeZoom (App.jsx:3341-3346) — one-directional only, no
+// reverse auto-switch back to the globe on zoom-out.
+function handleZoom(pov: { lat: number; lng: number; altitude: number }) {
+  if (pov && pov.altitude < GLOBE_TO_MAP_ALTITUDE_THRESHOLD) {
+    playgroundMapCenter.value = { lat: pov.lat, lng: pov.lng };
+    playgroundMode.value = "map";
+  }
+}
+
+function openDevice(item: any) {
+  selectedDevice.value = item;
 }
 
 onMounted(async () => {
-  if (!containerEl.value) return;
-  globe = new Globe(containerEl.value)
-    .globeImageUrl("https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg")
-    .backgroundImageUrl("https://unpkg.com/three-globe/example/img/night-sky.png")
-    .backgroundColor("#020817")
-    .width(containerEl.value.clientWidth)
-    .height(containerEl.value.clientHeight);
-
-  const controls = globe.controls?.();
-  if (controls) {
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.4;
-  }
-
-  resizeObserver = new ResizeObserver(() => resizeGlobe());
-  resizeObserver.observe(containerEl.value);
-
-  await loadDevices();
-});
-
-onBeforeUnmount(() => {
-  resizeObserver?.disconnect();
-  (globe as any)?._destructor?.();
-  globe = null;
+  await Promise.all([loadDevices(), loadCompliancePolicies()]);
 });
 </script>
 
 <template>
-  <div class="p-8 space-y-6 animate-page-enter h-full flex flex-col">
-    <PageHeader title="Playground" description="Your fleet, mapped by last-known GPS location.">
-      <template #title-suffix>
-        <HelpIcon slug="playground" title="Playground admin guide" />
-      </template>
-      <template #action>
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-500">{{ locatedDevices }} / {{ totalDevices }} devices with a location</span>
-          <Button variant="ghost" size="sm" :disabled="isSyncing" @click="syncLocations">{{ isSyncing ? "Syncing…" : "Sync locations" }}</Button>
+  <main class="flex-1 relative flex flex-col overflow-hidden h-full" style="background-color: #020817">
+    <div class="shrink-0 flex items-center justify-between px-6 py-3 border-b z-10 flex-wrap gap-3" style="border-color: rgba(255, 255, 255, 0.07); background-color: rgba(2, 8, 23, 0.8); backdrop-filter: blur(12px)">
+      <div class="flex items-center gap-4 flex-wrap">
+        <div>
+          <div class="flex items-center gap-2">
+            <component :is="ICONS.Global" :size="15" weight="Linear" class="text-blue-400" />
+            <span class="text-base font-semibold text-white tracking-wide">Playground</span>
+            <HelpIcon slug="playground" title="Playground admin guide" class="hover:bg-white/10" />
+          </div>
+          <p class="text-xs text-white/40 mt-0.5" style="font-family: 'Outfit', sans-serif; font-weight: 300">Live 3D visualization — {{ globeDevices.length }} devices tracked</p>
         </div>
-      </template>
-    </PageHeader>
-
-    <Alert v-if="error" type="danger">{{ error }}</Alert>
-
-    <div class="flex-1 min-h-[500px] relative rounded-xl overflow-hidden border border-gray-800">
-      <div ref="containerEl" class="w-full h-full" />
-      <div v-if="isLoading" class="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-sm">Loading fleet…</div>
-
-      <div v-if="selectedDevice" class="absolute top-4 right-4 w-72 bg-white rounded-xl shadow-xl p-4 space-y-2 text-sm">
-        <div class="flex items-center justify-between">
-          <p class="font-medium text-gray-900">{{ selectedDevice.displayName }}</p>
-          <button class="text-gray-400 hover:text-gray-600" @click="selectedDevice = null">✕</button>
+        <div class="h-8 w-px bg-white/10" />
+        <div class="flex items-center gap-3 flex-wrap">
+          <div v-if="compliantCount > 0" class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span class="text-[11px] font-medium text-white/70">{{ compliantCount }} Compliant</span></div>
+          <div v-if="nonCompliantCount > 0" class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-red-400" /><span class="text-[11px] font-medium text-white/70">{{ nonCompliantCount }} Non-compliant</span></div>
+          <div v-if="appleCount > 0" class="flex items-center gap-1.5"><component :is="ICONS.Smartphone" :size="11" weight="Linear" style="color: #79c6e8" /><span class="text-[11px] text-white/50">{{ appleCount }}</span></div>
+          <div v-if="androidCount > 0" class="flex items-center gap-1.5"><component :is="ICONS.Smartphone" :size="11" weight="Linear" style="color: #3ddc84" /><span class="text-[11px] text-white/50">{{ androidCount }}</span></div>
+          <div v-if="winCount > 0" class="flex items-center gap-1.5"><component :is="ICONS.Smartphone" :size="11" weight="Linear" style="color: #0078d4" /><span class="text-[11px] text-white/50">{{ winCount }}</span></div>
         </div>
-        <p class="text-gray-500">Platform: <span class="text-gray-800">{{ selectedDevice.platform_normalized ?? selectedDevice.platform }}</span></p>
-        <p class="text-gray-500">Model: <span class="text-gray-800">{{ selectedDevice.model || "—" }}</span></p>
-        <p class="text-gray-500">
-          Compliance:
-          <span :class="selectedDevice.is_compliant_normalized ? 'text-green-600' : 'text-red-600'">
-            {{ selectedDevice.is_compliant_normalized ? "Compliant" : "Non-compliant" }}
+      </div>
+
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="flex items-center gap-1 p-1 rounded-xl" style="background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12)">
+          <RouterLink to="/devices" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all text-white/60">
+            <component :is="ICONS.Smartphone" :size="14" weight="Linear" /> Devices
+          </RouterLink>
+          <span class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap" style="background-color: rgba(255, 255, 255, 0.14); color: #fff">
+            <component :is="ICONS.Global" :size="14" weight="Linear" /> Playground
           </span>
-        </p>
-        <p class="text-gray-500">State: <span class="text-gray-800">{{ selectedDevice.state_normalized }}</span></p>
+        </div>
+
+        <select
+          v-model="selectedGlobePolicyId"
+          class="px-3 py-1.5 rounded-lg text-[11px] font-medium border outline-none"
+          :style="{ color: selectedGlobePolicyId ? '#A855F7' : 'rgba(255,255,255,0.6)', borderColor: selectedGlobePolicyId ? '#A855F740' : 'rgba(255,255,255,0.1)', backgroundColor: selectedGlobePolicyId ? '#A855F715' : 'rgba(255,255,255,0.05)' }"
+        >
+          <option value="" style="color: #000">All policies</option>
+          <option v-for="p in globeCompliancePolicies" :key="p.id" :value="p.id" style="color: #000">{{ p.name }}</option>
+        </select>
+
+        <label
+          class="flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all border"
+          :style="{ color: showOnlyNonCompliantGlobe ? '#EF4444' : 'rgba(255,255,255,0.6)', borderColor: showOnlyNonCompliantGlobe ? '#EF444440' : 'rgba(255,255,255,0.1)', backgroundColor: showOnlyNonCompliantGlobe ? '#EF444415' : 'rgba(255,255,255,0.05)' }"
+        >
+          <input type="checkbox" v-model="showOnlyNonCompliantGlobe" class="w-3 h-3 rounded border-gray-600 text-red-500 focus:ring-red-500" />
+          Non-Compliant Only
+        </label>
+
+        <button
+          :disabled="isSyncingLocations"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium text-[11px] transition-all border border-white/10 hover:bg-white/10"
+          style="color: rgba(255, 255, 255, 0.7); background-color: rgba(255, 255, 255, 0.05)"
+          @click="syncLocations"
+        >
+          <component :is="ICONS.MapPoint" :size="12" weight="Linear" :class="isSyncingLocations ? 'animate-spin' : ''" class="text-blue-400" />
+          {{ isSyncingLocations ? "Syncing..." : "Sync Locations" }}
+        </button>
+
+        <button
+          title="Pause globe rotation — easier to click devices in a busy region"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium text-[11px] transition-all border"
+          :style="{ color: isGlobeRotationPaused ? '#FBBF24' : 'rgba(255,255,255,0.7)', borderColor: isGlobeRotationPaused ? '#FBBF2440' : 'rgba(255,255,255,0.1)', backgroundColor: isGlobeRotationPaused ? '#FBBF2415' : 'rgba(255,255,255,0.05)' }"
+          @click="isGlobeRotationPaused = !isGlobeRotationPaused"
+        >
+          <svg v-if="isGlobeRotationPaused" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+          <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" /><rect x="14" y="5" width="4" height="14" /></svg>
+          {{ isGlobeRotationPaused ? "Rotation Paused" : "Pause Rotation" }}
+        </button>
+
+        <button
+          title="Switch to a flat, clustered map — easier to click devices packed into the same region"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium text-[11px] transition-all border"
+          :style="{ color: playgroundMode === 'map' ? '#38BDF8' : 'rgba(255,255,255,0.7)', borderColor: playgroundMode === 'map' ? '#38BDF840' : 'rgba(255,255,255,0.1)', backgroundColor: playgroundMode === 'map' ? '#38BDF815' : 'rgba(255,255,255,0.05)' }"
+          @click="playgroundMode = playgroundMode === 'map' ? 'globe' : 'map'"
+        >
+          <component :is="playgroundMode === 'map' ? ICONS.Global : ICONS.MapPoint" :size="12" weight="Linear" />
+          {{ playgroundMode === "map" ? "Globe View" : "Map View" }}
+        </button>
       </div>
     </div>
-  </div>
+
+    <div v-if="error" class="px-6 py-2 text-sm shrink-0" style="color: #ef4444; background-color: rgba(239, 68, 68, 0.1)">{{ error }}</div>
+
+    <div class="flex-1 relative">
+      <div v-if="isLoadingGlobe || isLoadingGlobePolicyFilter" class="absolute inset-0 flex flex-col items-center justify-center" style="background-color: #020817">
+        <div class="w-10 h-10 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4" />
+        <span class="text-sm font-medium text-white/40 uppercase tracking-widest">Loading fleet data…</span>
+      </div>
+      <div v-else-if="globeDevices.length > 0" class="absolute inset-0">
+        <PlaygroundMapView v-if="playgroundMode === 'map'" :items="filteredDevices" :center="playgroundMapCenter" @device-click="openDevice" @back-to-globe="playgroundMode = 'globe'" />
+        <PlaygroundGlobe v-else :items="filteredDevices" :filter-active="filterActive" :total-devices="globeDevices.length" :paused="isGlobeRotationPaused" @device-click="openDevice" @zoom="handleZoom" />
+      </div>
+      <div v-else class="absolute inset-0 flex flex-col items-center justify-center gap-3" style="background-color: #020817">
+        <component :is="ICONS.Global" :size="40" weight="Linear" class="text-white/10" />
+        <span class="text-sm text-white/30 uppercase tracking-widest font-medium">No devices found</span>
+        <button class="mt-2 px-4 py-2 rounded-lg text-blue-400 text-xs font-semibold transition-colors" style="background-color: rgba(37, 99, 235, 0.2); border: 1px solid rgba(59, 130, 246, 0.3)" @click="syncLocations">
+          Sync device locations
+        </button>
+      </div>
+    </div>
+
+    <DeviceInsightModal :device="selectedDevice" @close="selectedDevice = null" />
+  </main>
 </template>

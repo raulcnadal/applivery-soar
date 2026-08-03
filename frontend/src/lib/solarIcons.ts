@@ -90,6 +90,8 @@ import {
   UserCircle,
   UsersGroupRounded,
   Widget2,
+  WiFiRouter,
+  Radio,
 } from "@solar-icons/vue";
 
 export const ICONS = {
@@ -176,6 +178,8 @@ export const ICONS = {
   UserCircle,
   UsersGroupRounded,
   Widget2,
+  WiFiRouter,
+  Radio,
 } as const;
 
 export type IconName = keyof typeof ICONS;
