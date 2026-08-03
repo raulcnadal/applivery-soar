@@ -35,15 +35,17 @@ export const useAuditLogsStore = defineStore("auditLogs", () => {
   const error = ref<string | null>(null);
 
   const PAGE_SIZE = 50;
-  const offset = ref(0);
 
-  async function fetchLogs(filters: AuditLogFilters = {}, reset = true) {
+  // Port of AuditLogsView.jsx's fetchEntries/handleLoadMore (lines 103-132)
+  // — a "Load more" accumulate model, not Previous/Next pagination. A fresh
+  // fetchLogs() call (new filters, or the Refresh button) always replaces
+  // `items` from offset 0; loadMore() appends the next page onto it.
+  async function fetchLogs(filters: AuditLogFilters = {}) {
     isLoading.value = true;
     error.value = null;
-    if (reset) offset.value = 0;
     try {
       const { api } = await import("../api/http");
-      const res = await api.get("/audit-logs", { params: { ...filters, limit: PAGE_SIZE, offset: offset.value } });
+      const res = await api.get("/audit-logs", { params: { ...filters, limit: PAGE_SIZE, offset: 0 } });
       items.value = res.data.items ?? [];
       total.value = res.data.total ?? 0;
       retentionDays.value = res.data.retentionDays ?? 90;
@@ -54,15 +56,19 @@ export const useAuditLogsStore = defineStore("auditLogs", () => {
     }
   }
 
-  async function nextPage(filters: AuditLogFilters) {
-    if (offset.value + PAGE_SIZE >= total.value) return;
-    offset.value += PAGE_SIZE;
-    await fetchLogs(filters, false);
-  }
-
-  async function prevPage(filters: AuditLogFilters) {
-    offset.value = Math.max(0, offset.value - PAGE_SIZE);
-    await fetchLogs(filters, false);
+  const isLoadingMore = ref(false);
+  async function loadMore(filters: AuditLogFilters = {}) {
+    isLoadingMore.value = true;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/audit-logs", { params: { ...filters, limit: PAGE_SIZE, offset: items.value.length } });
+      items.value = [...items.value, ...(res.data.items ?? [])];
+      total.value = res.data.total ?? total.value;
+    } catch {
+      // non-critical — keep whatever's already loaded, matching the original
+    } finally {
+      isLoadingMore.value = false;
+    }
   }
 
   async function fetchActors() {
@@ -82,5 +88,5 @@ export const useAuditLogsStore = defineStore("auditLogs", () => {
     URL.revokeObjectURL(url);
   }
 
-  return { items, total, retentionDays, actors, isLoading, error, offset, PAGE_SIZE, fetchLogs, nextPage, prevPage, fetchActors, exportCsv };
+  return { items, total, retentionDays, actors, isLoading, isLoadingMore, error, PAGE_SIZE, fetchLogs, loadMore, fetchActors, exportCsv };
 });

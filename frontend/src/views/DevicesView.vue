@@ -3,7 +3,7 @@
 // toggle (Applivery flag vs Compliance Policies + policy scope), fleet risk
 // trend sparkline, and a Devices/Playground ViewSwitcher pill. Faithful
 // port of the original App.jsx Devices view (DevicesView.jsx, 325 lines).
-import { RouterLink } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 import { computed, onMounted, ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
@@ -15,6 +15,7 @@ const PRIMARY_BLUE = "#0241E3";
 const DANGER = "#EF4444";
 
 const store = useDevicesStore();
+const route = useRoute();
 
 const selectedDeviceId = ref<string | null>(null);
 const selectedDevice = computed(() => store.devices.find((d) => d.id === selectedDeviceId.value) ?? null);
@@ -53,6 +54,10 @@ function handleComplianceSourceChange(source: "applivery" | "policy") {
 
 onMounted(async () => {
   await Promise.all([store.fetchDevices(false), store.fetchPickers(), store.fetchPolicies(), store.fetchRiskTrend()]);
+  // Arrived via a cross-link (e.g. Audit Logs' "Open {device}" row link) —
+  // auto-open that device's drawer, same pattern as Cases' ?caseId= query.
+  const deviceId = route.query.deviceId;
+  if (typeof deviceId === "string" && deviceId) selectedDeviceId.value = deviceId;
 });
 </script>
 
