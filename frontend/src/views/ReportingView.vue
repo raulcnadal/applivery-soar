@@ -1,296 +1,223 @@
 <script setup lang="ts">
 // Reporting — Builder / Schedules / Template. Port of App.jsx's Reporting
-// view (report generation form, scheduledReports CRUD, customReportTemplate
-// editor) plus POST /api/reports/generate (main.py:892-901, 15608-15779,
-// 16048-16159). See migration-plan.md §8 Phase 7.
-import { Alert, Button, Card, PageHeader, Tabs } from "@applivery/bluesky-vue";
-import { computed, onMounted, reactive, ref } from "vue";
+// view (App.jsx:2940-3100 state, 4890-5274 render, 6404-6430 Template
+// modal) plus POST /api/reports/generate (main.py:892-901, 15608-15779,
+// 16048-16159).
+//
+// Structural note (matches the same pattern already resolved for
+// Workflows/Settings per the standing "navigation and UI MUST match the
+// original" directive): "Builder" is NOT a form — it's a CTA card that
+// opens the Report Builder Modal, which is the ONE unified form used for
+// both "Generate Now" and "Save/Update Schedule". "Template" is not a real
+// persistent tab at all — selecting it opens the Template modal and
+// immediately snaps the active pill back to "builder" (App.jsx:3086-3094).
+import { computed, onMounted, ref } from "vue";
+import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
+import ReportBuilderModal from "../components/reporting/ReportBuilderModal.vue";
+import ReportTemplateModal from "../components/reporting/ReportTemplateModal.vue";
 import { useAuthStore } from "../stores/auth";
 import { useDashboardStateStore, type ScheduledReport } from "../stores/dashboardState";
-import { WIDGET_CATALOG } from "../lib/analyticsCatalog";
+
+const PRIMARY_BLUE = "#0241E3";
+const SUCCESS = "#22C55E";
+const DANGER = "#EF4444";
 
 const store = useDashboardStateStore();
 const auth = useAuthStore();
 
-const activeTab = ref("builder");
-const tabs = [
-  { id: "builder", label: "Builder" },
-  { id: "scheduled", label: `Schedules` },
-  { id: "template", label: "Template" },
-];
-// Port of the anchor object literal passed to HelpIcon in App.jsx's
-// Reporting header ({ builder: 'builder-tab', scheduled: 'schedules-tab', template: 'template-tab' }).
+type Tab = "builder" | "scheduled";
+const tab = ref<Tab>("scheduled");
 const REPORTING_TAB_ANCHORS: Record<string, string> = { builder: "builder-tab", scheduled: "schedules-tab", template: "template-tab" };
-const helpAnchor = computed(() => REPORTING_TAB_ANCHORS[activeTab.value] ?? null);
+const helpAnchor = computed(() => REPORTING_TAB_ANCHORS[templateOpen.value ? "template" : tab.value] ?? null);
+
+function selectTab(id: Tab | "template") {
+  if (id === "template") {
+    templateOpen.value = true;
+    tab.value = "builder";
+    return;
+  }
+  tab.value = id;
+}
 
 onMounted(async () => {
   if (!store.isLoaded) await store.fetchState();
 });
 
-const groupedCatalog = computed(() => {
-  const groups: Record<string, typeof WIDGET_CATALOG> = {};
-  for (const item of WIDGET_CATALOG) (groups[item.group] ??= []).push(item);
-  return groups;
-});
-
-// ── Builder ──
-const builderSources = ref<string[]>(["stats_devices_os", "stats_compliance"]);
-const builderTimeLapse = ref("Last 30 Days");
-const builderDisplay = reactive({ trend: true, trend_type: "line", donut: true, donut_type: "donut", table: true, table_type: "standard" });
-const builderSendChat = ref(false);
-const builderSendEmail = ref(false);
-const builderEmailRecipients = ref("");
-const isGenerating = ref(false);
-const generateError = ref<string | null>(null);
-
-function toggleSource(id: string) {
-  builderSources.value = builderSources.value.includes(id) ? builderSources.value.filter((s) => s !== id) : [...builderSources.value, id];
+// ── Builder modal (new / edit) ──
+const builderOpen = ref(false);
+const editingReport = ref<ScheduledReport | null>(null);
+function openNewReport() {
+  editingReport.value = null;
+  builderOpen.value = true;
+}
+function openEditReport(rep: ScheduledReport) {
+  editingReport.value = rep;
+  tab.value = "builder";
+  builderOpen.value = true;
 }
 
-async function generateNow() {
-  if (!builderSources.value.length) return;
-  isGenerating.value = true;
-  generateError.value = null;
+// ── Template modal ──
+const templateOpen = ref(false);
+
+// ── Schedules ──
+const FREQUENCY_LABEL: Record<string, string> = { daily: "Daily", weekly: "Weekly (Mon)", monthly: "Monthly (1st)" };
+const runningId = ref<string | null>(null);
+const scheduleError = ref<string | null>(null);
+
+async function deleteSchedule(id: string, name: string) {
+  if (!window.confirm(`Delete "${name || "this schedule"}"?`)) return;
+  await store.saveScheduledReports(store.scheduledReports.filter((r) => r.id !== id));
+}
+
+// Run now always downloads a PDF regardless of that schedule's own
+// "Download PDF directly" delivery setting (docs/reporting.md, App.jsx
+// Schedules tab Run-now handler) — chat/email delivery still follow the
+// schedule's own settings.
+async function runNow(rep: ScheduledReport) {
+  runningId.value = rep.id;
+  scheduleError.value = null;
   try {
     const { api } = await import("../api/http");
     const res = await api.post(
       "/reports/generate",
       {
-        workspace: auth.orgSlug,
-        sources: builderSources.value,
-        timeLapse: builderTimeLapse.value,
-        filters: {},
-        display: builderDisplay,
-        webhookUrl: builderSendChat.value ? store.webhookUrl : null,
-        emailRecipients: builderSendEmail.value ? builderEmailRecipients.value : null,
-        smtp: builderSendEmail.value ? store.smtpConfig : null,
+        workspace: rep.workspaceSlug || auth.orgSlug,
+        sources: rep.sources,
+        timeLapse: rep.timeLapse,
+        filters: rep.filters,
+        display: rep.display,
+        webhookUrl: rep.delivery.chat ? store.webhookUrl : null,
+        emailRecipients: rep.delivery.email ? rep.emailRecipients : null,
+        smtp: rep.delivery.email ? store.smtpConfig : null,
       },
       { responseType: "blob" },
     );
     const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Applivery_Report_${auth.orgSlug}.pdf`;
+    a.download = `Applivery_Report_${rep.workspaceSlug || auth.orgSlug}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   } catch (err: any) {
-    generateError.value = err?.response?.data?.detail || "Failed to generate report.";
+    scheduleError.value = err?.response?.data?.detail || "Failed to run report.";
   } finally {
-    isGenerating.value = false;
+    runningId.value = null;
   }
-}
-
-// ── Schedules ──
-const showScheduleModal = ref(false);
-const editingId = ref<string | null>(null);
-const scheduleForm = reactive<ScheduledReport>(emptySchedule());
-
-function emptySchedule(): ScheduledReport {
-  return {
-    id: "",
-    name: "",
-    workspaceSlug: auth.orgSlug ?? "",
-    sources: [],
-    timeLapse: "Last 30 Days",
-    filters: {},
-    display: { trend: true, trend_type: "line", donut: true, donut_type: "donut", table: true, table_type: "standard" },
-    emailRecipients: "",
-    delivery: { chat: false, email: false },
-    schedule: { enabled: true, frequency: "weekly", time: "09:00", timezone: store.timezone, startDate: null },
-  };
-}
-
-function openNewSchedule() {
-  editingId.value = null;
-  Object.assign(scheduleForm, emptySchedule());
-  showScheduleModal.value = true;
-}
-
-function openEditSchedule(rep: ScheduledReport) {
-  editingId.value = rep.id;
-  Object.assign(scheduleForm, JSON.parse(JSON.stringify(rep)));
-  showScheduleModal.value = true;
-}
-
-async function saveSchedule() {
-  if (!scheduleForm.name || !scheduleForm.sources.length) return;
-  const next = [...store.scheduledReports];
-  if (editingId.value) {
-    const idx = next.findIndex((r) => r.id === editingId.value);
-    if (idx >= 0) next[idx] = { ...scheduleForm };
-  } else {
-    next.push({ ...scheduleForm, id: `sched_${Date.now()}` });
-  }
-  await store.saveScheduledReports(next);
-  showScheduleModal.value = false;
-}
-
-async function deleteSchedule(id: string) {
-  await store.saveScheduledReports(store.scheduledReports.filter((r) => r.id !== id));
-}
-
-async function toggleScheduleEnabled(rep: ScheduledReport) {
-  const next = store.scheduledReports.map((r) => (r.id === rep.id ? { ...r, schedule: { ...r.schedule, enabled: !r.schedule.enabled } } : r));
-  await store.saveScheduledReports(next);
-}
-
-function toggleScheduleSource(id: string) {
-  scheduleForm.sources = scheduleForm.sources.includes(id) ? scheduleForm.sources.filter((s) => s !== id) : [...scheduleForm.sources, id];
-}
-
-// ── Template ──
-const templateDraft = ref("");
-const templateSaved = ref(false);
-onMounted(() => {
-  templateDraft.value = store.customReportTemplate;
-});
-async function saveTemplate() {
-  await store.saveCustomReportTemplate(templateDraft.value);
-  templateSaved.value = true;
-  setTimeout(() => (templateSaved.value = false), 2000);
 }
 </script>
 
 <template>
-  <div class="p-8 space-y-6 animate-page-enter">
-    <PageHeader title="Reporting" description="Generate on-demand PDF reports, or schedule recurring ones.">
-      <template #title-suffix>
-        <HelpIcon slug="reporting" :anchor="helpAnchor" title="Reporting admin guide" />
-      </template>
-    </PageHeader>
-    <Tabs :tabs="tabs" v-model="activeTab" variant="pill" />
-
-    <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
-
-    <!-- Builder -->
-    <Card v-if="activeTab === 'builder'" class="space-y-5">
+  <main class="p-8 pb-16">
+    <header class="flex justify-between items-start mb-8 gap-4 flex-wrap">
       <div>
-        <p class="text-sm font-medium text-gray-700 mb-2">Data sources ({{ builderSources.length }} selected)</p>
-        <div class="max-h-80 overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-3">
-          <div v-for="(items, group) in groupedCatalog" :key="group">
-            <p class="text-xs font-semibold text-gray-400 uppercase mb-1">{{ group }}</p>
-            <label v-for="item in items" :key="item.id" class="flex items-center gap-2 text-sm py-0.5">
-              <input type="checkbox" :checked="builderSources.includes(item.id)" @change="toggleSource(item.id)" />
-              {{ item.label }}
-            </label>
-          </div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-semibold leading-tight text-gray-900">Reporting</h1>
+          <HelpIcon slug="reporting" :anchor="helpAnchor" title="Reporting admin guide" />
         </div>
+        <p class="text-sm mt-1 text-gray-400">Build, schedule, and manage automated reports.</p>
       </div>
-
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium mb-1.5 text-gray-500">Time lapse label</label>
-          <input v-model="builderTimeLapse" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200" />
-        </div>
-        <div class="flex items-end gap-4">
-          <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="builderSendChat" :disabled="!store.webhookUrl" /> Notify chat webhook</label>
-          <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="builderSendEmail" /> Email report</label>
-        </div>
+      <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 bg-gray-50 shrink-0">
+        <button
+          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
+          :class="tab === 'builder' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+          @click="selectTab('builder')"
+        >
+          <component :is="ICONS.DocumentText" :size="14" weight="Linear" /> Builder
+        </button>
+        <button
+          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
+          :class="tab === 'scheduled' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+          @click="selectTab('scheduled')"
+        >
+          <component :is="ICONS.Calendar" :size="14" weight="Linear" /> Schedules ({{ store.scheduledReports.length }})
+        </button>
+        <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-gray-400 transition-all" @click="selectTab('template')">
+          <component :is="ICONS.CodeFile" :size="14" weight="Linear" /> Template
+        </button>
       </div>
+    </header>
 
-      <div v-if="builderSendEmail">
-        <label class="block text-xs font-medium mb-1.5 text-gray-500">Email recipients (comma-separated)</label>
-        <input v-model="builderEmailRecipients" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200" placeholder="alice@example.com, bob@example.com" />
+    <div v-if="store.error || scheduleError" class="mb-4 px-3 py-2 rounded-lg text-sm" :style="{ backgroundColor: `${DANGER}10`, color: DANGER }">
+      {{ store.error || scheduleError }}
+    </div>
+
+    <!-- Builder — CTA card only; the real form lives in the modal -->
+    <div v-if="tab === 'builder'" class="flex flex-col items-center justify-center py-16 gap-6">
+      <div class="w-16 h-16 rounded-2xl flex items-center justify-center" :style="{ backgroundColor: `${PRIMARY_BLUE}12` }">
+        <component :is="ICONS.DocumentText" :size="28" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
       </div>
-
-      <div class="grid grid-cols-3 gap-4">
-        <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="builderDisplay.trend" /> Trend chart</label>
-        <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="builderDisplay.donut" /> Distribution chart</label>
-        <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="builderDisplay.table" /> Data table</label>
+      <div class="text-center">
+        <h2 class="text-lg font-semibold mb-1 text-gray-900">Build a Report</h2>
+        <p class="text-sm text-gray-400">Configure data sources, filters, and delivery to generate a PDF report.</p>
       </div>
-
-      <Alert v-if="generateError" type="danger">{{ generateError }}</Alert>
-      <Button :disabled="!builderSources.length || isGenerating" @click="generateNow">{{ isGenerating ? "Generating…" : "Generate now" }}</Button>
-    </Card>
+      <button
+        class="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-brand-600 transition-all duration-200 hover:bg-brand-700"
+        @click="openNewReport"
+      >
+        <component :is="ICONS.AddCircle" :size="16" weight="Linear" /> Create Report
+      </button>
+      <button v-if="store.scheduledReports.length > 0" class="text-sm hover:opacity-70 transition-opacity" :style="{ color: PRIMARY_BLUE }" @click="tab = 'scheduled'">
+        View {{ store.scheduledReports.length }} scheduled report{{ store.scheduledReports.length !== 1 ? "s" : "" }}
+      </button>
+    </div>
 
     <!-- Schedules -->
-    <div v-if="activeTab === 'scheduled'" class="space-y-4">
-      <div class="flex justify-end"><Button size="sm" @click="openNewSchedule">New schedule</Button></div>
-      <Card v-if="!store.scheduledReports.length"><p class="text-sm text-gray-500">No scheduled reports yet.</p></Card>
-      <Card v-for="rep in store.scheduledReports" :key="rep.id" class="flex items-center justify-between">
+    <div v-if="tab === 'scheduled'" class="space-y-3">
+      <div v-if="!store.scheduledReports.length" class="flex flex-col items-center justify-center py-16 gap-4 text-center">
+        <div class="w-14 h-14 rounded-2xl flex items-center justify-center" :style="{ backgroundColor: `${PRIMARY_BLUE}12` }">
+          <component :is="ICONS.Calendar" :size="24" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
+        </div>
         <div>
-          <p class="text-sm font-medium text-gray-900">{{ rep.name }}</p>
-          <p class="text-xs text-gray-500">{{ rep.schedule.frequency }} at {{ rep.schedule.time }} ({{ rep.schedule.timezone || "UTC" }}) — {{ rep.sources.length }} source(s) — {{ rep.workspaceSlug }}</p>
+          <p class="text-sm font-medium text-gray-900">No scheduled reports yet</p>
+          <p class="text-xs mt-1 text-gray-400">Build a report and turn on Automation &amp; Scheduling to get here.</p>
         </div>
-        <div class="flex items-center gap-2">
-          <Button variant="ghost" size="sm" @click="toggleScheduleEnabled(rep)">{{ rep.schedule.enabled ? "Disable" : "Enable" }}</Button>
-          <Button variant="ghost" size="sm" @click="openEditSchedule(rep)">Edit</Button>
-          <Button variant="ghost" size="sm" @click="deleteSchedule(rep.id)">Delete</Button>
-        </div>
-      </Card>
-    </div>
-
-    <!-- Template -->
-    <Card v-if="activeTab === 'template'" class="space-y-3">
-      <p class="text-sm text-gray-500" v-pre>
-        Optional custom HTML template for generated reports (supports <code>{{ Workspace_Name }}</code>,
-        <code>{{ Report_Title }}</code>, <code>{{ Generated_Date }}</code>, <code>{{ Time_Lapse }}</code>,
-        a <code>metadata</code> loop, and a <code>report_sections</code> loop). Leave blank to use the default layout.
-      </p>
-      <textarea v-model="templateDraft" rows="16" class="w-full rounded-lg px-3 py-2 text-xs font-mono border border-gray-200" placeholder="<html>…</html>" />
-      <div class="flex items-center gap-3">
-        <Button @click="saveTemplate">Save template</Button>
-        <span v-if="templateSaved" class="text-xs text-green-600">Saved.</span>
+        <button class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700" @click="openNewReport">Open Builder</button>
       </div>
-    </Card>
 
-    <!-- Schedule modal -->
-    <div v-if="showScheduleModal" class="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showScheduleModal = false" />
-      <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-xl z-10 p-6 space-y-4 max-h-[85vh] overflow-y-auto">
-        <h3 class="text-base font-medium text-gray-900">{{ editingId ? "Edit schedule" : "New schedule" }}</h3>
-        <div>
-          <label class="block text-xs font-medium mb-1.5 text-gray-500">Name</label>
-          <input v-model="scheduleForm.name" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium mb-1.5 text-gray-500">Sources ({{ scheduleForm.sources.length }} selected)</label>
-          <div class="max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-3">
-            <div v-for="(items, group) in groupedCatalog" :key="group">
-              <p class="text-xs font-semibold text-gray-400 uppercase mb-1">{{ group }}</p>
-              <label v-for="item in items" :key="item.id" class="flex items-center gap-2 text-sm py-0.5">
-                <input type="checkbox" :checked="scheduleForm.sources.includes(item.id)" @change="toggleScheduleSource(item.id)" />
-                {{ item.label }}
-              </label>
-            </div>
+      <div v-for="rep in store.scheduledReports" :key="rep.id" class="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 bg-white">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-900 truncate">{{ rep.name || "Untitled report" }}</p>
+          <div class="flex items-center gap-2 mt-1 flex-wrap">
+            <span class="text-[10px] font-medium px-2.5 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }">
+              {{ FREQUENCY_LABEL[rep.schedule.frequency] || "Weekly (Mon)" }}
+            </span>
+            <span class="text-xs text-gray-400">at {{ rep.schedule.time || "09:00" }} ({{ rep.schedule.timezone || "UTC" }})</span>
+            <span class="text-xs text-gray-400">· {{ rep.sources.length }} source{{ rep.sources.length !== 1 ? "s" : "" }} · {{ rep.timeLapse }}</span>
           </div>
+          <p v-if="rep.delivery.email && rep.emailRecipients" class="text-xs mt-1 text-gray-400 truncate">
+            <component :is="ICONS.Letter" :size="11" weight="Linear" class="inline -mt-0.5" /> {{ rep.emailRecipients }}
+          </p>
         </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs font-medium mb-1.5 text-gray-500">Frequency</label>
-            <select v-model="scheduleForm.schedule.frequency" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200">
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly (Mondays)</option>
-              <option value="monthly">Monthly (1st)</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-medium mb-1.5 text-gray-500">Time (local)</label>
-            <input v-model="scheduleForm.schedule.time" type="time" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium mb-1.5 text-gray-500">Timezone (IANA)</label>
-            <input v-model="scheduleForm.schedule.timezone" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200" placeholder="Europe/Madrid" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium mb-1.5 text-gray-500">Workspace slug</label>
-            <input v-model="scheduleForm.workspaceSlug" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200" />
-          </div>
-        </div>
-        <div class="flex items-center gap-4">
-          <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="scheduleForm.delivery.chat" /> Notify chat webhook</label>
-          <label class="flex items-center gap-2 text-sm"><input type="checkbox" v-model="scheduleForm.delivery.email" /> Email report</label>
-        </div>
-        <div v-if="scheduleForm.delivery.email">
-          <label class="block text-xs font-medium mb-1.5 text-gray-500">Email recipients</label>
-          <input v-model="scheduleForm.emailRecipients" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200" />
-        </div>
-        <div class="flex gap-3 justify-end pt-2">
-          <Button variant="ghost" @click="showScheduleModal = false">Cancel</Button>
-          <Button :disabled="!scheduleForm.name || !scheduleForm.sources.length" @click="saveSchedule">Save schedule</Button>
+        <div class="flex items-center gap-2 shrink-0 ml-3">
+          <button
+            :disabled="runningId === rep.id"
+            title="Run now"
+            class="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-50"
+            :style="{ backgroundColor: `${SUCCESS}15`, color: SUCCESS }"
+            @click="runNow(rep)"
+          >
+            <component :is="ICONS.Play" :size="15" weight="Linear" :class="runningId === rep.id ? 'animate-pulse' : ''" />
+          </button>
+          <button title="Edit" class="w-8 h-8 rounded-lg flex items-center justify-center" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }" @click="openEditReport(rep)">
+            <component :is="ICONS.Pen2" :size="15" weight="Linear" />
+          </button>
+          <button title="Delete" class="w-8 h-8 rounded-lg flex items-center justify-center" :style="{ backgroundColor: `${DANGER}15`, color: DANGER }" @click="deleteSchedule(rep.id, rep.name)">
+            <component :is="ICONS.TrashBinTrash" :size="15" weight="Linear" />
+          </button>
         </div>
       </div>
+
+      <button
+        v-if="store.scheduledReports.length"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50"
+        @click="openNewReport"
+      >
+        <component :is="ICONS.AddCircle" :size="14" weight="Linear" /> Add Another Schedule
+      </button>
     </div>
-  </div>
+
+    <ReportBuilderModal :open="builderOpen" :editing-report="editingReport" @close="builderOpen = false" @saved="builderOpen = false" />
+    <ReportTemplateModal :open="templateOpen" @close="templateOpen = false" />
+  </main>
 </template>

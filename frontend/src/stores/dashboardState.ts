@@ -11,6 +11,7 @@ import { DEFAULT_DASHBOARD, type DashboardState } from "../lib/analyticsCatalog"
  * comment and dashboardState.controller.ts's module doc for why.
  */
 export interface ScheduledReportDelivery {
+  download: boolean;
   chat: boolean;
   email: boolean;
 }
