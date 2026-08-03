@@ -42,13 +42,13 @@ const displayNodes = computed(() => filterTree(store.tree, store.search.toLowerC
   <div class="fixed left-0 top-0 bottom-0 w-4 z-[140]" @mouseenter="onHoverEdge" />
 
   <div
-    class="fixed left-0 top-0 bottom-0 w-80 shadow-2xl z-[150] transform transition-transform duration-300 flex flex-col border-r bg-white border-gray-200"
+    class="fixed left-0 top-0 bottom-0 w-80 shadow-2xl z-[150] transform transition-transform duration-300 flex flex-col border-r bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
     :class="store.isPanelOpen && visible ? 'translate-x-0' : '-translate-x-full'"
     @mouseleave="store.isPanelOpen = false"
   >
-    <div class="p-4 border-b border-gray-100 shrink-0">
+    <div class="p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
       <div class="flex items-center justify-between mb-3">
-        <span class="text-sm font-semibold text-gray-900">Segments</span>
+        <span class="text-sm font-semibold text-gray-900 dark:text-white">Segments</span>
         <button
           v-if="String(store.selectedSegment.id) !== '0'"
           class="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors hover:opacity-80"
@@ -64,17 +64,17 @@ const displayNodes = computed(() => filterTree(store.tree, store.search.toLowerC
           v-model="store.search"
           type="text"
           placeholder="Search segments..."
-          class="w-full pl-9 pr-4 py-2 rounded-lg text-sm border outline-none focus:border-blue-500 focus:ring-2 focus:ring-brand-500 transition-colors border-gray-200 text-gray-900"
+          class="w-full pl-9 pr-4 py-2 rounded-lg text-sm border outline-none focus:border-blue-500 focus:ring-2 focus:ring-brand-500 transition-colors border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
         />
       </div>
       <div class="flex items-center justify-between mt-3">
-        <span class="text-sm font-medium text-gray-900">Show children elements</span>
+        <span class="text-sm font-medium text-gray-900 dark:text-white">Show children elements</span>
         <button
           class="w-10 h-5 rounded-full relative transition-colors"
           :class="store.showChildren ? 'bg-blue-600' : 'bg-gray-300'"
           @click="store.showChildren = !store.showChildren"
         >
-          <div class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform" :style="{ transform: store.showChildren ? 'translateX(22px)' : 'translateX(2px)' }" />
+          <div class="absolute top-0.5 w-4 h-4 rounded-full bg-white dark:bg-gray-800 transition-transform" :style="{ transform: store.showChildren ? 'translateX(22px)' : 'translateX(2px)' }" />
         </button>
       </div>
     </div>
@@ -83,14 +83,14 @@ const displayNodes = computed(() => filterTree(store.tree, store.search.toLowerC
       <!-- Global — hardcoded, not part of the fetched tree (App.jsx:4489-4492) -->
       <div
         class="flex items-center py-2 cursor-pointer transition-colors mx-4 rounded-lg"
-        :class="String(store.selectedSegment.id) === '0' ? 'font-medium' : 'hover:bg-black/5'"
+        :class="String(store.selectedSegment.id) === '0' ? 'font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5'"
         :style="{ paddingLeft: '4px', paddingRight: '12px', backgroundColor: String(store.selectedSegment.id) === '0' ? `${PRIMARY_BLUE}15` : 'transparent' }"
         @click="store.select(GLOBAL_SEGMENT)"
       >
         <div class="w-5 h-5 flex items-center justify-center shrink-0 mr-1"><div class="w-3.5" /></div>
         <div class="flex items-center gap-2 overflow-hidden w-full">
           <component :is="ICONS.Global" :size="16" weight="Linear" :style="{ color: String(store.selectedSegment.id) === '0' ? PRIMARY_BLUE : '#9CA3AF' }" />
-          <span class="text-sm truncate" :style="{ color: String(store.selectedSegment.id) === '0' ? PRIMARY_BLUE : '#111827' }">Global</span>
+          <span class="text-sm truncate" :style="{ color: String(store.selectedSegment.id) === '0' ? PRIMARY_BLUE : 'var(--foreground)' }">Global</span>
         </div>
       </div>
 
@@ -98,7 +98,7 @@ const displayNodes = computed(() => filterTree(store.tree, store.search.toLowerC
     </div>
 
     <button
-      class="absolute -right-4 bottom-10 w-8 h-8 border rounded-full shadow-md flex items-center justify-center z-50 hover:opacity-80 transition-opacity bg-white border-gray-200"
+      class="absolute -right-4 bottom-10 w-8 h-8 border rounded-full shadow-md flex items-center justify-center z-50 hover:opacity-80 transition-opacity bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
       :style="{ color: PRIMARY_BLUE }"
       @click="store.isPanelOpen = false"
     >

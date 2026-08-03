@@ -97,7 +97,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 </script>
 
 <template>
-  <div class="absolute right-0 top-full mt-2 z-[300] rounded-2xl shadow-2xl border overflow-hidden flex bg-white" style="border-color: #e9eaec">
+  <div class="absolute right-0 top-full mt-2 z-[300] rounded-2xl shadow-2xl border overflow-hidden flex bg-white dark:bg-gray-800" style="border-color: #e9eaec">
     <!-- Presets -->
     <div class="flex flex-col py-4 border-r" style="border-color: #e9eaec; min-width: 160px">
       <button
@@ -106,7 +106,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
         type="button"
         class="px-5 py-2.5 text-left text-sm transition-all hover:opacity-80"
         :style="{
-          color: activeLabel === p.label ? primaryBlue : '#111827',
+          color: activeLabel === p.label ? primaryBlue : 'var(--foreground)',
           fontWeight: activeLabel === p.label ? 600 : 400,
           backgroundColor: activeLabel === p.label ? primaryBlue + '10' : 'transparent',
           borderLeft: activeLabel === p.label ? `3px solid ${primaryBlue}` : '3px solid transparent',
@@ -122,8 +122,8 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
       <div class="flex gap-6 items-start">
         <div>
           <div class="flex items-center justify-between mb-3 gap-4">
-            <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-60 text-lg font-light transition-opacity text-gray-900" @click="prevMonth">‹</button>
-            <span class="text-sm font-semibold text-gray-900">{{ MONTHS[leftYM.month] }} {{ leftYM.year }}</span>
+            <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-60 text-lg font-light transition-opacity text-gray-900 dark:text-white" @click="prevMonth">‹</button>
+            <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ MONTHS[leftYM.month] }} {{ leftYM.year }}</span>
             <div class="w-7" />
           </div>
           <CalendarMonth
@@ -141,8 +141,8 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
         <div>
           <div class="flex items-center justify-between mb-3 gap-4">
             <div class="w-7" />
-            <span class="text-sm font-semibold text-gray-900">{{ MONTHS[rightYM.month] }} {{ rightYM.year }}</span>
-            <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-60 text-lg font-light transition-opacity text-gray-900" @click="nextMonth">›</button>
+            <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ MONTHS[rightYM.month] }} {{ rightYM.year }}</span>
+            <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-60 text-lg font-light transition-opacity text-gray-900 dark:text-white" @click="nextMonth">›</button>
           </div>
           <CalendarMonth
             :year="rightYM.year"
@@ -159,9 +159,9 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
       </div>
 
       <div class="flex items-center justify-between border-t pt-4 gap-6" style="border-color: #e9eaec">
-        <span class="text-sm tabular-nums text-gray-500">{{ fmt(pendingFrom) }}<template v-if="pendingFrom"> – </template>{{ fmt(pendingTo) }}</span>
+        <span class="text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmt(pendingFrom) }}<template v-if="pendingFrom"> – </template>{{ fmt(pendingTo) }}</span>
         <div class="flex gap-2 shrink-0">
-          <button type="button" class="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:opacity-70 text-gray-500" style="border-color: #e9eaec" @click="emit('cancel')">Cancel</button>
+          <button type="button" class="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:opacity-70 text-gray-500 dark:text-gray-400" style="border-color: #e9eaec" @click="emit('cancel')">Cancel</button>
           <button
             type="button"
             class="px-6 py-2 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"

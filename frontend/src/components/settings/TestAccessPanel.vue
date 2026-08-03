@@ -42,18 +42,18 @@ defineExpose({ setEmail: (e: string) => { email.value = e; } });
     </div>
     <Alert v-if="error" type="danger">{{ error }}</Alert>
 
-    <div v-if="result" class="border border-gray-200 rounded-xl bg-white p-4 space-y-3">
+    <div v-if="result" class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4 space-y-3">
       <div class="flex items-center gap-2">
         <StatusPill
           :label="result.isSuperAdmin ? 'Would allow — Super Admin' : result.allowed ? `Would allow — matched Role “${result.role?.name}” via tag “${result.matchedTagValue}”` : 'Would deny'"
           :color="result.allowed ? 'green' : 'red'"
         />
       </div>
-      <p v-if="!result.allowed && result.deniedReason" class="text-sm text-gray-600">{{ result.deniedReason }}</p>
+      <p v-if="!result.allowed && result.deniedReason" class="text-sm text-gray-600 dark:text-gray-300">{{ result.deniedReason }}</p>
       <p v-if="!result.collaboratorFound" class="text-sm text-amber-600">No matching Applivery collaborator found for this email.</p>
 
       <div>
-        <p class="text-xs font-medium text-gray-500 mb-1">This collaborator's live tag candidates</p>
+        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">This collaborator's live tag candidates</p>
         <div class="flex flex-wrap gap-1">
           <StatusPill v-for="t in result.liveTagCandidates" :key="t" :label="t" color="brand" />
           <span v-if="!result.liveTagCandidates.length" class="text-gray-400 text-xs">none</span>
@@ -61,9 +61,9 @@ defineExpose({ setEmail: (e: string) => { email.value = e; } });
       </div>
 
       <div>
-        <p class="text-xs font-medium text-gray-500 mb-1">Every tag value mapped across your saved Roles</p>
+        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Every tag value mapped across your saved Roles</p>
         <div class="space-y-1">
-          <div v-for="r in result.roleTagValuesChecked" :key="r.roleId" class="text-xs text-gray-600 flex items-center gap-2">
+          <div v-for="r in result.roleTagValuesChecked" :key="r.roleId" class="text-xs text-gray-600 dark:text-gray-300 flex items-center gap-2">
             <span class="font-medium">{{ r.roleName }}:</span>
             <span v-if="r.tagValues.length">{{ r.tagValues.join(", ") }}</span>
             <span v-else class="text-gray-400">no tags mapped</span>

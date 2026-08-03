@@ -166,8 +166,8 @@ onMounted(() => {
       <div v-if="error" class="px-3 py-2 rounded-lg text-xs font-medium border" style="background-color: #ef444412; color: #ef4444; border-color: #ef444430">{{ error }}</div>
 
       <div class="space-y-2">
-        <input v-model="name" autofocus placeholder="Audience name, e.g. EU Sales Fleet" class="w-full px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500" />
-        <textarea v-model="description" placeholder="Description (optional)" rows="2" class="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none border border-gray-200 focus:ring-2 focus:ring-brand-500" />
+        <input v-model="name" autofocus placeholder="Audience name, e.g. EU Sales Fleet" class="w-full px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
+        <textarea v-model="description" placeholder="Description (optional)" rows="2" class="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
       </div>
 
       <div v-for="(cfg, ci) in [
@@ -182,7 +182,7 @@ onMounted(() => {
         </div>
         <p v-if="cfg.groups.length === 0" class="text-[11px] text-gray-400">No groups — device match isn't limited by {{ cfg.label.toLowerCase() }}.</p>
         <div class="space-y-2">
-          <div v-for="(g, gi) in cfg.groups" :key="gi" class="rounded-lg p-2 border border-gray-200">
+          <div v-for="(g, gi) in cfg.groups" :key="gi" class="rounded-lg p-2 border border-gray-200 dark:border-gray-700">
             <div class="flex items-center justify-between mb-1.5">
               <span class="text-[10px] font-semibold text-gray-400">Group {{ gi + 1 }} (OR)</span>
               <button type="button" style="color: #ef4444" @click="removeGroup(cfg.groups, gi)">
@@ -216,7 +216,7 @@ onMounted(() => {
           <span v-if="serials.length === 0" class="text-[11px] text-gray-400">None added</span>
         </div>
         <div class="flex items-center gap-2">
-          <input v-model="serialDraft" placeholder="Serial number, press Enter…" class="flex-1 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500" @keydown.enter.prevent="addSerial" />
+          <input v-model="serialDraft" placeholder="Serial number, press Enter…" class="flex-1 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" @keydown.enter.prevent="addSerial" />
           <button class="p-1.5 rounded-lg text-white shrink-0 bg-brand-600 hover:bg-brand-700" @click="addSerial"><component :is="ICONS.AddSquare" :size="13" weight="Linear" /></button>
         </div>
       </div>
@@ -225,9 +225,9 @@ onMounted(() => {
         <p class="text-[11px] font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1.5 text-gray-400">
           <component :is="ICONS.Smartphone" :size="11" weight="Linear" /> Add devices {{ selectedDeviceIds.length > 0 ? `(${selectedDeviceIds.length} selected)` : "" }}
         </p>
-        <input v-model="deviceSearch" placeholder="Search devices by name or serial…" class="w-full px-2 py-1.5 rounded-lg text-xs outline-none mb-1.5 border border-gray-200 focus:ring-2 focus:ring-brand-500" />
-        <div class="max-h-32 overflow-y-auto rounded-lg border border-gray-200">
-          <label v-for="d in filteredDevices()" :key="d.id" class="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer border-b border-gray-100 last:border-0">
+        <input v-model="deviceSearch" placeholder="Search devices by name or serial…" class="w-full px-2 py-1.5 rounded-lg text-xs outline-none mb-1.5 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
+        <div class="max-h-32 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700">
+          <label v-for="d in filteredDevices()" :key="d.id" class="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
             <input type="checkbox" :checked="selectedDeviceIds.includes(d.id)" @change="toggleDevice(d.id)" />
             <span class="truncate">{{ d.displayName }}</span>
             <span class="ml-auto text-[10px] shrink-0 text-gray-400">{{ d.platformLabel || d.platform }}</span>
@@ -246,9 +246,9 @@ onMounted(() => {
             <button class="hover:opacity-60" @click="selectedEmployees = selectedEmployees.filter((x) => x.id !== e.id)"><component :is="ICONS.CloseCircle" :size="10" weight="Linear" /></button>
           </span>
         </div>
-        <input v-model="employeeSearch" placeholder="Search employees by name or email…" class="w-full px-2 py-1.5 rounded-lg text-xs outline-none mb-1.5 border border-gray-200 focus:ring-2 focus:ring-brand-500" />
-        <div v-if="employeeResults.length > 0" class="max-h-32 overflow-y-auto rounded-lg border border-gray-200">
-          <label v-for="u in employeeResults" :key="u.id" class="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer border-b border-gray-100 last:border-0">
+        <input v-model="employeeSearch" placeholder="Search employees by name or email…" class="w-full px-2 py-1.5 rounded-lg text-xs outline-none mb-1.5 border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
+        <div v-if="employeeResults.length > 0" class="max-h-32 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700">
+          <label v-for="u in employeeResults" :key="u.id" class="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-0">
             <input type="checkbox" :checked="selectedEmployees.some((e) => e.id === u.id)" @change="toggleEmployee(u)" />
             <span class="truncate">{{ u.name }}</span>
             <span class="ml-auto text-[10px] truncate text-gray-400">{{ u.email }}</span>
@@ -257,7 +257,7 @@ onMounted(() => {
       </div>
     </div>
     <div class="flex gap-3 justify-end pt-4">
-      <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700" @click="emit('close')">Cancel</button>
+      <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('close')">Cancel</button>
       <button :disabled="isSaving" class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50" @click="handleCreate">
         {{ isSaving ? "Creating…" : "Create audience" }}
       </button>

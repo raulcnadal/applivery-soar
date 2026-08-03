@@ -133,7 +133,7 @@ onMounted(async () => {
     <header class="flex justify-between items-start mb-8 gap-4 flex-wrap">
       <div>
         <div class="flex items-center gap-2 flex-wrap">
-          <h1 class="text-2xl font-semibold leading-tight text-gray-900">Cases</h1>
+          <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white">Cases</h1>
           <HelpIcon slug="cases" title="Cases admin guide" />
           <span
             v-if="String(segmentsStore.selectedSegment.id) !== '0'"
@@ -150,7 +150,7 @@ onMounted(async () => {
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <a :href="store.exportCasesUrl()" target="_blank" rel="noopener">
-          <button class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700">
+          <button class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200">
             <component :is="ICONS.Download" :size="13" weight="Linear" /> Export CSV
           </button>
         </a>
@@ -164,12 +164,12 @@ onMounted(async () => {
 
     <!-- Filter bar -->
     <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
-      <div class="flex items-center gap-1 p-1 rounded-lg bg-gray-50 border border-gray-200">
+      <div class="flex items-center gap-1 p-1 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
         <button
           v-for="t in STATUS_TABS"
           :key="t.id"
           class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors"
-          :class="statusFilter === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+          :class="statusFilter === t.id ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
           @click="statusFilter = t.id"
         >
           {{ t.label }}
@@ -178,20 +178,20 @@ onMounted(async () => {
       <div class="flex items-center gap-2 flex-wrap">
         <div class="relative">
           <component :is="ICONS.Magnifer" :size="13" weight="Linear" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input v-model="searchQuery" placeholder="Search title, device, assignee…" class="pl-8 pr-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 w-56 focus:ring-2 focus:ring-brand-500" />
+          <input v-model="searchQuery" placeholder="Search title, device, assignee…" class="pl-8 pr-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white w-56 focus:ring-2 focus:ring-brand-500" />
         </div>
-        <select v-model="severityFilter" class="px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500">
+        <select v-model="severityFilter" class="px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500">
           <option value="all">All severities</option>
           <option value="low">Low</option>
           <option value="medium">Medium</option>
           <option value="high">High</option>
           <option value="critical">Critical</option>
         </select>
-        <select v-if="complianceStore.mitreTactics.length > 0" v-model="tacticFilter" class="px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500">
+        <select v-if="complianceStore.mitreTactics.length > 0" v-model="tacticFilter" class="px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500">
           <option value="all">All ATT&amp;CK tactics</option>
           <option v-for="t in complianceStore.mitreTactics" :key="t.key" :value="t.key">{{ t.name }}</option>
         </select>
-        <select v-if="complianceStore.mitreTechniques.length > 0" v-model="techniqueFilter" class="px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500 max-w-[160px]">
+        <select v-if="complianceStore.mitreTechniques.length > 0" v-model="techniqueFilter" class="px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 max-w-[160px]">
           <option value="all">All techniques</option>
           <optgroup v-for="tac in complianceStore.mitreTactics" :key="tac.key" :label="tac.name">
             <option v-for="t in complianceStore.mitreTechniques.filter((x) => x.tactic === tac.key)" :key="t.id" :value="t.id">{{ t.id }} — {{ t.name }}</option>
@@ -200,7 +200,7 @@ onMounted(async () => {
         <button
           v-if="authStore.email"
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-          :class="onlyMine ? 'bg-brand-50 text-brand-700 border border-brand-300' : 'border border-gray-200 text-gray-700'"
+          :class="onlyMine ? 'bg-brand-50 text-brand-700 border border-brand-300' : 'border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'"
           @click="onlyMine = !onlyMine"
         >
           <component :is="ICONS.UsersGroupRounded" :size="12" weight="Linear" /> My cases

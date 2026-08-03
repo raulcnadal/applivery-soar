@@ -65,10 +65,10 @@ async function handleRefresh() {
 </script>
 
 <template>
-  <div class="rounded-lg border border-gray-200">
-    <div class="p-2 flex items-center gap-2 border-b border-gray-200">
+  <div class="rounded-lg border border-gray-200 dark:border-gray-700">
+    <div class="p-2 flex items-center gap-2 border-b border-gray-200 dark:border-gray-700">
       <component :is="ICONS.Magnifer" :size="12" weight="Linear" class="shrink-0 text-gray-400" />
-      <input v-model="search" placeholder="Filter techniques…" class="flex-1 text-xs outline-none bg-transparent text-gray-900" />
+      <input v-model="search" placeholder="Filter techniques…" class="flex-1 text-xs outline-none bg-transparent text-gray-900 dark:text-white" />
       <button v-if="selected.length > 0" type="button" class="text-[10px] font-semibold shrink-0 text-gray-400" @click="emit('change', [])">Clear ({{ selected.length }})</button>
     </div>
     <div class="max-h-56 overflow-y-auto p-2 space-y-2">
@@ -79,11 +79,11 @@ async function handleRefresh() {
             v-for="t in tac.techniques"
             :key="t.id"
             class="flex items-center gap-2 px-1.5 py-1 rounded-md text-xs cursor-pointer"
-            :class="selected.includes(t.id) ? 'bg-gray-50' : ''"
+            :class="selected.includes(t.id) ? 'bg-gray-50 dark:bg-gray-900/50' : ''"
           >
             <input type="checkbox" :checked="selected.includes(t.id)" @change="toggle(t.id)" />
             <span class="font-mono text-[10px] shrink-0 text-gray-400">{{ t.id }}</span>
-            <span :class="t.revoked ? 'line-through text-red-500' : 'text-gray-900'">{{ t.name }}</span>
+            <span :class="t.revoked ? 'line-through text-red-500' : 'text-gray-900 dark:text-white'">{{ t.name }}</span>
             <span
               v-if="t.revoked"
               title="MITRE has revoked this technique ID upstream — kept selectable only so existing tags on old Policies/Cases still render, but shouldn't be applied to new ones."
@@ -105,7 +105,7 @@ async function handleRefresh() {
       </div>
       <p v-if="grouped.length === 0" class="text-xs text-center py-4 text-gray-400">No techniques match "{{ search }}"</p>
     </div>
-    <div v-if="catalogMeta" class="px-2 py-1.5 flex items-center justify-between gap-2 text-[10px] border-t border-gray-200 text-gray-400">
+    <div v-if="catalogMeta" class="px-2 py-1.5 flex items-center justify-between gap-2 text-[10px] border-t border-gray-200 dark:border-gray-700 text-gray-400">
       <span>
         {{
           catalogMeta.lastFetchedAt
@@ -115,7 +115,7 @@ async function handleRefresh() {
               : "Not yet cross-checked against MITRE's live catalog — showing curated names only"
         }}
       </span>
-      <button v-if="canRefreshCatalog" type="button" :disabled="isRefreshing" class="font-semibold shrink-0 disabled:opacity-50 text-gray-700" @click="handleRefresh">
+      <button v-if="canRefreshCatalog" type="button" :disabled="isRefreshing" class="font-semibold shrink-0 disabled:opacity-50 text-gray-700 dark:text-gray-200" @click="handleRefresh">
         {{ isRefreshing ? "Syncing…" : "Sync now" }}
       </button>
     </div>

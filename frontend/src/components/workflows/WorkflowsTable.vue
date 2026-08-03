@@ -51,13 +51,13 @@ async function remove(w: Workflow) {
     description="Create a chain of actions you can run against one or many devices."
   />
   <div v-else class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    <div v-for="w in workflows" :key="w.id" class="rounded-xl p-4 shadow-sm bg-white border border-gray-200">
+    <div v-for="w in workflows" :key="w.id" class="rounded-xl p-4 shadow-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
       <div class="flex items-start gap-2 mb-2">
         <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: `${PRIMARY_BLUE}12` }">
           <component :is="ICONS.Structure" :size="16" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
         </div>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold truncate text-gray-900">{{ w.name }}</p>
+          <p class="text-sm font-semibold truncate text-gray-900 dark:text-white">{{ w.name }}</p>
           <p class="text-xs truncate flex items-center gap-1 text-gray-400">
             {{ w.steps?.length || 0 }} step{{ w.steps?.length === 1 ? "" : "s" }}
             <span v-if="hasDestructive(w)" class="inline-flex items-center gap-0.5" :style="{ color: WARNING }" title="Includes MDM device actions">
@@ -94,19 +94,19 @@ async function remove(w: Workflow) {
         >
           <component :is="ICONS.Play" :size="12" weight="Linear" /> Run
         </button>
-        <button title="Dry run — safe preview, nothing is executed" class="p-1.5 rounded-lg border border-gray-200 text-gray-400" @click="emit('dryRun', w)">
+        <button title="Dry run — safe preview, nothing is executed" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400" @click="emit('dryRun', w)">
           <component :is="ICONS.TestTube" :size="13" weight="Linear" />
         </button>
-        <button title="Version history" class="p-1.5 rounded-lg border border-gray-200 text-gray-400" @click="emit('versions', w)">
+        <button title="Version history" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400" @click="emit('versions', w)">
           <component :is="ICONS.History" :size="13" weight="Linear" />
         </button>
-        <button class="p-1.5 rounded-lg border border-gray-200 text-gray-400" @click="emit('edit', w)">
+        <button class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400" @click="emit('edit', w)">
           <component :is="ICONS.Pen" :size="13" weight="Linear" />
         </button>
         <button
           :disabled="!canDelete"
           :title="!canDelete ? notDeleteTitle : undefined"
-          class="p-1.5 rounded-lg border border-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
           style="color: #ef4444"
           @click="remove(w)"
         >

@@ -10,6 +10,9 @@ import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import { useAuthStore, type FeatureArea } from "../stores/auth";
 import { useSegmentsStore } from "../stores/segments";
+import { useUiStore, type ThemeMode } from "../stores/ui";
+import { useDashboardStateStore } from "../stores/dashboardState";
+import { ICONS } from "../lib/solarIcons";
 import { api } from "../api/http";
 import WorkspaceOnboardingModal from "../components/onboarding/WorkspaceOnboardingModal.vue";
 import SegmentsPanel from "../components/shared/SegmentsPanel.vue";
@@ -23,11 +26,14 @@ const SEGMENT_PANEL_VIEWS = ["overview", "devices", "compliance", "cases"];
 const SettingsModal = defineAsyncComponent(() => import("../components/settings/SettingsModal.vue"));
 
 const PRIMARY_BLUE = "#0241E3";
+const SUCCESS = "#22C55E";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const segmentsStore = useSegmentsStore();
+const uiStore = useUiStore();
+const dashboardStateStore = useDashboardStateStore();
 segmentsStore.fetchTree();
 
 // New-workspace onboarding (main.py:1802-1811's workspace-status check) —
@@ -38,6 +44,15 @@ segmentsStore.fetchTree();
 // WorkspaceOnboardingModal.vue's dismissForThisWorkspace).
 const isOnboardingModalOpen = ref(false);
 onMounted(async () => {
+  // Backend-persisted theme (roadmap Phase 11) — the localStorage value
+  // ui.ts read at store-creation time is already applied (no flash of the
+  // wrong theme), this just reconciles against the cross-device value once
+  // it's available. Also warms dashboardState for OverviewView, which
+  // guards its own fetchState() call behind `isLoaded`, so this doesn't
+  // cause a duplicate request.
+  if (!dashboardStateStore.isLoaded) await dashboardStateStore.fetchState();
+  uiStore.syncFromBackend(dashboardStateStore.themeMode);
+
   if (!auth.orgSlug) return;
   try {
     if (localStorage.getItem(`applivery_onboarding_dismissed_${auth.orgSlug}`) === "1") return;
@@ -51,6 +66,30 @@ onMounted(async () => {
     // non-critical — just skip onboarding if the check fails
   }
 });
+
+// ── Footer: theme selector + status + operational pill — 1:1 port of
+// App.jsx's <footer> (~5280-5350), previously entirely unported. Fixed to
+// the viewport bottom on every authenticated page, same as the original. ──
+const isThemeMenuOpen = ref(false);
+const THEME_OPTIONS: Array<{ mode: ThemeMode; icon: any; label: string }> = [
+  { mode: "system", icon: ICONS.Monitor, label: "System default" },
+  { mode: "light", icon: ICONS.Sun, label: "Light mode" },
+  { mode: "dark", icon: ICONS.Moon, label: "Dark mode" },
+];
+const themeIcon = computed(() => (uiStore.themeMode === "light" ? ICONS.Sun : uiStore.themeMode === "dark" ? ICONS.Moon : ICONS.Monitor));
+function chooseTheme(mode: ThemeMode) {
+  uiStore.setThemeMode(mode);
+  isThemeMenuOpen.value = false;
+}
+// Port of App.jsx's connectionStatus (~2927, set 'ONLINE' once apiToken +
+// orgSlug are both present, App.jsx:3427/3578) — a "session is fully
+// established" signal, not a live health-check ping.
+const connectionStatus = computed(() => (auth.apiToken && auth.orgSlug ? "ONLINE" : "OFFLINE"));
+const FOOTER_LINKS: Array<{ label: string; href: string | null }> = [
+  { label: "Documentation", href: "https://www.applivery.com/docs/" },
+  { label: "Legal", href: "https://www.applivery.com/legal/terms-of-service/" },
+  { label: "Service status", href: null },
+];
 
 interface NavTab {
   id: string;
@@ -163,7 +202,7 @@ function onCloned() {
                 <div class="text-[10px] tracking-wider text-white/80 uppercase">Workspace</div>
                 <div class="truncate font-light max-w-[160px] text-white">{{ workspaceName }}</div>
               </div>
-              <div class="relative flex-none overflow-hidden bg-white w-8 h-8 ring-2 ring-inset ring-slate-200/40 rounded-full">
+              <div class="relative flex-none overflow-hidden bg-white dark:bg-gray-800 w-8 h-8 ring-2 ring-inset ring-slate-200/40 rounded-full">
                 <div class="flex h-full w-full items-center justify-center uppercase bg-emerald-800 text-emerald-200/80 text-xs">
                   {{ userInitials }}
                 </div>
@@ -172,18 +211,18 @@ function onCloned() {
           </button>
 
           <div v-if="isWorkspaceMenuOpen" class="fixed inset-0 z-[199]" @click="closeWorkspaceMenu" />
-          <div v-if="isWorkspaceMenuOpen" class="absolute right-0 top-full mt-2 w-64 rounded-xl shadow-xl overflow-hidden z-[200] border border-gray-100 bg-white">
+          <div v-if="isWorkspaceMenuOpen" class="absolute right-0 top-full mt-2 w-64 rounded-xl shadow-xl overflow-hidden z-[200] border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-800">
             <button
               type="button"
-              class="w-full text-left px-4 py-2.5 flex items-center gap-2.5 transition-colors hover:bg-black/5"
+              class="w-full text-left px-4 py-2.5 flex items-center gap-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
               @click="closeWorkspaceMenu(); goTo('audit-logs')"
             >
               <History :size="15" weight="Linear" class="text-gray-400" />
-              <span class="text-[14px] font-normal text-gray-900">Audit Logs</span>
+              <span class="text-[14px] font-normal text-gray-900 dark:text-white">Audit Logs</span>
             </button>
 
             <template v-if="auth.organizations.length > 1">
-              <div class="h-px bg-gray-100" />
+              <div class="h-px bg-gray-100 dark:bg-gray-700" />
               <div class="px-4 pt-2.5 pb-1">
                 <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Workspaces</span>
               </div>
@@ -192,7 +231,7 @@ function onCloned() {
                   v-for="org in auth.organizations"
                   :key="org.id || org._id || org.slug"
                   type="button"
-                  class="w-full text-left px-4 py-2 flex items-center gap-2.5 transition-colors hover:bg-black/5"
+                  class="w-full text-left px-4 py-2 flex items-center gap-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                   @click="onSwitchWorkspace(org.slug || org._id || org.id || '')"
                 >
                   <div class="shrink-0 w-6 h-6 rounded-md overflow-hidden flex items-center justify-center text-white text-[10px] font-bold" :style="{ backgroundColor: PRIMARY_BLUE }">
@@ -200,7 +239,8 @@ function onCloned() {
                   </div>
                   <span
                     class="text-[13px] truncate flex-1"
-                    :style="{ color: (org.slug || org._id || org.id) === auth.orgSlug ? PRIMARY_BLUE : '#111827', fontWeight: (org.slug || org._id || org.id) === auth.orgSlug ? 600 : 400 }"
+                    :class="(org.slug || org._id || org.id) !== auth.orgSlug ? 'text-gray-900 dark:text-white' : ''"
+                    :style="{ color: (org.slug || org._id || org.id) === auth.orgSlug ? PRIMARY_BLUE : undefined, fontWeight: (org.slug || org._id || org.id) === auth.orgSlug ? 600 : 400 }"
                   >
                     {{ org.name }}
                   </span>
@@ -221,14 +261,14 @@ function onCloned() {
               </div>
             </template>
 
-            <div class="h-px bg-gray-100" />
-            <button type="button" class="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors hover:bg-black/5 group" @click="signOut">
+            <div class="h-px bg-gray-100 dark:bg-gray-700" />
+            <button type="button" class="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors hover:bg-black/5 dark:hover:bg-white/5 group" @click="signOut">
               <div class="w-9 h-9 rounded-full flex items-center justify-center uppercase bg-emerald-800 text-emerald-200/80 text-xs shrink-0">
                 {{ userInitials }}
               </div>
               <div class="flex flex-col min-w-0 flex-1">
-                <span class="text-[14px] font-medium truncate text-gray-900">{{ userDisplayName || "Signed in" }}</span>
-                <span class="text-[12px] truncate text-gray-500">{{ auth.email || "" }}</span>
+                <span class="text-[14px] font-medium truncate text-gray-900 dark:text-white">{{ userDisplayName || "Signed in" }}</span>
+                <span class="text-[12px] truncate text-gray-500 dark:text-gray-400">{{ auth.email || "" }}</span>
               </div>
               <Logout :size="15" class="text-gray-400 group-hover:text-brand-600 transition-colors shrink-0" />
             </button>
@@ -244,5 +284,50 @@ function onCloned() {
     <WorkspaceOnboardingModal v-if="isOnboardingModalOpen" @close="isOnboardingModalOpen = false" @cloned="onCloned" />
     <SettingsModal v-if="isSettingsModalOpen" @close="isSettingsModalOpen = false" />
     <SegmentsPanel :views="SEGMENT_PANEL_VIEWS" :current-view="activeId" />
+
+    <!-- Footer — theme selector + status + operational pill (App.jsx ~5280-5350) -->
+    <footer class="fixed bottom-0 left-0 right-0 z-[50] flex items-center justify-between px-6 py-2.5 border-t h-[44px] bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+      <span class="text-[11px] text-gray-400 dark:text-gray-400">©{{ new Date().getFullYear() }} Applivery S.L. All rights reserved</span>
+
+      <div class="flex items-center gap-4">
+        <template v-for="link in FOOTER_LINKS" :key="link.label">
+          <a v-if="link.href" :href="link.href" target="_blank" rel="noopener noreferrer" class="text-[11px] hover:opacity-80 transition-opacity hidden sm:block text-gray-400 dark:text-gray-400" style="text-decoration: none">{{ link.label }}</a>
+          <span v-else class="text-[11px] cursor-pointer hover:opacity-80 transition-opacity hidden sm:block text-gray-400 dark:text-gray-400">{{ link.label }}</span>
+        </template>
+
+        <!-- Operational pill -->
+        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full border" :style="{ backgroundColor: `${SUCCESS}12`, borderColor: `${SUCCESS}30` }">
+          <div class="h-1.5 w-1.5 rounded-full" :class="connectionStatus === 'ONLINE' ? 'bg-emerald-500' : 'bg-red-500'" :style="{ boxShadow: connectionStatus === 'ONLINE' ? '0 0 5px #22c55e' : 'none' }" />
+          <span class="text-[10px] font-semibold" :style="{ color: SUCCESS }">{{ connectionStatus === "ONLINE" ? "Operational" : connectionStatus }}</span>
+        </div>
+
+        <!-- Language stub -->
+        <div class="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity text-gray-400 dark:text-gray-400">
+          <component :is="ICONS.Global" :size="13" weight="Linear" />
+          <span class="text-[11px]">English</span>
+        </div>
+
+        <!-- Theme toggle -->
+        <div class="relative flex items-center">
+          <button type="button" class="flex items-center justify-center w-7 h-7 rounded-md transition hover:opacity-70 text-gray-400 dark:text-gray-400" @click="isThemeMenuOpen = !isThemeMenuOpen">
+            <component :is="themeIcon" :size="14" weight="Linear" />
+          </button>
+          <div v-if="isThemeMenuOpen" class="fixed inset-0 z-[199]" @click="isThemeMenuOpen = false" />
+          <div v-if="isThemeMenuOpen" class="absolute right-0 bottom-full mb-2 w-48 rounded-xl shadow-xl overflow-hidden z-[200] border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+            <button
+              v-for="opt in THEME_OPTIONS"
+              :key="opt.mode"
+              type="button"
+              class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-900 dark:text-white"
+              @click="chooseTheme(opt.mode)"
+            >
+              <component :is="opt.icon" :size="14" weight="Linear" />
+              {{ opt.label }}
+              <component v-if="uiStore.themeMode === opt.mode" :is="ICONS.CheckCircle" :size="13" weight="Linear" class="ml-auto" :style="{ color: PRIMARY_BLUE }" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </footer>
   </div>
 </template>

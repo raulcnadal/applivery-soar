@@ -76,8 +76,8 @@ async function save() {
         @update:model-value="form.workflowId = $event as string"
       />
       <Input v-model.number="form.maxFiresPerHour" type="number" label="Max fires per hour" />
-      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.enabled" /> Enabled</label>
-      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.autoRunDestructiveAck" /> I acknowledge this workflow may contain a destructive action</label>
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.enabled" /> Enabled</label>
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.autoRunDestructiveAck" /> I acknowledge this workflow may contain a destructive action</label>
       <div class="flex items-center gap-2 pt-2">
         <Button :loading="isSaving" :disabled="!form.name || !form.workflowId" @click="save">{{ rule ? "Save changes" : "Create rule" }}</Button>
         <Button variant="ghost" @click="emit('close')">Cancel</Button>

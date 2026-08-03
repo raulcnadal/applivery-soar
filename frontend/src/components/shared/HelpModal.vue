@@ -76,19 +76,19 @@ watch(slug, load, { immediate: true });
 
 <template>
   <div class="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4" @click.self="emit('close')">
-    <div class="w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden flex flex-col bg-white" style="max-height: 85vh">
-      <div class="flex items-center gap-2 px-5 py-4 shrink-0 border-b border-gray-100">
-        <button v-if="history.length > 0" type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 shrink-0 text-gray-500" title="Back" @click="goBack">
+    <div class="w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden flex flex-col bg-white dark:bg-gray-800" style="max-height: 85vh">
+      <div class="flex items-center gap-2 px-5 py-4 shrink-0 border-b border-gray-100 dark:border-gray-800">
+        <button v-if="history.length > 0" type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 shrink-0 text-gray-500 dark:text-gray-400" title="Back" @click="goBack">
           ←
         </button>
-        <h3 class="text-sm font-semibold flex-1 truncate text-gray-900">{{ DOC_TITLES[slug] || slug }}</h3>
-        <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 shrink-0 text-gray-500" title="Close" @click="emit('close')">
+        <h3 class="text-sm font-semibold flex-1 truncate text-gray-900 dark:text-white">{{ DOC_TITLES[slug] || slug }}</h3>
+        <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 shrink-0 text-gray-500 dark:text-gray-400" title="Close" @click="emit('close')">
           ✕
         </button>
       </div>
       <div ref="bodyRef" class="overflow-y-auto flex-1 px-6 py-5" @click="onBodyClick">
-        <div v-if="status === 'loading'" class="text-sm py-8 text-center text-gray-500">Loading guide…</div>
-        <div v-else-if="status === 'error'" class="text-sm py-8 text-center text-gray-500">
+        <div v-if="status === 'loading'" class="text-sm py-8 text-center text-gray-500 dark:text-gray-400">Loading guide…</div>
+        <div v-else-if="status === 'error'" class="text-sm py-8 text-center text-gray-500 dark:text-gray-400">
           Couldn't load this guide. It may not be bundled in this deployment yet.
         </div>
         <div v-else class="help-doc-body text-sm" v-html="html" />

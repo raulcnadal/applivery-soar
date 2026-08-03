@@ -80,13 +80,13 @@ function setPolicyPlatform(platform: string) {
 </script>
 
 <template>
-  <div class="rounded-xl p-3 mb-2 border border-gray-200 bg-gray-50">
+  <div class="rounded-xl p-3 mb-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
     <div class="flex items-start gap-2">
       <div class="flex-1 grid grid-cols-2 gap-2">
-        <select :value="fieldDef?.key || ''" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500" @change="setField(($event.target as HTMLSelectElement).value)">
+        <select :value="fieldDef?.key || ''" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="setField(($event.target as HTMLSelectElement).value)">
           <option v-for="f in fieldsCatalog" :key="f.key" :value="f.key">{{ f.label }}</option>
         </select>
-        <select :value="condition.operator" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500" @change="setOperator(($event.target as HTMLSelectElement).value)">
+        <select :value="condition.operator" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="setOperator(($event.target as HTMLSelectElement).value)">
           <option v-for="op in fieldDef?.operators || []" :key="op" :value="op">{{ OPERATOR_LABEL[op] || op }}</option>
         </select>
       </div>
@@ -96,7 +96,7 @@ function setPolicyPlatform(platform: string) {
     </div>
 
     <div class="mt-2">
-      <select v-if="fieldDef?.type === 'boolean'" :value="String(condition.value)" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500" @change="setValue(($event.target as HTMLSelectElement).value === 'true')">
+      <select v-if="fieldDef?.type === 'boolean'" :value="String(condition.value)" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="setValue(($event.target as HTMLSelectElement).value === 'true')">
         <template v-if="fieldDef.key === 'isCompliant'">
           <option value="true">Compliant</option>
           <option value="false">Non-compliant</option>
@@ -107,7 +107,7 @@ function setPolicyPlatform(platform: string) {
         </template>
       </select>
 
-      <select v-else-if="fieldDef?.type === 'select'" :value="condition.value || ''" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500" @change="setValue(($event.target as HTMLSelectElement).value)">
+      <select v-else-if="fieldDef?.type === 'select'" :value="condition.value || ''" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="setValue(($event.target as HTMLSelectElement).value)">
         <option v-for="o in fieldDef.options || []" :key="o" :value="o">{{ o }}</option>
       </select>
 
@@ -115,7 +115,7 @@ function setPolicyPlatform(platform: string) {
         v-else-if="fieldDef?.type === 'number'"
         type="number"
         :value="condition.value ?? 0"
-        class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+        class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
         @input="setValue(Number(($event.target as HTMLInputElement).value))"
       />
 
@@ -124,10 +124,10 @@ function setPolicyPlatform(platform: string) {
           type="number"
           min="0"
           :value="condition.value?.amount ?? 1"
-          class="w-24 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+          class="w-24 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ amount: Number(($event.target as HTMLInputElement).value) })"
         />
-        <select :value="condition.value?.unit || 'days'" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500" @change="setValuePatch({ unit: ($event.target as HTMLSelectElement).value })">
+        <select :value="condition.value?.unit || 'days'" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="setValuePatch({ unit: ($event.target as HTMLSelectElement).value })">
           <option value="minutes">minutes</option>
           <option value="hours">hours</option>
           <option value="days">days</option>
@@ -145,7 +145,7 @@ function setPolicyPlatform(platform: string) {
       <select
         v-else-if="fieldDef?.type === 'string' && fieldDef.key === 'segmentId'"
         :value="condition.value || ''"
-        class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+        class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
         @change="setValue(($event.target as HTMLSelectElement).value)"
       >
         <option value="">{{ segments.length ? "Select a Segment…" : "No Segments found" }}</option>
@@ -158,7 +158,7 @@ function setPolicyPlatform(platform: string) {
         v-else-if="fieldDef?.type === 'string'"
         :value="condition.value || ''"
         placeholder="Value…"
-        class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+        class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
         @input="setValue(($event.target as HTMLInputElement).value)"
       />
 
@@ -167,7 +167,7 @@ function setPolicyPlatform(platform: string) {
           list="smart-attribute-names"
           :value="condition.value?.name || ''"
           placeholder="Attribute name, e.g. PatchLevel"
-          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ name: ($event.target as HTMLInputElement).value })"
         />
         <datalist id="smart-attribute-names">
@@ -177,7 +177,7 @@ function setPolicyPlatform(platform: string) {
           v-if="needsCompareValue"
           :value="condition.value?.compareValue ?? ''"
           placeholder="Expected value…"
-          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ compareValue: ($event.target as HTMLInputElement).value })"
         />
       </div>
@@ -187,7 +187,7 @@ function setPolicyPlatform(platform: string) {
           list="self-reported-attribute-names"
           :value="condition.value?.name || ''"
           :placeholder="selfReportedAttributeNames.length ? 'Pick or type an attribute…' : 'Attribute name, e.g. diskEncryptionEnabled'"
-          class="px-2 py-1.5 rounded-lg text-xs font-mono outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+          class="px-2 py-1.5 rounded-lg text-xs font-mono outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ name: ($event.target as HTMLInputElement).value })"
         />
         <datalist id="self-reported-attribute-names">
@@ -197,7 +197,7 @@ function setPolicyPlatform(platform: string) {
           v-if="needsCompareValue"
           :value="condition.value?.compareValue ?? ''"
           placeholder="Expected value…"
-          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ compareValue: ($event.target as HTMLInputElement).value })"
         />
         <p v-if="selfReportedAttributeNames.length === 0" class="text-[10px] w-full text-gray-400">No devices have reported yet — once one does, its field names appear here automatically.</p>
@@ -207,20 +207,20 @@ function setPolicyPlatform(platform: string) {
         <input
           :value="condition.value?.path || ''"
           placeholder="Field path, e.g. identifiers.udid"
-          class="px-2 py-1.5 rounded-lg text-xs font-mono outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+          class="px-2 py-1.5 rounded-lg text-xs font-mono outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ path: ($event.target as HTMLInputElement).value })"
         />
         <input
           v-if="needsCompareValue"
           :value="condition.value?.compareValue ?? ''"
           placeholder="Expected value…"
-          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ compareValue: ($event.target as HTMLInputElement).value })"
         />
       </div>
 
       <div v-else-if="fieldDef?.type === 'policy'" class="flex items-center gap-2 flex-wrap">
-        <select :value="condition.value?.platform || ''" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500" @change="setPolicyPlatform(($event.target as HTMLSelectElement).value)">
+        <select :value="condition.value?.platform || ''" class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="setPolicyPlatform(($event.target as HTMLSelectElement).value)">
           <option value="">Platform…</option>
           <option v-for="p in PLATFORMS" :key="p" :value="p">{{ p }}</option>
         </select>
@@ -229,7 +229,7 @@ function setPolicyPlatform(platform: string) {
             <component :is="ICONS.ShieldCheck" :size="12" weight="Linear" /> {{ condition.value.policyName }}
             <button class="hover:opacity-60" @click="setValuePatch({ policyId: null, policyName: null })"><component :is="ICONS.CloseCircle" :size="11" weight="Linear" /></button>
           </span>
-          <button v-else class="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-700" @click="isPickingPolicy = true">
+          <button v-else class="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="isPickingPolicy = true">
             <component :is="ICONS.AddSquare" :size="12" weight="Linear" /> Choose policy
           </button>
         </template>
@@ -244,7 +244,7 @@ function setPolicyPlatform(platform: string) {
       </div>
 
       <div v-else-if="fieldDef?.type === 'app_list'">
-        <select :value="condition.value || ''" class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500" @change="setValue(($event.target as HTMLSelectElement).value)">
+        <select :value="condition.value || ''" class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="setValue(($event.target as HTMLSelectElement).value)">
           <option value="">{{ appLists.length ? "Select an App List…" : "No App Lists yet — add one from the App Lists tab" }}</option>
           <option v-for="l in appLists" :key="l.id" :value="l.id">{{ l.name }} ({{ l.platform }})</option>
         </select>

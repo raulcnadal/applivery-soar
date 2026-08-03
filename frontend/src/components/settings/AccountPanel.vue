@@ -41,8 +41,8 @@ function signOut() {
     <div class="flex items-center gap-4">
       <Avatar :src="auth.avatarUrl ?? undefined" :name="auth.fullName ?? auth.email ?? ''" size="lg" />
       <div>
-        <p class="text-sm font-medium text-gray-900">{{ auth.fullName || auth.email }}</p>
-        <p class="text-xs text-gray-500">{{ auth.email }}</p>
+        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ auth.fullName || auth.email }}</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">{{ auth.email }}</p>
       </div>
     </div>
 
@@ -57,7 +57,7 @@ function signOut() {
       />
     </div>
 
-    <div class="pt-2 border-t border-gray-100">
+    <div class="pt-2 border-t border-gray-100 dark:border-gray-800">
       <Button variant="ghost" @click="signOut">Sign out</Button>
     </div>
   </div>

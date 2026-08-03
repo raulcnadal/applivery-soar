@@ -54,13 +54,13 @@ async function save() {
     <Alert v-if="saveMessage" type="info">{{ saveMessage }}</Alert>
 
     <div class="flex flex-wrap gap-4">
-      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.enabled" /> SLA tracking enabled</label>
-      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.notifyOnBreach" /> Notify integrations on breach</label>
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.enabled" /> SLA tracking enabled</label>
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.notifyOnBreach" /> Notify integrations on breach</label>
     </div>
 
-    <div class="border border-gray-200 rounded-xl bg-white divide-y divide-gray-100">
+    <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
       <div v-for="sev in SEVERITIES" :key="sev" class="grid grid-cols-3 gap-3 items-center px-4 py-3">
-        <p class="text-sm font-medium text-gray-900 capitalize">{{ sev }}</p>
+        <p class="text-sm font-medium text-gray-900 dark:text-white capitalize">{{ sev }}</p>
         <Input v-model.number="form.thresholds[sev].acknowledgeMinutes" type="number" label="Acknowledge (minutes)" />
         <Input v-model.number="form.thresholds[sev].resolveMinutes" type="number" label="Resolve (minutes)" />
       </div>

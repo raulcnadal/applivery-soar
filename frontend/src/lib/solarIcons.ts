@@ -92,6 +92,9 @@ import {
   Widget2,
   WiFiRouter,
   Radio,
+  Sun,
+  Moon,
+  Monitor,
 } from "@solar-icons/vue";
 
 export const ICONS = {
@@ -180,6 +183,9 @@ export const ICONS = {
   Widget2,
   WiFiRouter,
   Radio,
+  Sun,
+  Moon,
+  Monitor,
 } as const;
 
 export type IconName = keyof typeof ICONS;

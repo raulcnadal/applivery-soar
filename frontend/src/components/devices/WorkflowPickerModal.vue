@@ -24,12 +24,12 @@ onMounted(() => {
       <button
         v-for="wf in store.workflows"
         :key="wf.id"
-        class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-left transition-colors hover:bg-gray-50"
+        class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-left transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
         @click="emit('confirm', wf)"
       >
         <component :is="ICONS.Play" :size="14" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
         <div class="min-w-0">
-          <p class="font-medium truncate text-gray-900">{{ wf.name }}</p>
+          <p class="font-medium truncate text-gray-900 dark:text-white">{{ wf.name }}</p>
           <p class="text-[11px] truncate text-gray-400">{{ wf.steps?.length || 0 }} step{{ wf.steps?.length === 1 ? "" : "s" }}</p>
         </div>
       </button>

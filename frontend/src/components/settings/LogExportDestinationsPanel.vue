@@ -30,7 +30,7 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-4">
-    <p class="text-[11px] leading-relaxed text-gray-500">
+    <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
       Ships this workspace's audit trail somewhere outside the app. Syslog and webhook deliver in real time as events happen; S3, NFS, and SFTP export once a day.
     </p>
     <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
@@ -40,28 +40,28 @@ onMounted(async () => {
       <Button @click="openNew">New destination</Button>
     </div>
 
-    <div class="overflow-x-auto border border-gray-200 rounded-xl bg-white">
+    <div class="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800">
       <table class="min-w-full text-sm">
-        <thead class="bg-gray-50 border-b border-gray-200">
+        <thead class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Name</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Type</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Format</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Status</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Last export</th>
-            <th class="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Name</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Type</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Format</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Status</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Last export</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="d in store.destinations" :key="d.id" class="border-b border-gray-100 last:border-0">
-            <td class="px-4 py-3 font-medium text-gray-900">{{ d.name }}</td>
-            <td class="px-4 py-3 text-gray-700 uppercase text-xs">{{ d.type }}</td>
-            <td class="px-4 py-3 text-gray-500 uppercase text-xs">{{ d.format }}</td>
+          <tr v-for="d in store.destinations" :key="d.id" class="border-b border-gray-100 dark:border-gray-800 last:border-0">
+            <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ d.name }}</td>
+            <td class="px-4 py-3 text-gray-700 dark:text-gray-200 uppercase text-xs">{{ d.type }}</td>
+            <td class="px-4 py-3 text-gray-500 dark:text-gray-400 uppercase text-xs">{{ d.format }}</td>
             <td class="px-4 py-3">
               <StatusPill v-if="d.lastExportError" label="Error" color="red" />
               <StatusPill v-else :label="d.enabled ? 'Enabled' : 'Disabled'" :color="d.enabled ? 'green' : 'gray'" />
             </td>
-            <td class="px-4 py-3 text-gray-500">{{ d.lastExportedAt ? new Date(d.lastExportedAt).toLocaleString() : "—" }}</td>
+            <td class="px-4 py-3 text-gray-500 dark:text-gray-400">{{ d.lastExportedAt ? new Date(d.lastExportedAt).toLocaleString() : "—" }}</td>
             <td class="px-4 py-3 text-right space-x-1 whitespace-nowrap">
               <Button size="sm" variant="ghost" @click="test(d)">Test</Button>
               <Button size="sm" variant="ghost" @click="openEdit(d)">Edit</Button>

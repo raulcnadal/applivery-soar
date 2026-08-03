@@ -64,10 +64,10 @@ async function save() {
         @update:model-value="form.workflowId = $event as string"
       />
       <Input v-model="form.deviceLookupField" label="Device lookup field (optional)" placeholder="e.g. serialNumber — matched against the inbound JSON body's same-named key" />
-      <label class="flex items-center gap-2 text-sm text-gray-700">
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
         <input type="checkbox" v-model="form.enabled" /> Enabled
       </label>
-      <label class="flex items-center gap-2 text-sm text-gray-700">
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
         <input type="checkbox" v-model="form.openCase" /> Open a Case when this trigger fires
       </label>
       <Input

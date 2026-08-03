@@ -30,7 +30,7 @@ function isCurrent(s: SegmentNode) {
         v-model="search"
         autofocus
         placeholder="Search segments…"
-        class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+        class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
       />
     </div>
     <div class="space-y-1 max-h-[50vh] overflow-y-auto">
@@ -39,12 +39,12 @@ function isCurrent(s: SegmentNode) {
         :key="`${s.id}-${s.depth}`"
         :disabled="isCurrent(s)"
         class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors disabled:opacity-40"
-        :class="isCurrent(s) ? 'bg-gray-50' : 'hover:bg-gray-50'"
+        :class="isCurrent(s) ? 'bg-gray-50 dark:bg-gray-900/50' : 'hover:bg-gray-50 dark:hover:bg-white/5'"
         :style="{ paddingLeft: `${12 + s.depth * 16}px` }"
         @click="emit('select', s)"
       >
         <component :is="ICONS.Layers" :size="13" weight="Linear" class="text-gray-400" />
-        <span class="text-gray-900">{{ s.name || "Unnamed" }}</span>
+        <span class="text-gray-900 dark:text-white">{{ s.name || "Unnamed" }}</span>
         <span v-if="isCurrent(s)" class="ml-auto text-[10px] font-semibold" :style="{ color: PRIMARY_BLUE }">Current</span>
       </button>
       <p v-if="filtered.length === 0" class="text-xs text-center py-6 text-gray-400">No segments match "{{ search }}"</p>

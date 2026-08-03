@@ -48,31 +48,31 @@ async function remove(entry: ActionLibraryEntry) {
   <div>
     <div class="mb-4 flex items-start justify-between gap-3 flex-wrap">
       <div>
-        <h2 class="text-lg font-bold text-gray-900">Script & OMA-URI Library</h2>
+        <h2 class="text-lg font-bold text-gray-900 dark:text-white">Script & OMA-URI Library</h2>
         <p class="text-sm mt-1 text-gray-400">Named references you can pick from a workflow's "Run script" and "Custom OMA-URI command" steps, instead of retyping an Asset ID or path/value every time.</p>
       </div>
       <div class="flex gap-2 shrink-0">
-        <button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-700" @click="emit('fetchApplivery')">
+        <button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('fetchApplivery')">
           <component :is="ICONS.CloudDownload" :size="13" weight="Linear" /> Fetch from Applivery
         </button>
-        <button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-700" @click="emit('importGitRepo')">
+        <button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('importGitRepo')">
           <component :is="ICONS.LinkCircle" :size="13" weight="Linear" /> Import from Git repo
         </button>
       </div>
     </div>
 
     <div class="flex items-center gap-2 mb-3 max-w-2xl flex-wrap">
-      <div class="flex gap-1 p-0.5 rounded-lg bg-gray-50">
-        <button v-for="[k, label] in [['all', 'All'], ['script', 'Scripts'], ['oma_uri', 'OMA-URI']] as const" :key="k" class="px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors" :class="typeFilter === k ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'" @click="typeFilter = k">
+      <div class="flex gap-1 p-0.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+        <button v-for="[k, label] in [['all', 'All'], ['script', 'Scripts'], ['oma_uri', 'OMA-URI']] as const" :key="k" class="px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors" :class="typeFilter === k ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'" @click="typeFilter = k">
           {{ label }}
         </button>
       </div>
-      <div v-if="typeFilter === 'script'" class="flex gap-1 p-0.5 rounded-lg bg-gray-50">
+      <div v-if="typeFilter === 'script'" class="flex gap-1 p-0.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
         <button
           v-for="[k, label] in [['all', 'All platforms'], ['windows', 'Windows'], ['macos', 'macOS']] as const"
           :key="k"
           class="px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors"
-          :class="platformFilter === k ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+          :class="platformFilter === k ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
           @click="platformFilter = k"
         >
           {{ label }}
@@ -83,13 +83,13 @@ async function remove(entry: ActionLibraryEntry) {
     <div class="space-y-2.5 max-w-2xl">
       <EmptyState v-if="!isLoading && entries.length === 0" title="Nothing in the library yet" description="Add a script pointer or an OMA-URI command, or fetch existing scripts from Applivery." />
       <p v-else-if="filtered.length === 0" class="text-[11px] leading-relaxed text-gray-400">Nothing matches this filter.</p>
-      <div v-for="e in filtered" :key="e.id" class="flex items-center gap-2.5 p-2.5 rounded-lg border border-gray-200 shadow-sm bg-white">
+      <div v-for="e in filtered" :key="e.id" class="flex items-center gap-2.5 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
         <component :is="e.type === 'script' ? ICONS.CodeFile : ICONS.Command" :size="14" weight="Linear" class="shrink-0 text-gray-400" />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="text-xs font-semibold truncate text-gray-900">{{ e.name }}</span>
+            <span class="text-xs font-semibold truncate text-gray-900 dark:text-white">{{ e.name }}</span>
             <span class="text-[10px] px-2 py-0.5 rounded-full font-light border border-current/25" :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }">{{ TYPE_LABELS[e.type] }}</span>
-            <span class="text-[10px] px-2 py-0.5 rounded-full font-light border border-current/25 bg-gray-100 text-gray-400">{{ PLATFORM_LABELS[e.platform] || e.platform }}</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-light border border-current/25 bg-gray-100 dark:bg-gray-700 text-gray-400">{{ PLATFORM_LABELS[e.platform] || e.platform }}</span>
             <span v-if="e.type === 'script' && e.scope" class="text-[10px] px-2 py-0.5 rounded-full font-light border border-current/25 capitalize" :style="{ backgroundColor: `${WARNING}15`, color: WARNING }">{{ e.scope }}</span>
           </div>
           <p v-if="e.description" class="text-[10px] mt-0.5 truncate text-gray-400">{{ e.description }}</p>
@@ -104,7 +104,7 @@ async function remove(entry: ActionLibraryEntry) {
         </button>
       </div>
 
-      <button class="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-gray-200 text-xs font-medium text-gray-400 hover:text-brand-600 hover:border-brand-500 transition-colors" @click="emit('new')">
+      <button class="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-400 hover:text-brand-600 hover:border-brand-500 transition-colors" @click="emit('new')">
         <component :is="ICONS.AddSquare" :size="13" weight="Linear" /> Add to library
       </button>
     </div>

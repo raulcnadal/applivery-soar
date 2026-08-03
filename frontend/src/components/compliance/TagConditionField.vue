@@ -41,14 +41,14 @@ function confirmDraft() {
         autofocus
         :value="isAdding ? draft : value"
         placeholder="New tag name…"
-        class="w-full pl-7 pr-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500"
+        class="w-full pl-7 pr-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500"
         @input="isAdding ? (draft = ($event.target as HTMLInputElement).value) : emit('select', ($event.target as HTMLInputElement).value)"
       />
     </div>
     <button v-if="isAdding" type="button" class="px-2 py-1.5 rounded-lg text-xs font-medium text-white shrink-0 bg-brand-600 hover:bg-brand-700" @click="confirmDraft">Use</button>
   </div>
   <div v-else class="flex items-center gap-2">
-    <select :value="value || ''" class="flex-1 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500" @change="onSelectChange(($event.target as HTMLSelectElement).value)">
+    <select :value="value || ''" class="flex-1 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="onSelectChange(($event.target as HTMLSelectElement).value)">
       <option value="">{{ availableTags.length ? "Select a tag…" : "No tags found" }}</option>
       <option v-for="t in availableTags" :key="t" :value="t">{{ t }}</option>
       <option value="__new__">+ Create new tag…</option>

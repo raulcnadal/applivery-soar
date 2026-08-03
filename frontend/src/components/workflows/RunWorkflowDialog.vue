@@ -131,12 +131,12 @@ async function launch() {
     <div class="space-y-3">
       <Alert v-if="launchError" type="danger">{{ launchError }}</Alert>
 
-      <div class="flex items-center gap-1 p-1 rounded-lg bg-gray-50 border border-gray-200">
+      <div class="flex items-center gap-1 p-1 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
         <button
           v-for="m in PICKER_MODES"
           :key="m.id"
           class="flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors"
-          :class="mode === m.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+          :class="mode === m.id ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
           @click="changeMode(m.id)"
         >
           {{ m.label }}
@@ -146,13 +146,13 @@ async function launch() {
       <div v-if="mode === 'manual'">
         <div class="relative mb-2">
           <component :is="ICONS.Magnifer" :size="14" weight="Linear" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          <input v-model="search" placeholder="Search devices…" class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500" />
+          <input v-model="search" placeholder="Search devices…" class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500" />
         </div>
         <div class="space-y-1 max-h-64 overflow-y-auto">
-          <label v-for="d in filtered" :key="d.id" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer" :class="selectedIds.has(d.id) ? 'bg-gray-50' : ''">
+          <label v-for="d in filtered" :key="d.id" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer" :class="selectedIds.has(d.id) ? 'bg-gray-50 dark:bg-gray-900/50' : ''">
             <input type="checkbox" :checked="selectedIds.has(d.id)" @change="toggleDevice(d.id)" />
             <component :is="ICONS.Smartphone" :size="13" weight="Linear" class="text-gray-400" />
-            <span class="text-gray-900">{{ d.displayName }}</span>
+            <span class="text-gray-900 dark:text-white">{{ d.displayName }}</span>
             <span class="ml-auto text-[10px] text-gray-400">{{ d.platformLabel }}</span>
           </label>
           <p v-if="filtered.length === 0" class="text-xs text-center py-6 text-gray-400">No devices match "{{ search }}"</p>
@@ -160,7 +160,7 @@ async function launch() {
       </div>
 
       <div v-else-if="mode === 'audience'">
-        <select v-model="audienceId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 bg-white text-gray-900 mb-3 focus:ring-2 focus:ring-brand-500">
+        <select v-model="audienceId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white mb-3 focus:ring-2 focus:ring-brand-500">
           <option value="">Choose a Device Audience…</option>
           <option v-for="a in devicesStore.deviceAudiences" :key="a.id" :value="a.id">{{ a.name }}</option>
         </select>
@@ -168,7 +168,7 @@ async function launch() {
         <div v-if="audienceId" class="max-h-64 overflow-y-auto space-y-1">
           <div v-for="d in audienceMatches" :key="d.id" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm text-gray-400">
             <component :is="ICONS.Smartphone" :size="13" weight="Linear" />
-            <span class="text-gray-900">{{ d.displayName }}</span>
+            <span class="text-gray-900 dark:text-white">{{ d.displayName }}</span>
             <span class="ml-auto text-[10px]">{{ d.platformLabel }}</span>
           </div>
           <p v-if="audienceMatches.length === 0" class="text-xs text-center py-6 text-gray-400">No devices currently belong to this audience.</p>
@@ -176,7 +176,7 @@ async function launch() {
       </div>
 
       <div v-else>
-        <select v-model="tag" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 bg-white text-gray-900 mb-3 focus:ring-2 focus:ring-brand-500">
+        <select v-model="tag" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white mb-3 focus:ring-2 focus:ring-brand-500">
           <option value="">Choose a tag…</option>
           <option v-for="t in availableTags" :key="t" :value="t">{{ t }}</option>
         </select>
@@ -184,7 +184,7 @@ async function launch() {
         <div v-if="tag" class="max-h-64 overflow-y-auto space-y-1">
           <div v-for="d in tagMatches" :key="d.id" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm text-gray-400">
             <component :is="ICONS.Smartphone" :size="13" weight="Linear" />
-            <span class="text-gray-900">{{ d.displayName }}</span>
+            <span class="text-gray-900 dark:text-white">{{ d.displayName }}</span>
             <span class="ml-auto text-[10px]">{{ d.platformLabel }}</span>
           </div>
           <p v-if="tagMatches.length === 0" class="text-xs text-center py-6 text-gray-400">No devices currently carry this tag.</p>
@@ -193,7 +193,7 @@ async function launch() {
 
       <div class="flex items-center gap-3 justify-end pt-2">
         <span class="text-xs mr-auto text-gray-400">{{ confirmCount }} selected</span>
-        <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700" @click="emit('close')">Cancel</button>
+        <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('close')">Cancel</button>
         <button
           :disabled="confirmDisabled || isLaunching"
           class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50"

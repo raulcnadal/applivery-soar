@@ -95,7 +95,7 @@ async function sendTestEmail() {
 
     <Button :loading="isSaving" @click="save">Save</Button>
 
-    <div class="pt-4 border-t border-gray-100 space-y-2">
+    <div class="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-2">
       <Alert v-if="testError" type="danger">{{ testError }}</Alert>
       <Alert v-if="testOk" type="success">Test email sent.</Alert>
       <div class="flex items-end gap-2">

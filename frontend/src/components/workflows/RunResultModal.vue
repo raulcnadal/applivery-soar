@@ -76,7 +76,7 @@ function deviceStatusMeta(r: any) {
 <template>
   <Modal :open="open" :title="`Run result — ${localRun?.workflowName ?? 'Workflow'}`" size="lg" @close="emit('close')">
     <div v-if="localRun" class="space-y-4">
-      <p v-if="localRun.targetDescription" class="text-xs text-gray-400">Target: <span class="text-gray-900">{{ localRun.targetDescription }}</span></p>
+      <p v-if="localRun.targetDescription" class="text-xs text-gray-400">Target: <span class="text-gray-900 dark:text-white">{{ localRun.targetDescription }}</span></p>
 
       <div v-if="isRunning || isWaiting">
         <div class="flex items-center justify-between mb-1.5">
@@ -85,7 +85,7 @@ function deviceStatusMeta(r: any) {
           </span>
           <span class="text-xs text-gray-400">{{ pct }}%</span>
         </div>
-        <div class="h-1.5 rounded-full overflow-hidden bg-gray-100">
+        <div class="h-1.5 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
           <div class="h-full rounded-full transition-all duration-300" :style="{ width: `${pct}%`, backgroundColor: PRIMARY_BLUE }" />
         </div>
         <p class="text-[11px] mt-1.5 text-gray-400">
@@ -98,9 +98,9 @@ function deviceStatusMeta(r: any) {
       </div>
 
       <div class="space-y-3">
-        <div v-for="r in localRun.results" :key="r.deviceId" class="rounded-lg p-3 border border-gray-200">
+        <div v-for="r in localRun.results" :key="r.deviceId" class="rounded-lg p-3 border border-gray-200 dark:border-gray-700">
           <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-semibold text-gray-900">{{ r.deviceName || r.deviceId }}</span>
+            <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ r.deviceName || r.deviceId }}</span>
             <span class="inline-flex items-center gap-1.5 text-xs font-medium" :style="{ color: deviceStatusMeta(r).color }">
               <component :is="ICONS[deviceStatusMeta(r).icon]" :size="13" weight="Linear" /> {{ deviceStatusMeta(r).label }}
             </span>
@@ -109,7 +109,7 @@ function deviceStatusMeta(r: any) {
             <div v-for="(s, i) in r.steps" :key="i" class="flex items-center gap-2 text-xs">
               <component :is="s.ok ? ICONS.CheckCircle : ICONS.CloseCircle" :size="12" weight="Linear" :style="{ color: s.ok ? SUCCESS : DANGER }" />
               <span v-if="s.phase === 'recovery'" class="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }">Recovery</span>
-              <span class="text-gray-900">{{ s.name || s.type }}</span>
+              <span class="text-gray-900 dark:text-white">{{ s.name || s.type }}</span>
               <span class="ml-auto truncate max-w-[220px] text-gray-400">{{ s.detail }}</span>
             </div>
             <p v-if="r.steps.length === 0" class="text-xs text-gray-400">Workflow has no steps.</p>

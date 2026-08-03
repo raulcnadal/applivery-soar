@@ -29,26 +29,26 @@ async function refresh() {
     </p>
 
     <div v-if="store.appleAppUpdatesStatus" class="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-2xl">
-      <div class="border border-gray-200 rounded-xl bg-white p-4">
-        <p class="text-xs text-gray-500">Devices with pending updates</p>
-        <p class="text-2xl font-semibold text-gray-900">{{ store.appleAppUpdatesStatus.devicesWithPendingUpdates }}</p>
+      <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Devices with pending updates</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-white">{{ store.appleAppUpdatesStatus.devicesWithPendingUpdates }}</p>
       </div>
-      <div class="border border-gray-200 rounded-xl bg-white p-4">
-        <p class="text-xs text-gray-500">Pending app instances</p>
-        <p class="text-2xl font-semibold text-gray-900">{{ store.appleAppUpdatesStatus.totalPendingAppInstances }}</p>
+      <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Pending app instances</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-white">{{ store.appleAppUpdatesStatus.totalPendingAppInstances }}</p>
       </div>
-      <div class="border border-gray-200 rounded-xl bg-white p-4">
-        <p class="text-xs text-gray-500">Synced / never synced</p>
-        <p class="text-2xl font-semibold text-gray-900">{{ store.appleAppUpdatesStatus.syncedCount }} / {{ store.appleAppUpdatesStatus.neverSyncedCount }}</p>
+      <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Synced / never synced</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-white">{{ store.appleAppUpdatesStatus.syncedCount }} / {{ store.appleAppUpdatesStatus.neverSyncedCount }}</p>
       </div>
-      <div class="border border-gray-200 rounded-xl bg-white p-4">
-        <p class="text-xs text-gray-500">Est. full-cycle time</p>
-        <p class="text-2xl font-semibold text-gray-900">{{ store.appleAppUpdatesStatus.estimatedFullCycleHours }}h</p>
+      <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Est. full-cycle time</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-white">{{ store.appleAppUpdatesStatus.estimatedFullCycleHours }}h</p>
       </div>
     </div>
 
     <div v-if="store.appleAppUpdatesStatus?.topPendingApps.length">
-      <p class="text-xs font-medium text-gray-500 mb-1">Most common apps with an update available</p>
+      <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Most common apps with an update available</p>
       <div class="flex flex-wrap gap-1">
         <StatusPill v-for="a in store.appleAppUpdatesStatus.topPendingApps" :key="a.name" :label="`${a.name} (${a.deviceCount})`" color="brand" />
       </div>

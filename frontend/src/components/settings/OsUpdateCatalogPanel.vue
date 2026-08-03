@@ -23,17 +23,17 @@ const monthCount = computed(() => store.osUpdateCatalog?.monthsFetched.length ??
     <Alert v-if="store.osUpdateCatalog?.lastError" type="danger">{{ store.osUpdateCatalog.lastError }}</Alert>
 
     <div class="grid grid-cols-3 gap-4 max-w-xl">
-      <div class="border border-gray-200 rounded-xl bg-white p-4">
-        <p class="text-xs text-gray-500">KB entries</p>
-        <p class="text-2xl font-semibold text-gray-900">{{ entryCount }}</p>
+      <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4">
+        <p class="text-xs text-gray-500 dark:text-gray-400">KB entries</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-white">{{ entryCount }}</p>
       </div>
-      <div class="border border-gray-200 rounded-xl bg-white p-4">
-        <p class="text-xs text-gray-500">Months fetched</p>
-        <p class="text-2xl font-semibold text-gray-900">{{ monthCount }}</p>
+      <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Months fetched</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-white">{{ monthCount }}</p>
       </div>
-      <div class="border border-gray-200 rounded-xl bg-white p-4">
-        <p class="text-xs text-gray-500">Last fetched</p>
-        <p class="text-sm font-medium text-gray-900 mt-1">{{ store.osUpdateCatalog?.lastFetchedAt ? new Date(store.osUpdateCatalog.lastFetchedAt).toLocaleString() : "Never" }}</p>
+      <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Last fetched</p>
+        <p class="text-sm font-medium text-gray-900 dark:text-white mt-1">{{ store.osUpdateCatalog?.lastFetchedAt ? new Date(store.osUpdateCatalog.lastFetchedAt).toLocaleString() : "Never" }}</p>
       </div>
     </div>
 

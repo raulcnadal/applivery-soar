@@ -74,8 +74,8 @@ async function onSubTabChange(tabId: string) {
         @edit="editCollaborator"
         @test-access="runTestAccessFor"
       />
-      <div id="test-access-section" class="border-t border-gray-200 pt-4">
-        <p class="text-sm font-medium text-gray-700 mb-2">Test access</p>
+      <div id="test-access-section" class="border-t border-gray-200 dark:border-gray-700 pt-4">
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Test access</p>
         <TestAccessPanel ref="testAccessPanelRef" />
       </div>
     </template>

@@ -217,10 +217,10 @@ async function save() {
 
 <template>
   <div v-if="open" class="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" @click.self="emit('close')">
-    <div class="w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden flex flex-col bg-white" style="max-height: 88vh">
-      <div class="flex items-center justify-between px-5 py-4 shrink-0 border-b border-gray-200">
+    <div class="w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden flex flex-col bg-white dark:bg-gray-800" style="max-height: 88vh">
+      <div class="flex items-center justify-between px-5 py-4 shrink-0 border-b border-gray-200 dark:border-gray-700">
         <div>
-          <h3 class="text-sm font-semibold text-gray-900">{{ workflow ? "Edit workflow" : "Create workflow" }}</h3>
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ workflow ? "Edit workflow" : "Create workflow" }}</h3>
           <p class="text-xs mt-0.5 text-gray-400">{{ screen === "details" ? "Step 1 of 2 — Details" : "Step 2 of 2 — Steps & Recovery" }}</p>
         </div>
         <button class="p-1 rounded-lg text-gray-400 hover:opacity-70" @click="emit('close')">
@@ -233,18 +233,18 @@ async function save() {
 
         <template v-if="screen === 'details'">
           <div class="space-y-2 mb-5">
-            <input v-model="form.name" placeholder="Workflow name, e.g. Non-compliant device escalation" class="w-full px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500" />
-            <textarea v-model="form.description" placeholder="Description (optional)" rows="2" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 bg-white text-gray-900 resize-none focus:ring-2 focus:ring-brand-500" />
+            <input v-model="form.name" placeholder="Workflow name, e.g. Non-compliant device escalation" class="w-full px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500" />
+            <textarea v-model="form.description" placeholder="Description (optional)" rows="2" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-brand-500" />
           </div>
 
-          <div class="rounded-xl p-4 mb-5 border border-gray-200">
+          <div class="rounded-xl p-4 mb-5 border border-gray-200 dark:border-gray-700">
             <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">1. Target platform</p>
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-1">
               <button
                 v-for="p in PLATFORM_OPTIONS"
                 :key="p.value"
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                :class="form.targetPlatform !== p.value ? 'border border-gray-200 text-gray-900' : ''"
+                :class="form.targetPlatform !== p.value ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
                 :style="form.targetPlatform === p.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
                 @click="pickPlatform(p.value)"
               >
@@ -269,7 +269,7 @@ async function save() {
                   v-for="m in modelOptions"
                   :key="m.value"
                   class="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                  :class="form.targetDeploymentModel !== m.value ? 'border border-gray-200 text-gray-900' : ''"
+                  :class="form.targetDeploymentModel !== m.value ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
                   :style="form.targetDeploymentModel === m.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
                   @click="pickDeploymentModel(m.value)"
                 >
@@ -284,8 +284,8 @@ async function save() {
         </template>
 
         <template v-else>
-          <div class="flex items-center justify-between mb-5 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
-            <div class="flex items-center gap-2 text-xs font-semibold text-gray-900">
+          <div class="flex items-center justify-between mb-5 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center gap-2 text-xs font-semibold text-gray-900 dark:text-white">
               <component :is="ICONS.CheckCircle" :size="14" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
               Target: {{ form.targetPlatform ? PLATFORM_LABELS[form.targetPlatform] : "Common (no platform)" }}<template v-if="form.targetDeploymentModel"> · {{ modelLabel }}</template>
             </div>
@@ -318,24 +318,24 @@ async function save() {
             <div class="flex items-start gap-2.5">
               <component :is="ICONS.DangerTriangle" :size="15" weight="Linear" :style="{ color: WARNING }" class="shrink-0 mt-0.5" />
               <div class="flex-1">
-                <p class="text-xs font-semibold text-gray-900">This workflow includes a destructive action</p>
+                <p class="text-xs font-semibold text-gray-900 dark:text-white">This workflow includes a destructive action</p>
                 <p class="text-[11px] mt-1 mb-2.5 leading-relaxed text-gray-400">
                   Anywhere this workflow is set to fire unattended, that specific Policy/Rule still requires its own explicit acknowledgment. This toggle only sets that checkbox's starting value the first time a policy/rule is pointed at this workflow.
                 </p>
-                <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900">
+                <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
                   <input v-model="form.allowUnattendedDestructive" type="checkbox" /> This workflow is approved to run unattended
                 </label>
               </div>
             </div>
           </div>
 
-          <div class="rounded-xl p-4 mt-6 border border-gray-200">
+          <div class="rounded-xl p-4 mt-6 border border-gray-200 dark:border-gray-700">
             <div class="flex items-center justify-between mb-2">
               <div class="flex items-center gap-2">
                 <component :is="ICONS.ShieldCheck" :size="15" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
                 <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Recovery — when compliance is restored</p>
               </div>
-              <label class="flex items-center gap-2 text-xs font-medium text-gray-900">
+              <label class="flex items-center gap-2 text-xs font-medium text-gray-900 dark:text-white">
                 <input v-model="form.recoveryEnabled" type="checkbox" /> Enabled
               </label>
             </div>
@@ -343,7 +343,7 @@ async function save() {
               The moment the Compliance Policy below is no longer violated for a device, the Steps above stop escalating right there, and the recovery steps below run once, in order.
             </p>
             <template v-if="form.recoveryEnabled">
-              <select v-model="form.recoveryCompliancePolicyId" class="w-full px-2 py-1.5 rounded-lg text-sm outline-none mb-3 border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500">
+              <select v-model="form.recoveryCompliancePolicyId" class="w-full px-2 py-1.5 rounded-lg text-sm outline-none mb-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500">
                 <option value="">Select compliance policy to watch…</option>
                 <option v-for="p in complianceStore.policies" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
@@ -373,7 +373,7 @@ async function save() {
         </template>
       </div>
 
-      <div class="flex items-center justify-between px-5 py-4 shrink-0 border-t border-gray-200">
+      <div class="flex items-center justify-between px-5 py-4 shrink-0 border-t border-gray-200 dark:border-gray-700">
         <button v-if="screen === 'steps'" class="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium text-gray-400" @click="screen = 'details'">
           <component :is="ICONS.AltArrowLeft" :size="15" weight="Linear" /> Back
         </button>

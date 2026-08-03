@@ -82,7 +82,7 @@ function isSingle(d: Date): boolean {
             width: '34px',
             height: '34px',
             backgroundColor: (isStart(cell.d) || isEnd(cell.d) || isSingle(cell.d)) && !cell.outside ? primaryBlue : 'transparent',
-            color: cell.outside ? '#6B728055' : isStart(cell.d) || isEnd(cell.d) || isSingle(cell.d) ? '#fff' : '#111827',
+            color: cell.outside ? '#6B728055' : isStart(cell.d) || isEnd(cell.d) || isSingle(cell.d) ? '#fff' : 'var(--foreground)',
             fontWeight: (isStart(cell.d) || isEnd(cell.d) || isSingle(cell.d)) && !cell.outside ? 700 : 400,
             opacity: cell.outside ? 0.35 : 1,
           }"

@@ -272,8 +272,8 @@ function timeAgo(isoString?: string | null): string | null {
           <label class="block text-[10px] font-semibold uppercase mb-1 text-gray-400">Status</label>
           <select
             :value="kase.status"
-            class="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
-            :style="{ color: (STATUS_META[kase.status] ?? { color: '#111827' }).color, fontWeight: 600 }"
+            class="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+            :style="{ color: (STATUS_META[kase.status] ?? { color: 'var(--foreground)' }).color, fontWeight: 600 }"
             @change="patch({ status: ($event.target as HTMLSelectElement).value })"
           >
             <option v-for="(v, k) in STATUS_META" :key="k" :value="k">{{ v.label }}</option>
@@ -283,8 +283,8 @@ function timeAgo(isoString?: string | null): string | null {
           <label class="block text-[10px] font-semibold uppercase mb-1 text-gray-400">Severity</label>
           <select
             :value="kase.severity"
-            class="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
-            :style="{ color: (SEVERITY_META[kase.severity] ?? { color: '#111827' }).color, fontWeight: 600 }"
+            class="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+            :style="{ color: (SEVERITY_META[kase.severity] ?? { color: 'var(--foreground)' }).color, fontWeight: 600 }"
             @change="patch({ severity: ($event.target as HTMLSelectElement).value })"
           >
             <option v-for="(v, k) in SEVERITY_META" :key="k" :value="k">{{ v.label }}</option>
@@ -300,7 +300,7 @@ function timeAgo(isoString?: string | null): string | null {
             v-model="assigneeDraft"
             list="case-assignee-suggestions"
             placeholder="Unassigned"
-            class="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500"
+            class="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500"
             @blur="commitAssignee"
             @keyup.enter="commitAssignee"
           />
@@ -309,7 +309,7 @@ function timeAgo(isoString?: string | null): string | null {
           </datalist>
           <button
             v-if="authStore.email && kase.assignee !== authStore.email"
-            class="px-2.5 py-1.5 rounded-lg text-[10px] font-semibold shrink-0 border border-gray-200 text-gray-700"
+            class="px-2.5 py-1.5 rounded-lg text-[10px] font-semibold shrink-0 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200"
             @click="assigneeDraft = authStore.email!; patch({ assignee: authStore.email })"
           >
             Assign to me
@@ -319,9 +319,9 @@ function timeAgo(isoString?: string | null): string | null {
 
       <!-- Context -->
       <section class="space-y-1.5 text-xs text-gray-400">
-        <p v-if="kase.deviceName"><span class="font-semibold text-gray-900">Device:</span> {{ kase.deviceName }}</p>
+        <p v-if="kase.deviceName"><span class="font-semibold text-gray-900 dark:text-white">Device:</span> {{ kase.deviceName }}</p>
         <p v-if="kase.policyName" class="inline-flex items-center gap-1">
-          <component :is="ICONS.ShieldWarning" :size="11" weight="Linear" /> <span class="font-semibold text-gray-900">Policy:</span> {{ kase.policyName }}
+          <component :is="ICONS.ShieldWarning" :size="11" weight="Linear" /> <span class="font-semibold text-gray-900 dark:text-white">Policy:</span> {{ kase.policyName }}
         </p>
         <p v-if="kase.violationIds?.length">{{ kase.violationIds.length }} linked violation{{ kase.violationIds.length === 1 ? "" : "s" }}</p>
         <p v-if="kase.workflowRunIds?.length" class="inline-flex items-center gap-1">
@@ -338,7 +338,7 @@ function timeAgo(isoString?: string | null): string | null {
       <section v-if="kase.deviceId && workflowsStore.workflows.length > 0">
         <p class="text-[10px] font-semibold uppercase mb-1 text-gray-400">Run a workflow against this device</p>
         <div class="flex items-center gap-2">
-          <select v-model="runWorkflowId" class="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500">
+          <select v-model="runWorkflowId" class="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500">
             <option value="">Select workflow…</option>
             <option v-for="w in workflowsStore.workflows" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
@@ -369,10 +369,10 @@ function timeAgo(isoString?: string | null): string | null {
             {{ ref.remoteStatus }}
           </span>
         </span>
-        <button :disabled="busy === 'retry'" title="Re-fire ticketing/chat dispatch for this case — useful after fixing a broken integration" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 disabled:opacity-50" @click="retryIntegrations">
+        <button :disabled="busy === 'retry'" title="Re-fire ticketing/chat dispatch for this case — useful after fixing a broken integration" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50" @click="retryIntegrations">
           <component :is="ICONS.Refresh" :size="11" weight="Linear" :class="busy === 'retry' ? 'animate-spin' : ''" /> {{ busy === "retry" ? "Retrying…" : "Retry integrations" }}
         </button>
-        <button v-if="hasTicketRefs" :disabled="busy === 'sync'" title="Pull the linked ticket's live status from Jira/ServiceNow" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 disabled:opacity-50" @click="syncTicket">
+        <button v-if="hasTicketRefs" :disabled="busy === 'sync'" title="Pull the linked ticket's live status from Jira/ServiceNow" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50" @click="syncTicket">
           <component :is="ICONS.Refresh" :size="11" weight="Linear" :class="busy === 'sync' ? 'animate-spin' : ''" /> {{ busy === "sync" ? "Syncing…" : "Sync ticket status" }}
         </button>
       </section>
@@ -415,7 +415,7 @@ function timeAgo(isoString?: string | null): string | null {
           <input
             v-model="enrichValue"
             placeholder="IP, domain, URL, file hash, or email…"
-            class="flex-1 px-3 py-2 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500"
+            class="flex-1 px-3 py-2 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500"
             @keyup.enter="enrich(false)"
           />
           <button :disabled="busy === 'enrich' || !enrichValue.trim()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 shrink-0" @click="enrich(false)">
@@ -423,11 +423,11 @@ function timeAgo(isoString?: string | null): string | null {
           </button>
         </div>
         <div class="space-y-1.5">
-          <div v-for="r in reversedThreatIntel" :key="r.id" class="px-3 py-2 rounded-lg text-xs border border-gray-200 bg-gray-50">
+          <div v-for="r in reversedThreatIntel" :key="r.id" class="px-3 py-2 rounded-lg text-xs border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
             <div class="flex items-center justify-between gap-2 mb-0.5">
-              <span class="font-mono truncate text-gray-900">{{ r.ioc }}</span>
+              <span class="font-mono truncate text-gray-900 dark:text-white">{{ r.ioc }}</span>
               <div class="flex items-center gap-1 shrink-0">
-                <span v-if="r.cached" :title="`Cached result from ${r.checkedAt ? timeAgo(r.checkedAt) : 'earlier'} — not a fresh lookup`" class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">
+                <span v-if="r.cached" :title="`Cached result from ${r.checkedAt ? timeAgo(r.checkedAt) : 'earlier'} — not a fresh lookup`" class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500 dark:text-gray-400">
                   Cached
                 </span>
                 <span
@@ -456,8 +456,8 @@ function timeAgo(isoString?: string | null): string | null {
           <component :is="ICONS.ChatRound" :size="12" weight="Linear" /> Notes ({{ kase.notes?.length || 0 }})
         </p>
         <div class="space-y-2 mb-3">
-          <div v-for="n in kase.notes" :key="n.id" class="px-3 py-2 rounded-lg text-xs border border-gray-200 bg-gray-50">
-            <p class="text-gray-900">{{ n.text }}</p>
+          <div v-for="n in kase.notes" :key="n.id" class="px-3 py-2 rounded-lg text-xs border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+            <p class="text-gray-900 dark:text-white">{{ n.text }}</p>
             <p class="mt-1 text-gray-400">{{ n.authorEmail }} · {{ timeAgo(n.createdAt) }}</p>
           </div>
         </div>
@@ -466,7 +466,7 @@ function timeAgo(isoString?: string | null): string | null {
             v-model="noteText"
             placeholder="Add a note…"
             rows="2"
-            class="flex-1 px-3 py-2 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 resize-none focus:ring-2 focus:ring-brand-500"
+            class="flex-1 px-3 py-2 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-brand-500"
           />
           <button :disabled="busy === 'note' || !noteText.trim()" class="px-3 py-2 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 shrink-0" @click="addNote">Add</button>
         </div>
@@ -481,7 +481,7 @@ function timeAgo(isoString?: string | null): string | null {
           <div v-for="t in reversedTimeline" :key="t.id" class="flex gap-2.5 text-xs">
             <div class="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" :style="{ backgroundColor: PRIMARY_BLUE }" />
             <div class="min-w-0">
-              <p class="text-gray-900">{{ t.message }}</p>
+              <p class="text-gray-900 dark:text-white">{{ t.message }}</p>
               <p class="text-gray-400">{{ TIMELINE_LABEL[t.type] ?? t.type }} · {{ t.actor }} · {{ timeAgo(t.at) }}</p>
             </div>
           </div>

@@ -47,7 +47,7 @@ const available = computed(() => policies.value.filter((p) => !excluded.value.ha
         v-model="search"
         autofocus
         placeholder="Search policies…"
-        class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+        class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
       />
     </div>
     <div v-if="isLoading" class="flex items-center justify-center py-8">
@@ -58,11 +58,11 @@ const available = computed(() => policies.value.filter((p) => !excluded.value.ha
       <button
         v-for="p in available"
         :key="p.id"
-        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors hover:bg-gray-50"
+        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
         @click="emit('select', p)"
       >
         <component :is="ICONS.ShieldCheck" :size="13" weight="Linear" class="text-gray-400" />
-        <span class="text-gray-900">{{ p.name }}</span>
+        <span class="text-gray-900 dark:text-white">{{ p.name }}</span>
       </button>
       <p v-if="available.length === 0" class="text-xs text-center py-6 text-gray-400">
         {{ policies.length === 0 ? "No policies found for this platform." : "No more policies available to assign." }}

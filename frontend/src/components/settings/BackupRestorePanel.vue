@@ -140,26 +140,26 @@ onMounted(async () => {
 <template>
   <div class="space-y-6 max-w-2xl">
     <div>
-      <h3 class="text-sm font-bold mb-2 text-gray-900">Backup &amp; Restore</h3>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Backup &amp; Restore</h3>
       <p class="text-[11px] mb-2 text-gray-400">Dashboard layout only (widgets, webhook URL, SMTP settings) — not Policies, Workflows, or other workspace config. See "Full Workspace Configuration" below for that.</p>
     </div>
 
     <Alert v-if="dashboardImportError" type="danger">{{ dashboardImportError }}</Alert>
     <Alert v-if="dashboardImportMessage" type="success">{{ dashboardImportMessage }}</Alert>
 
-    <div class="flex gap-4 p-5 rounded-xl border border-gray-200 bg-white shadow-sm">
-      <button class="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-brand-50 hover:border-brand-500 hover:text-brand-600 transition-colors" @click="exportDashboard">
+    <div class="flex gap-4 p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+      <button class="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-brand-50 hover:border-brand-500 hover:text-brand-600 transition-colors" @click="exportDashboard">
         <component :is="ICONS.Download" :size="16" weight="Linear" /> Export JSON
       </button>
-      <label class="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 cursor-pointer hover:bg-brand-50 hover:border-brand-500 hover:text-brand-600 transition-colors">
+      <label class="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 cursor-pointer hover:bg-brand-50 hover:border-brand-500 hover:text-brand-600 transition-colors">
         <component :is="ICONS.CloudDownload" :size="16" weight="Linear" /> Import JSON
         <input type="file" accept=".json" class="hidden" @change="importDashboard" />
       </label>
     </div>
 
     <div>
-      <h3 class="text-sm font-bold mb-2 text-gray-900">Full Workspace Configuration</h3>
-      <p class="text-[11px] mb-2 leading-relaxed text-gray-500">
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Full Workspace Configuration</h3>
+      <p class="text-[11px] mb-2 leading-relaxed text-gray-500 dark:text-gray-400">
         Compliance Policies, Workflows, Triggers, Integrations, Case Auto-Run Rules, Case SLA thresholds, Threat Intel providers, the Applivery inbound webhook config, the Action Library, App Lists, the Script Library, and dashboard settings — everything configured for the <strong>{{ auth.orgSlug }}</strong> workspace, bundled into one file. Use this for disaster recovery or to migrate a workspace's configuration to another deployment.
       </p>
       <p class="text-[11px] mb-4 font-medium text-red-600">
@@ -174,10 +174,10 @@ onMounted(async () => {
       <Alert v-if="errorMsg" type="danger">{{ errorMsg }}</Alert>
       <Alert v-if="message" type="info">{{ message }}</Alert>
 
-      <div class="p-5 rounded-xl border border-gray-200 bg-white space-y-4" :class="canManage() ? '' : 'opacity-60'">
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-4" :class="canManage() ? '' : 'opacity-60'">
         <div class="flex gap-4">
           <Button variant="ghost" class="flex-1" :disabled="!canManage()" :loading="exporting" @click="exportConfig">Export configuration</Button>
-          <label class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 text-sm font-medium" :class="canManage() ? 'cursor-pointer hover:bg-gray-50' : 'cursor-not-allowed'">
+          <label class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium" :class="canManage() ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5' : 'cursor-not-allowed'">
             Choose import file
             <input type="file" accept=".json" class="hidden" :disabled="!canManage()" @change="onImportFileChosen" />
           </label>
@@ -186,20 +186,20 @@ onMounted(async () => {
         <button
           v-if="canManage() && auth.organizations.filter((o) => (o.slug ?? o._id ?? o.id) !== auth.orgSlug).length > 0"
           type="button"
-          class="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-500 hover:bg-brand-50 hover:border-brand-500 hover:text-brand-600 transition-colors"
+          class="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-brand-50 hover:border-brand-500 hover:text-brand-600 transition-colors"
           @click="cloneModalOpen = true"
         >
           <component :is="ICONS.Command" :size="14" weight="Linear" /> Copy from another workspace instead
         </button>
         <p class="text-[10px] -mt-2 text-gray-400">Only works while this workspace ({{ auth.orgSlug }}) has no configuration yet — a one-time bootstrap, not a merge. If it already has config, use Export/Import above instead.</p>
 
-        <div v-if="importBundle" class="pt-3 border-t border-gray-100">
-          <p class="text-xs font-semibold mb-1 text-gray-900">
+        <div v-if="importBundle" class="pt-3 border-t border-gray-100 dark:border-gray-800">
+          <p class="text-xs font-semibold mb-1 text-gray-900 dark:text-white">
             Bundle from workspace "{{ importBundle.workspaceSlug }}" — exported {{ importBundle.exportedAt ? new Date(importBundle.exportedAt).toLocaleString() : "unknown time" }}
           </p>
-          <p class="text-[11px] mb-3 text-gray-500">Select which items to import. Each selected item OVERWRITES the current one in this workspace ({{ auth.orgSlug }}) — this is a restore, not a merge.</p>
+          <p class="text-[11px] mb-3 text-gray-500 dark:text-gray-400">Select which items to import. Each selected item OVERWRITES the current one in this workspace ({{ auth.orgSlug }}) — this is a restore, not a merge.</p>
           <div class="space-y-1.5 max-h-56 overflow-y-auto">
-            <label v-for="key in Object.keys(importBundle.data)" :key="key" class="flex items-center gap-2 text-xs cursor-pointer text-gray-900">
+            <label v-for="key in Object.keys(importBundle.data)" :key="key" class="flex items-center gap-2 text-xs cursor-pointer text-gray-900 dark:text-white">
               <input type="checkbox" v-model="importSelected[key]" :disabled="!canManage()" />
               {{ CONFIG_STORE_LABELS[key] || key }}
               <span class="text-gray-400">({{ itemCount(importBundle.data[key]) }})</span>

@@ -182,11 +182,11 @@ async function runTest(dryRun: boolean) {
         />
       </div>
       <div class="flex flex-wrap gap-4">
-        <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.enabled" /> Enabled</label>
-        <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.notifyOnOpen" /> Notify on open</label>
-        <label v-if="form.type !== 'jira' && form.type !== 'servicenow'" class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.notifyOnClose" /> Notify on close</label>
-        <label v-if="form.type === 'jira' || form.type === 'servicenow'" class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.autoCloseCaseOnRemoteResolve" /> Auto-close case when ticket resolves</label>
-        <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.notifyOnSystemHealth" /> Page on background-job failure</label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.enabled" /> Enabled</label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.notifyOnOpen" /> Notify on open</label>
+        <label v-if="form.type !== 'jira' && form.type !== 'servicenow'" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.notifyOnClose" /> Notify on close</label>
+        <label v-if="form.type === 'jira' || form.type === 'servicenow'" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.autoCloseCaseOnRemoteResolve" /> Auto-close case when ticket resolves</label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.notifyOnSystemHealth" /> Page on background-job failure</label>
       </div>
       </div>
 

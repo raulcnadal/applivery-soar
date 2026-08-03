@@ -137,11 +137,11 @@ async function selectTab(tabId: string) {
 
 <template>
   <div class="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" @click.self="emit('close')">
-    <div class="w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col bg-white border border-gray-200" style="max-height: 90vh">
+    <div class="w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700" style="max-height: 90vh">
       <!-- HEADER -->
-      <div class="flex justify-between items-center p-6 border-b border-gray-200 shrink-0">
+      <div class="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 shrink-0">
         <div class="flex items-center gap-2">
-          <h2 class="text-xl font-bold flex items-center gap-2 text-gray-900">
+          <h2 class="text-xl font-bold flex items-center gap-2 text-gray-900 dark:text-white">
             <component :is="ICONS.Settings" :size="20" weight="Linear" class="text-brand-600" /> Platform Settings
           </h2>
           <HelpIcon slug="settings" :anchor="helpAnchor" title="Settings admin guide" />
@@ -153,13 +153,13 @@ async function selectTab(tabId: string) {
 
       <!-- BODY: left-nav categories + single content pane -->
       <div class="flex flex-1 overflow-hidden">
-        <div class="w-56 shrink-0 border-r border-gray-200 overflow-y-auto p-3 space-y-1 bg-gray-50/60">
+        <div class="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-1 bg-gray-50/60">
           <button
             v-for="tab in visibleTabs"
             :key="tab.id"
             type="button"
             class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-[13px] transition-colors"
-            :class="activeTab === tab.id ? 'bg-brand-50 text-brand-600 font-semibold' : 'text-gray-500 font-medium hover:bg-gray-100'"
+            :class="activeTab === tab.id ? 'bg-brand-50 text-brand-600 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium hover:bg-gray-100 dark:hover:bg-white/10'"
             @click="selectTab(tab.id)"
           >
             <component :is="tab.icon" :size="15" weight="Linear" class="shrink-0" />
@@ -170,7 +170,7 @@ async function selectTab(tabId: string) {
         <div class="flex-1 min-w-0 overflow-y-auto p-8 bg-gray-50/30">
           <template v-if="activeTab === 'integrations'">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-gray-900">Ticketing &amp; Chat</h3>
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white">Ticketing &amp; Chat</h3>
               <Button size="sm" @click="openNewIntegration">New integration</Button>
             </div>
             <Alert v-if="integrationsStore.error" type="danger">{{ integrationsStore.error }}</Alert>
@@ -179,7 +179,7 @@ async function selectTab(tabId: string) {
 
           <template v-else-if="activeTab === 'threat-intel'">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-gray-900">Threat Intel</h3>
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white">Threat Intel</h3>
               <Button size="sm" @click="openNewProvider">New provider</Button>
             </div>
             <Alert v-if="threatIntelStore.error" type="danger">{{ threatIntelStore.error }}</Alert>
@@ -188,7 +188,7 @@ async function selectTab(tabId: string) {
 
           <template v-else-if="activeTab === 'case-autorun'">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-gray-900">Case Auto-Run Rules</h3>
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white">Case Auto-Run Rules</h3>
               <Button size="sm" @click="openNewRule">New rule</Button>
             </div>
             <CaseAutoRunRulesTable :rules="casesStore.autoRunRules" :is-loading="false" @edit="editRule" @delete="deleteRule" />
@@ -196,7 +196,7 @@ async function selectTab(tabId: string) {
 
           <template v-else-if="activeTab === 'triggers'">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-gray-900">Inbound Webhooks</h3>
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white">Inbound Webhooks</h3>
               <Button size="sm" @click="openNewTrigger">New trigger</Button>
             </div>
             <p class="text-xs leading-relaxed mb-4 max-w-2xl text-gray-400">
@@ -207,7 +207,7 @@ async function selectTab(tabId: string) {
           </template>
 
           <template v-else>
-            <h3 class="text-sm font-bold mb-4 text-gray-900">{{ visibleTabs.find((t) => t.id === activeTab)?.label }}</h3>
+            <h3 class="text-sm font-bold mb-4 text-gray-900 dark:text-white">{{ visibleTabs.find((t) => t.id === activeTab)?.label }}</h3>
             <GeneralSettingsForm v-if="activeTab === 'general'" />
             <SmtpSettingsForm v-else-if="activeTab === 'smtp'" />
             <AccountPanel v-else-if="activeTab === 'account'" />
@@ -230,7 +230,7 @@ async function selectTab(tabId: string) {
       </div>
 
       <!-- FOOTER -->
-      <div class="p-6 border-t border-gray-200 shrink-0 flex justify-end">
+      <div class="p-6 border-t border-gray-200 dark:border-gray-700 shrink-0 flex justify-end">
         <Button @click="emit('close')">Apply &amp; Save Configuration</Button>
       </div>
     </div>

@@ -113,10 +113,10 @@ async function save() {
       <Input v-model="form.description" label="Description" />
 
       <div>
-        <p class="text-sm font-medium text-gray-700 mb-2">Feature access</p>
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Feature access</p>
         <div class="space-y-2">
           <div v-for="area in FEATURE_AREAS" :key="area" class="grid grid-cols-2 gap-3 items-center">
-            <span class="text-sm text-gray-700">{{ FEATURE_AREA_LABELS[area] }}</span>
+            <span class="text-sm text-gray-700 dark:text-gray-200">{{ FEATURE_AREA_LABELS[area] }}</span>
             <Input
               :model-value="form.featureAccess[area]"
               type="select"
@@ -128,9 +128,9 @@ async function save() {
       </div>
 
       <div>
-        <p class="text-sm font-medium text-gray-700 mb-2">High-risk actions</p>
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">High-risk actions</p>
         <div class="space-y-2">
-          <label v-for="a in RISKY_ACTIONS" :key="a.key" class="flex items-start gap-2 text-sm text-gray-700">
+          <label v-for="a in RISKY_ACTIONS" :key="a.key" class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-200">
             <input type="checkbox" class="mt-0.5" v-model="form.riskyActions[a.key]" />
             <span>{{ a.label }}<span v-if="a.description" class="text-gray-400"> ({{ a.description }})</span></span>
           </label>
@@ -145,14 +145,14 @@ async function save() {
       <p class="text-xs text-gray-400 -mt-3">Collaborators whose Applivery tags match one of these values earn this role. A role with none mapped is currently unreachable.</p>
 
       <div v-if="devicesStore.segments.length > 0">
-        <p class="text-sm font-medium text-gray-700 mb-2">Segments (optional)</p>
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Segments (optional)</p>
         <p class="text-xs text-gray-400 mb-2">Scopes which segment-tagged Compliance Policies this role's holders can manage. Leave empty for no restriction.</p>
         <div class="flex flex-wrap gap-2">
           <label
             v-for="seg in devicesStore.segments"
             :key="seg.id"
-            class="flex items-center gap-1.5 text-xs border border-gray-200 rounded-full px-2.5 py-1 cursor-pointer"
-            :class="form.segmentIds.includes(seg.id) ? 'bg-brand-50 border-brand-300 text-brand-700' : 'text-gray-600'"
+            class="flex items-center gap-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-full px-2.5 py-1 cursor-pointer"
+            :class="form.segmentIds.includes(seg.id) ? 'bg-brand-50 border-brand-300 text-brand-700' : 'text-gray-600 dark:text-gray-300'"
           >
             <input type="checkbox" class="hidden" :checked="form.segmentIds.includes(seg.id)" @change="toggleSegment(seg.id)" />
             {{ seg.name }}

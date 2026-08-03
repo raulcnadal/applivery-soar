@@ -270,16 +270,16 @@ async function saveWidgetForm(w: DashboardWidget) {
              (App.jsx's draggableHandle=".drag-handle" on the content div),
              not the header — so header buttons stay clickable while
              dragging is active. -->
-        <div class="h-full w-full rounded-2xl border border-gray-200 shadow-sm bg-white flex flex-col overflow-visible relative">
+        <div class="h-full w-full rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800 flex flex-col overflow-visible relative">
           <div class="px-5 pt-4 pb-3 flex justify-between items-center shrink-0 border-b" style="border-color: #e9eaec4d">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').bg, color: iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').color }">
                 <component :is="iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').component" :size="15" weight="Linear" />
               </div>
-              <span class="text-[13px] font-medium text-gray-900 truncate">{{ widgets.find((w) => w.id === item.i)?.title }}</span>
+              <span class="text-[13px] font-medium text-gray-900 dark:text-white truncate">{{ widgets.find((w) => w.id === item.i)?.title }}</span>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
-              <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 transition-colors text-gray-500" @click="openWidgetInfo(item.i)">
+              <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-500 dark:text-gray-400" @click="openWidgetInfo(item.i)">
                 <component :is="ICONS.InfoCircle" :size="13" weight="Linear" />
               </button>
               <div class="relative">
@@ -292,24 +292,24 @@ async function saveWidgetForm(w: DashboardWidget) {
                   <component :is="ICONS.MenuDots" :size="14" weight="Linear" />
                 </button>
                 <div v-if="openMenuFor === item.i" class="fixed inset-0 z-[199]" @click="closeMenu" />
-                <div v-if="openMenuFor === item.i" class="absolute right-0 top-full mt-1 rounded-xl z-[200] min-w-[168px] flex flex-col py-1.5 overflow-hidden bg-white border border-gray-100 shadow-xl">
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900" @click="removeWidget(item.i)">
+                <div v-if="openMenuFor === item.i" class="absolute right-0 top-full mt-1 rounded-xl z-[200] min-w-[168px] flex flex-col py-1.5 overflow-hidden bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 shadow-xl">
+                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="removeWidget(item.i)">
                     <component :is="ICONS.EyeClosed" :size="13" weight="Linear" class="text-gray-400" />
                     <span class="text-[13px] font-normal">Hide widget</span>
                   </button>
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900" @click="closeMenu">
+                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="closeMenu">
                     <component :is="ICONS.TransferHorizontal" :size="13" weight="Linear" class="text-gray-400" />
                     <span class="text-[13px] font-normal">Move widget</span>
                   </button>
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900" @click="openBuilder(widgets.find((w) => w.id === item.i)!)">
+                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="openBuilder(widgets.find((w) => w.id === item.i)!)">
                     <component :is="ICONS.Pen" :size="13" weight="Linear" class="text-gray-400" />
                     <span class="text-[13px] font-normal">Edit widget</span>
                   </button>
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900" @click="toggleWidgetLock(item.i)">
+                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="toggleWidgetLock(item.i)">
                     <component :is="isWidgetLocked(item.i) ? ICONS.LockUnlocked : ICONS.Lock" :size="13" weight="Linear" class="text-gray-400" />
                     <span class="text-[13px] font-normal">{{ isWidgetLocked(item.i) ? "Unlock position" : "Lock position" }}</span>
                   </button>
-                  <div class="h-px mx-3 my-1 bg-gray-100" />
+                  <div class="h-px mx-3 my-1 bg-gray-100 dark:bg-gray-700" />
                   <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80" style="color: #ef4444" @click="removeWidget(item.i)">
                     <component :is="ICONS.TrashBinTrash" :size="13" weight="Linear" style="color: #ef4444" />
                     <span class="text-[13px] font-normal">Remove widget</span>

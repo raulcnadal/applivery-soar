@@ -55,11 +55,11 @@ function openResult(run: WorkflowRun) {
         <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Recent runs</p>
       </div>
       <div class="flex items-center gap-2">
-        <input v-model="dateFrom" type="date" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500" @change="refresh()" />
+        <input v-model="dateFrom" type="date" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500" @change="refresh()" />
         <span class="text-xs text-gray-400">to</span>
-        <input v-model="dateTo" type="date" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500" @change="refresh()" />
+        <input v-model="dateTo" type="date" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500" @change="refresh()" />
         <a :href="store.exportRunsUrl(dateFrom || undefined, dateTo || undefined)" target="_blank" rel="noopener">
-          <button class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700">
+          <button class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200">
             <component :is="ICONS.Download" :size="12" weight="Linear" /> Export CSV
           </button>
         </a>
@@ -68,24 +68,24 @@ function openResult(run: WorkflowRun) {
 
     <p v-if="store.runs.length === 0" class="text-xs py-4 text-gray-400">No runs in this range yet.</p>
     <template v-else>
-      <div class="rounded-xl overflow-hidden border border-gray-200">
+      <div class="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
         <button
           v-for="(run, i) in store.runs"
           :key="run.id"
-          class="w-full flex items-center gap-3 px-4 py-3 text-left bg-white hover:bg-gray-50 transition-colors"
-          :class="i > 0 ? 'border-t border-gray-200' : ''"
+          class="w-full flex items-center gap-3 px-4 py-3 text-left bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+          :class="i > 0 ? 'border-t border-gray-200 dark:border-gray-700' : ''"
           @click="openResult(run)"
         >
           <component :is="ICONS[runStatusMeta(run).icon]" :size="14" weight="Linear" :class="runStatusMeta(run).spin ? 'animate-spin' : ''" :style="{ color: runStatusMeta(run).color }" />
           <div class="min-w-0">
-            <span class="text-sm font-medium truncate block text-gray-900">{{ run.workflowName || "Workflow" }}</span>
+            <span class="text-sm font-medium truncate block text-gray-900 dark:text-white">{{ run.workflowName || "Workflow" }}</span>
             <span v-if="run.targetDescription" class="text-[11px] truncate block text-gray-400">{{ run.targetDescription }}</span>
           </div>
           <span class="text-xs shrink-0 ml-auto text-gray-400">{{ run.total ?? run.results?.length ?? 0 }} device{{ (run.total ?? run.results?.length) === 1 ? "" : "s" }}</span>
           <span class="text-xs shrink-0" :style="{ color: runStatusMeta(run).color }">{{ runStatusMeta(run).label }}</span>
         </button>
       </div>
-      <button v-if="store.runs.length < store.runsTotal" class="mt-3 w-full py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700" @click="loadMore">Show more</button>
+      <button v-if="store.runs.length < store.runsTotal" class="mt-3 w-full py-2 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="loadMore">Show more</button>
     </template>
 
     <RunResultModal :open="resultOpen" :run="openRun" @close="resultOpen = false" @complete="refresh()" />

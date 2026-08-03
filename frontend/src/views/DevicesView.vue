@@ -77,7 +77,7 @@ onMounted(async () => {
     <header class="flex justify-between items-start mb-8 flex-wrap gap-3">
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-semibold leading-tight text-gray-900">Devices</h1>
+          <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white">Devices</h1>
           <HelpIcon slug="devices" title="Devices admin guide" />
           <span
             v-if="String(segmentsStore.selectedSegment.id) !== '0'"
@@ -92,8 +92,8 @@ onMounted(async () => {
         </p>
       </div>
       <div class="flex items-center gap-3 shrink-0 ml-auto">
-        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 bg-gray-50 shrink-0">
-          <span class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap bg-white text-gray-900 shadow-sm">
+        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
+          <span class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm">
             <component :is="ICONS.Smartphone" :size="14" weight="Linear" /> Devices
           </span>
           <RouterLink to="/playground" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-gray-400 transition-all">
@@ -117,17 +117,19 @@ onMounted(async () => {
     <!-- Compliance source toggle -->
     <div class="flex items-center gap-2 mb-6 flex-wrap">
       <span class="text-xs font-medium text-gray-400">Compliance shown:</span>
-      <div class="inline-flex rounded-lg overflow-hidden border border-gray-200">
+      <div class="inline-flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
         <button
-          class="px-3 py-1.5 text-xs font-medium transition-colors border-r border-gray-200"
-          :style="{ backgroundColor: store.complianceSource === 'applivery' ? PRIMARY_BLUE : '#fff', color: store.complianceSource === 'applivery' ? '#fff' : '#111827' }"
+          class="px-3 py-1.5 text-xs font-medium transition-colors border-r border-gray-200 dark:border-gray-700"
+          :class="store.complianceSource !== 'applivery' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white' : ''"
+          :style="{ backgroundColor: store.complianceSource === 'applivery' ? PRIMARY_BLUE : undefined, color: store.complianceSource === 'applivery' ? '#fff' : undefined }"
           @click="handleComplianceSourceChange('applivery')"
         >
           Applivery flag
         </button>
         <button
           class="px-3 py-1.5 text-xs font-medium transition-colors"
-          :style="{ backgroundColor: store.complianceSource === 'policy' ? PRIMARY_BLUE : '#fff', color: store.complianceSource === 'policy' ? '#fff' : '#111827' }"
+          :class="store.complianceSource !== 'policy' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white' : ''"
+          :style="{ backgroundColor: store.complianceSource === 'policy' ? PRIMARY_BLUE : undefined, color: store.complianceSource === 'policy' ? '#fff' : undefined }"
           @click="handleComplianceSourceChange('policy')"
         >
           Compliance Policies
@@ -137,7 +139,7 @@ onMounted(async () => {
         v-if="store.complianceSource === 'policy'"
         v-model="store.selectedPolicyId"
         title="Scope the table to devices violating one specific Compliance Policy"
-        class="px-3 py-1.5 rounded-lg text-xs font-medium outline-none border border-gray-200 bg-white"
+        class="px-3 py-1.5 rounded-lg text-xs font-medium outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
       >
         <option value="">All policies</option>
         <option v-for="p in store.policies" :key="p.id" :value="p.id">{{ p.name }}</option>
@@ -147,7 +149,7 @@ onMounted(async () => {
     </div>
 
     <!-- Fleet risk trend sparkline -->
-    <div v-if="store.riskTrend.length >= 2" class="flex items-center gap-3 mb-6 px-4 py-2.5 rounded-xl border border-gray-200 bg-white">
+    <div v-if="store.riskTrend.length >= 2" class="flex items-center gap-3 mb-6 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
       <component :is="ICONS.GraphUp" :size="14" weight="Linear" class="shrink-0 text-gray-400" />
       <span class="text-xs font-semibold shrink-0 text-gray-400">Fleet risk trend</span>
       <div class="flex items-end gap-0.5 h-6 shrink-0">

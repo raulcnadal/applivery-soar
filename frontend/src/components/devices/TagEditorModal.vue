@@ -54,7 +54,7 @@ function removeTag(t: string) {
         v-model="draft"
         autofocus
         placeholder="Add a tag and press Enter…"
-        class="flex-1 px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+        class="flex-1 px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
         @keydown.enter.prevent="addTag"
       />
       <button
@@ -65,7 +65,7 @@ function removeTag(t: string) {
       </button>
     </div>
     <div class="flex gap-3 justify-end pt-4">
-      <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700" @click="emit('close')">Cancel</button>
+      <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('close')">Cancel</button>
       <button
         class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
         @click="emit('save', tags)"

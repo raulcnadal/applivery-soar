@@ -138,7 +138,7 @@ async function save() {
         <Input v-model="form.remotePath" label="Remote directory path" placeholder="/" />
       </template>
 
-      <label class="flex items-center gap-2 text-sm text-gray-700 pt-1"><input type="checkbox" v-model="form.enabled" /> Enabled</label>
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200 pt-1"><input type="checkbox" v-model="form.enabled" /> Enabled</label>
 
       <div class="flex items-center gap-2 pt-2">
         <Button :loading="isSaving" :disabled="!form.name" @click="save">{{ destination ? "Save changes" : "Create destination" }}</Button>

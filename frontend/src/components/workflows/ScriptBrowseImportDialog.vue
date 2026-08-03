@@ -57,8 +57,8 @@ async function importSelected() {
       <Alert v-if="errorMessage" type="danger">{{ errorMessage }}</Alert>
       <Alert v-if="resultMessage" type="success">{{ resultMessage }}</Alert>
 
-      <div v-if="scriptAssetsStore.isBrowsing" class="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center"><Spinner size="sm" /> Loading script Assets…</div>
-      <div v-else class="max-h-96 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+      <div v-if="scriptAssetsStore.isBrowsing" class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 py-6 justify-center"><Spinner size="sm" /> Loading script Assets…</div>
+      <div v-else class="max-h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700">
         <label v-for="a in items" :key="a.id" class="flex items-center gap-2 px-3 py-2 text-sm" :class="{ 'opacity-50': a.alreadyInLibrary }">
           <input type="checkbox" :disabled="a.alreadyInLibrary" :checked="selectedIds.has(a.id)" @change="toggle(a.id)" />
           <span class="flex-1">{{ a.name }} <span class="text-xs text-gray-400">({{ a.platform }})</span></span>

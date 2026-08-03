@@ -23,13 +23,13 @@ function onCreated(audience: { id: string; name: string }) {
   <div class="flex items-center gap-2">
     <select
       :value="props.value || ''"
-      class="flex-1 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500"
+      class="flex-1 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
       @change="emit('select', ($event.target as HTMLSelectElement).value)"
     >
       <option value="">{{ audiences.length ? "Select a Device Audience…" : "No Device Audiences found" }}</option>
       <option v-for="a in audiences" :key="a.id" :value="a.id">{{ a.name }}</option>
     </select>
-    <button type="button" class="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium shrink-0 border border-gray-200 text-gray-700" @click="isCreating = true">
+    <button type="button" class="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium shrink-0 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="isCreating = true">
       <component :is="ICONS.AddSquare" :size="12" weight="Linear" /> New
     </button>
   </div>

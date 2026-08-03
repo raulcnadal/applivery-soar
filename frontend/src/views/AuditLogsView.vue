@@ -154,7 +154,7 @@ onMounted(async () => {
   <main class="p-8 pb-16">
     <header class="flex justify-between items-start mb-8 flex-wrap gap-4">
       <div>
-        <h1 class="text-2xl font-semibold leading-tight flex items-center gap-2 text-gray-900">
+        <h1 class="text-2xl font-semibold leading-tight flex items-center gap-2 text-gray-900 dark:text-white">
           <component :is="ICONS.DocumentText" :size="22" weight="Linear" :style="{ color: PRIMARY_BLUE }" /> Audit Logs
           <HelpIcon slug="audit-logs" title="Audit Logs admin guide" />
         </h1>
@@ -165,7 +165,7 @@ onMounted(async () => {
       <div class="flex items-center gap-2 shrink-0">
         <button
           :disabled="store.isLoading"
-          class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 disabled:opacity-50"
+          class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
           @click="store.fetchLogs(buildFilters())"
         >
           <component :is="ICONS.Refresh" :size="14" weight="Linear" :class="store.isLoading ? 'animate-spin' : ''" /> Refresh
@@ -187,24 +187,24 @@ onMounted(async () => {
         <input
           v-model="searchInput"
           placeholder="Search by device, policy, workflow, actor…"
-          class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500"
+          class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500"
         />
       </div>
-      <select v-model="category" class="px-3 py-2 rounded-lg text-sm outline-none cursor-pointer border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500">
+      <select v-model="category" class="px-3 py-2 rounded-lg text-sm outline-none cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500">
         <option v-for="c in CATEGORIES" :key="c.id" :value="c.id">{{ c.label }}</option>
       </select>
-      <select v-model="severity" class="px-3 py-2 rounded-lg text-sm outline-none cursor-pointer border border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-brand-500">
+      <select v-model="severity" class="px-3 py-2 rounded-lg text-sm outline-none cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500">
         <option v-for="s in SEVERITIES" :key="s.id" :value="s.id">{{ s.label }}</option>
       </select>
-      <select v-if="store.actors.length > 0" v-model="actor" class="px-3 py-2 rounded-lg text-sm outline-none cursor-pointer border border-gray-200 bg-white text-gray-900 max-w-[160px] focus:ring-2 focus:ring-brand-500">
+      <select v-if="store.actors.length > 0" v-model="actor" class="px-3 py-2 rounded-lg text-sm outline-none cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white max-w-[160px] focus:ring-2 focus:ring-brand-500">
         <option value="">All actors</option>
         <option v-for="a in store.actors" :key="a" :value="a">{{ a === "system" ? "System" : a }}</option>
       </select>
-      <div class="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-gray-200 bg-white">
+      <div class="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <component :is="ICONS.Calendar" :size="13" weight="Linear" class="text-gray-400" />
-        <input v-model="dateFrom" type="date" class="text-sm outline-none bg-transparent text-gray-900" />
+        <input v-model="dateFrom" type="date" class="text-sm outline-none bg-transparent text-gray-900 dark:text-white" />
         <span class="text-xs text-gray-400">to</span>
-        <input v-model="dateTo" type="date" class="text-sm outline-none bg-transparent text-gray-900" />
+        <input v-model="dateTo" type="date" class="text-sm outline-none bg-transparent text-gray-900 dark:text-white" />
       </div>
       <button v-if="hasFilters" class="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium text-gray-400" @click="clearFilters">
         <component :is="ICONS.CloseCircle" :size="13" weight="Linear" /> Clear filters
@@ -217,24 +217,24 @@ onMounted(async () => {
       <div class="w-8 h-8 border-2 rounded-full animate-spin mb-4" :style="{ borderColor: `${PRIMARY_BLUE}30`, borderTopColor: PRIMARY_BLUE }" />
       <span class="text-xs uppercase tracking-widest font-bold text-gray-400">Loading audit log…</span>
     </div>
-    <div v-else-if="store.items.length === 0" class="flex flex-col items-center justify-center py-16 px-6 text-center rounded-xl border border-dashed border-gray-200">
-      <div class="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 bg-gray-50">
+    <div v-else-if="store.items.length === 0" class="flex flex-col items-center justify-center py-16 px-6 text-center rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
+      <div class="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 bg-gray-50 dark:bg-gray-900/50">
         <component :is="ICONS.DocumentText" :size="22" weight="Linear" class="text-gray-400" />
       </div>
-      <p class="text-sm font-semibold mb-1 text-gray-900">{{ hasFilters ? "No events match these filters" : "No audit events yet" }}</p>
+      <p class="text-sm font-semibold mb-1 text-gray-900 dark:text-white">{{ hasFilters ? "No events match these filters" : "No audit events yet" }}</p>
       <p class="text-sm max-w-xs text-gray-400">
         {{ hasFilters ? "Try widening the date range or clearing a filter." : "Policy evaluations and admin actions will show up here as they happen." }}
       </p>
     </div>
     <template v-else>
       <p class="text-xs mb-3 text-gray-400">Showing {{ store.items.length }} of {{ store.total }} event{{ store.total === 1 ? "" : "s" }}</p>
-      <div class="rounded-xl overflow-hidden border border-gray-200">
-        <div v-for="(e, i) in store.items" :key="e.id" class="flex items-start gap-3 px-4 py-3 bg-white" :class="i > 0 ? 'border-t border-gray-100' : ''">
+      <div class="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div v-for="(e, i) in store.items" :key="e.id" class="flex items-start gap-3 px-4 py-3 bg-white dark:bg-gray-800" :class="i > 0 ? 'border-t border-gray-100 dark:border-gray-800' : ''">
           <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5" :style="{ backgroundColor: `${categoryMeta(e.category).color}15`, color: categoryMeta(e.category).color }">
             <component :is="ICONS[categoryMeta(e.category).icon]" :size="14" weight="Linear" />
           </div>
           <div class="min-w-0 flex-1">
-            <p class="text-sm text-gray-900">{{ e.message }}</p>
+            <p class="text-sm text-gray-900 dark:text-white">{{ e.message }}</p>
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               <span class="text-[11px] text-gray-400">{{ formatTimestamp(e.timestamp) }}</span>
               <span class="text-[11px] text-gray-400">·</span>
@@ -255,7 +255,7 @@ onMounted(async () => {
       <div v-if="store.items.length < store.total" class="flex justify-center mt-4">
         <button
           :disabled="store.isLoadingMore"
-          class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 disabled:opacity-50"
+          class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
           @click="store.loadMore(buildFilters())"
         >
           {{ store.isLoadingMore ? "Loading…" : `Load more (${store.total - store.items.length} remaining)` }}

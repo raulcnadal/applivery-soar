@@ -18,13 +18,13 @@ function bgFor(platform: string) {
 
 <template>
   <div class="relative shrink-0" :style="{ width: `${size ?? 40}px`, height: `${size ?? 40}px` }">
-    <div class="w-full h-full rounded-full flex items-center justify-center bg-gray-100">
+    <div class="w-full h-full rounded-full flex items-center justify-center bg-gray-100 dark:bg-gray-700">
       <svg :width="(size ?? 40) * 0.5" :height="(size ?? 40) * 0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-gray-400">
         <rect x="6" y="2" width="12" height="20" rx="2" stroke-width="1.6" />
         <line x1="10" y1="18" x2="14" y2="18" stroke-width="1.6" stroke-linecap="round" />
       </svg>
     </div>
-    <div class="absolute rounded-full flex items-center justify-center bg-white p-0.5" style="bottom: -2px; left: -2px; width: 20px; height: 20px">
+    <div class="absolute rounded-full flex items-center justify-center bg-white dark:bg-gray-800 p-0.5" style="bottom: -2px; left: -2px; width: 20px; height: 20px">
       <div class="w-full h-full rounded-full flex items-center justify-center" :style="{ backgroundColor: bgFor(platform) }">
         <svg v-if="platform === 'apple' || platform === 'macos'" viewBox="0 0 14 14" width="9" height="9" fill="white">
           <path d="M11.05 7.44c-.02-1.88 1.54-2.79 1.61-2.83-.88-1.28-2.24-1.46-2.72-1.48-1.16-.12-2.26.68-2.85.68-.59 0-1.51-.66-2.48-.64-1.27.02-2.44.74-3.09 1.87C.05 7.04.92 10.5 2.38 12.37c.72.99 1.57 2.1 2.69 2.06 1.08-.04 1.49-.7 2.79-.7 1.3 0 1.67.7 2.81.68 1.16-.02 1.89-1.01 2.6-2 .82-1.14 1.16-2.26 1.18-2.32-.03-.01-2.38-.91-2.4-2.65zM9.07 2.13C9.65 1.43 10.04.48 9.93-.5 9.05-.46 7.98.09 7.37.79c-.55.62-.99 1.59-.87 2.53.98.07 1.97-.47 2.57-1.19z" />

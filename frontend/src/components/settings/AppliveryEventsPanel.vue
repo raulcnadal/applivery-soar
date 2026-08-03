@@ -69,42 +69,42 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-4">
-    <p class="text-[11px] leading-relaxed text-gray-500">
+    <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
       Lets Applivery push its own events (device enrolled, build processed, certificate expiring…) into this app — open a Case and/or run a Workflow automatically. The inbound receiver ships in a later phase; this tab lets you review and pre-configure rules now.
     </p>
     <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
     <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
 
-    <div v-if="store.config" class="p-4 rounded-xl border border-gray-200 bg-white space-y-3">
+    <div v-if="store.config" class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3">
       <div class="flex items-center justify-between">
-        <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="enabled" /> Webhook enabled</label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="enabled" /> Webhook enabled</label>
         <Button size="sm" variant="ghost" :loading="busy" @click="rotateSecret">Rotate secret</Button>
       </div>
       <div>
-        <label class="block text-[10px] font-medium mb-1 text-gray-500">Webhook secret (paste into Applivery's Integrations settings)</label>
-        <code class="block px-2.5 py-2 rounded-lg text-[11px] font-mono border border-gray-200 bg-gray-50 break-all">{{ store.config.secret }}</code>
+        <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Webhook secret (paste into Applivery's Integrations settings)</label>
+        <code class="block px-2.5 py-2 rounded-lg text-[11px] font-mono border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 break-all">{{ store.config.secret }}</code>
       </div>
     </div>
 
-    <div class="overflow-x-auto border border-gray-200 rounded-xl bg-white">
+    <div class="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800">
       <table class="min-w-full text-sm">
-        <thead class="bg-gray-50 border-b border-gray-200">
+        <thead class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
           <tr>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Event</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Enabled</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Open case</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Case severity</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Run workflow</th>
-            <th class="text-left px-4 py-3 font-medium text-gray-500">Workflow</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Event</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Enabled</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Open case</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Case severity</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Run workflow</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Workflow</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in rules" :key="r.actionKey" class="border-b border-gray-100 last:border-0">
-            <td class="px-4 py-3 font-medium text-gray-900">{{ r.label || r.actionKey }}</td>
+          <tr v-for="r in rules" :key="r.actionKey" class="border-b border-gray-100 dark:border-gray-800 last:border-0">
+            <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ r.label || r.actionKey }}</td>
             <td class="px-4 py-3"><input type="checkbox" v-model="r.enabled" /></td>
             <td class="px-4 py-3"><input type="checkbox" v-model="r.openCase" /></td>
             <td class="px-4 py-3">
-              <select v-model="r.caseSeverity" class="rounded-lg px-2 py-1.5 text-xs border border-gray-200">
+              <select v-model="r.caseSeverity" class="rounded-lg px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700">
                 <option v-for="s in ['low', 'medium', 'high', 'critical']" :key="s" :value="s">{{ s }}</option>
               </select>
             </td>
@@ -128,16 +128,16 @@ onMounted(async () => {
     </div>
 
     <div v-if="store.config && store.config.recentEvents.length > 0">
-      <h4 class="text-xs font-semibold mb-2 text-gray-900">Recent events</h4>
+      <h4 class="text-xs font-semibold mb-2 text-gray-900 dark:text-white">Recent events</h4>
       <div class="space-y-1.5">
         <div
           v-for="ev in store.config.recentEvents.slice(0, 15)"
           :key="ev.id"
-          class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-[11px] border border-gray-200 bg-white"
+          class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-[11px] border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
         >
           <div class="min-w-0 flex items-center gap-2">
-            <span class="font-medium truncate text-gray-900">{{ ev.actionKey }}</span>
-            <span v-if="ev.deviceName" class="truncate text-gray-500">· {{ ev.deviceName }}</span>
+            <span class="font-medium truncate text-gray-900 dark:text-white">{{ ev.actionKey }}</span>
+            <span v-if="ev.deviceName" class="truncate text-gray-500 dark:text-gray-400">· {{ ev.deviceName }}</span>
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <span
@@ -146,7 +146,7 @@ onMounted(async () => {
             >
               {{ ev.outcome.replace(/_/g, " ") }}
             </span>
-            <span class="text-gray-500">{{ timeAgo(ev.receivedAt) }}</span>
+            <span class="text-gray-500 dark:text-gray-400">{{ timeAgo(ev.receivedAt) }}</span>
           </div>
         </div>
       </div>

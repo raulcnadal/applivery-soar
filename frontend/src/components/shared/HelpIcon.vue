@@ -22,7 +22,7 @@ const open = ref(false);
     type="button"
     :title="title"
     :aria-label="title"
-    class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 transition-colors shrink-0 text-gray-400"
+    class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0 text-gray-400"
     @click="open = true"
   >
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

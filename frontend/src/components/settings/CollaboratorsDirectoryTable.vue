@@ -20,21 +20,21 @@ function nameOf(c: Collaborator): string {
 </script>
 
 <template>
-  <div class="overflow-x-auto border border-gray-200 rounded-xl bg-white">
+  <div class="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800">
     <table class="min-w-full text-sm">
-      <thead class="bg-gray-50 border-b border-gray-200">
+      <thead class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
         <tr>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Name</th>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Email</th>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Applivery role</th>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Detected tags</th>
-          <th class="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Name</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Email</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Applivery role</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Detected tags</th>
+          <th class="text-right px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Actions</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="c in collaborators" :key="idOf(c)" class="border-b border-gray-100 last:border-0">
-          <td class="px-4 py-3 font-medium text-gray-900">{{ nameOf(c) }}</td>
-          <td class="px-4 py-3 text-gray-500">{{ emailOf(c) }}</td>
+        <tr v-for="c in collaborators" :key="idOf(c)" class="border-b border-gray-100 dark:border-gray-800 last:border-0">
+          <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ nameOf(c) }}</td>
+          <td class="px-4 py-3 text-gray-500 dark:text-gray-400">{{ emailOf(c) }}</td>
           <td class="px-4 py-3">
             <StatusPill :label="c.role_normalized || 'unassigned'" :color="c.role_normalized === 'owner' ? 'green' : 'gray'" />
           </td>

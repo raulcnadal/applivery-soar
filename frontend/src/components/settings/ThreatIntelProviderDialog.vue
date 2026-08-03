@@ -101,7 +101,7 @@ async function runTest() {
         <Input v-model="form.apiKey" type="password" label="API key" :disabled="!canEdit()" />
       </template>
 
-      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="form.enabled" :disabled="!canEdit()" /> Enabled</label>
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.enabled" :disabled="!canEdit()" /> Enabled</label>
 
       <div class="flex items-center gap-2 pt-2">
         <Button :loading="isSaving" :disabled="!canEdit() || !form.name" @click="save">{{ provider ? "Save changes" : "Add provider" }}</Button>

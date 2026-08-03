@@ -29,27 +29,27 @@ async function copyUrl(trigger: Trigger) {
 </script>
 
 <template>
-  <div class="overflow-x-auto border border-gray-200 rounded-xl bg-white">
+  <div class="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800">
     <table class="min-w-full text-sm">
-      <thead class="bg-gray-50 border-b border-gray-200">
+      <thead class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
         <tr>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Name</th>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Status</th>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Device lookup</th>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Fired</th>
-          <th class="text-left px-4 py-3 font-medium text-gray-500">Webhook URL</th>
-          <th class="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Name</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Status</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Device lookup</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Fired</th>
+          <th class="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Webhook URL</th>
+          <th class="text-right px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Actions</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="t in triggers" :key="t.id" class="border-b border-gray-100 last:border-0">
+        <tr v-for="t in triggers" :key="t.id" class="border-b border-gray-100 dark:border-gray-800 last:border-0">
           <td class="px-4 py-3">
-            <p class="font-medium text-gray-900">{{ t.name }}</p>
+            <p class="font-medium text-gray-900 dark:text-white">{{ t.name }}</p>
             <p v-if="t.description" class="text-xs text-gray-400">{{ t.description }}</p>
           </td>
           <td class="px-4 py-3"><StatusPill :label="t.enabled ? 'Enabled' : 'Disabled'" :color="t.enabled ? 'green' : 'gray'" /></td>
-          <td class="px-4 py-3 text-gray-600 text-xs">{{ t.deviceLookupField || "None (device-less)" }}</td>
-          <td class="px-4 py-3 text-gray-500 text-xs">
+          <td class="px-4 py-3 text-gray-600 dark:text-gray-300 text-xs">{{ t.deviceLookupField || "None (device-less)" }}</td>
+          <td class="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">
             {{ t.fireCount }}x<span v-if="t.lastFiredAt"> — last {{ new Date(t.lastFiredAt).toLocaleString() }}</span>
           </td>
           <td class="px-4 py-3">

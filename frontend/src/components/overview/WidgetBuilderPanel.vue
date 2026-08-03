@@ -116,7 +116,7 @@ function blockDims(id: "small" | "half" | "full") {
 
     <!-- Sliding panel from the left, full height -->
     <div
-      class="fixed top-0 bottom-0 left-0 z-[109] flex flex-col shadow-2xl border-r bg-white transition-transform duration-300"
+      class="fixed top-0 bottom-0 left-0 z-[109] flex flex-col shadow-2xl border-r bg-white dark:bg-gray-800 transition-transform duration-300"
       style="width: 400px; border-color: #e9eaec"
       :style="{ transform: open ? 'translateX(0)' : 'translateX(-100%)' }"
     >
@@ -126,9 +126,9 @@ function blockDims(id: "small" | "half" | "full") {
           <div class="w-8 h-8 rounded-xl flex items-center justify-center" :style="{ backgroundColor: PRIMARY_BLUE + '15', color: PRIMARY_BLUE }">
             <component :is="isEdit ? ICONS.Pen : ICONS.AddCircle" :size="16" weight="Linear" />
           </div>
-          <h2 class="text-base font-bold text-gray-900">{{ isEdit ? "Edit Widget" : "Add Widget" }}</h2>
+          <h2 class="text-base font-bold text-gray-900 dark:text-white">{{ isEdit ? "Edit Widget" : "Add Widget" }}</h2>
         </div>
-        <button type="button" class="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:opacity-70 transition-colors" style="background-color: rgba(107,114,128,0.12)" @click="emit('close')">
+        <button type="button" class="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:opacity-70 transition-colors" style="background-color: rgba(107,114,128,0.12)" @click="emit('close')">
           <component :is="ICONS.CloseCircle" :size="15" weight="Linear" />
         </button>
       </div>
@@ -138,38 +138,38 @@ function blockDims(id: "small" | "half" | "full") {
         <div class="p-6 flex flex-col gap-7">
           <!-- Widget Title -->
           <div>
-            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500">Widget Title</label>
+            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500 dark:text-gray-400">Widget Title</label>
             <input
               v-model="local.title"
               type="text"
               placeholder="e.g. Current Fleet Status"
-              class="w-full rounded-xl px-4 py-3 outline-none text-sm border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-gray-50 text-gray-900"
+              class="w-full rounded-xl px-4 py-3 outline-none text-sm border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white"
               style="border-color: #e9eaec"
             />
           </div>
 
           <!-- Data Source -->
           <div>
-            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500">Data Source</label>
+            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500 dark:text-gray-400">Data Source</label>
             <div class="relative">
               <div
-                class="w-full rounded-xl px-4 py-3 flex justify-between items-center border cursor-pointer transition-colors bg-gray-50"
+                class="w-full rounded-xl px-4 py-3 flex justify-between items-center border cursor-pointer transition-colors bg-gray-50 dark:bg-gray-900/50"
                 style="border-color: #e9eaec"
                 @click="isSourceDropdownOpen = !isSourceDropdownOpen"
               >
-                <span class="text-sm font-medium text-gray-900">{{ selectedSourceLabel }}</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedSourceLabel }}</span>
                 <component :is="ICONS.AltArrowDown" :size="16" weight="Linear" class="text-gray-400" />
               </div>
               <div v-if="isSourceDropdownOpen" class="fixed inset-0 z-[110]" @click="isSourceDropdownOpen = false" />
-              <div v-if="isSourceDropdownOpen" class="absolute top-full left-0 w-full mt-2 rounded-xl shadow-xl border z-[111] overflow-y-auto max-h-64 bg-white" style="border-color: #e9eaec">
+              <div v-if="isSourceDropdownOpen" class="absolute top-full left-0 w-full mt-2 rounded-xl shadow-xl border z-[111] overflow-y-auto max-h-64 bg-white dark:bg-gray-800" style="border-color: #e9eaec">
                 <div v-for="group in groupedCatalog" :key="group.group">
                   <div class="px-4 py-2 mt-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">{{ group.group }}</div>
                   <button
                     v-for="item in group.items"
                     :key="item.id"
                     type="button"
-                    class="w-full text-left px-5 py-2.5 text-sm hover:bg-black/5 transition-colors flex items-center gap-3"
-                    :style="{ color: local.stat === item.id ? PRIMARY_BLUE : '#111827' }"
+                    class="w-full text-left px-5 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-3"
+                    :style="{ color: local.stat === item.id ? PRIMARY_BLUE : 'var(--foreground)' }"
                     @click="selectSource(item.id)"
                   >
                     {{ item.label }}
@@ -181,11 +181,11 @@ function blockDims(id: "small" | "half" | "full") {
 
           <!-- Filters -->
           <div v-if="hasAnyFilters(local.stat)">
-            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500">Filters</label>
-            <div class="p-4 rounded-xl border flex flex-col gap-4 bg-gray-50" style="border-color: #e9eaec">
+            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500 dark:text-gray-400">Filters</label>
+            <div class="p-4 rounded-xl border flex flex-col gap-4 bg-gray-50 dark:bg-gray-900/50" style="border-color: #e9eaec">
               <div v-if="FILTER_SOURCES_WITH_OS.has(local.stat)">
-                <label class="block text-xs font-medium mb-2 text-gray-500">{{ local.stat === "mdm_devices" ? "Operating System" : "Target OS" }}</label>
-                <select :value="local.filters.type || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white text-gray-900" style="border-color: #e9eaec" @change="updateFilter('type', ($event.target as HTMLSelectElement).value)">
+                <label class="block text-xs font-medium mb-2 text-gray-500 dark:text-gray-400">{{ local.stat === "mdm_devices" ? "Operating System" : "Target OS" }}</label>
+                <select :value="local.filters.type || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" style="border-color: #e9eaec" @change="updateFilter('type', ($event.target as HTMLSelectElement).value)">
                   <option value="all">All OS</option>
                   <option value="apple">iOS / iPadOS</option>
                   <option value="macos">macOS</option>
@@ -195,21 +195,21 @@ function blockDims(id: "small" | "half" | "full") {
               </div>
               <template v-if="FILTER_SOURCES_WITH_COMPLIANCE.has(local.stat)">
                 <div>
-                  <label class="block text-xs font-medium mb-2 text-gray-500">Compliance Status</label>
-                  <select :value="local.filters.complianceStatus || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white text-gray-900" style="border-color: #e9eaec" @change="updateFilter('complianceStatus', ($event.target as HTMLSelectElement).value)">
+                  <label class="block text-xs font-medium mb-2 text-gray-500 dark:text-gray-400">Compliance Status</label>
+                  <select :value="local.filters.complianceStatus || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" style="border-color: #e9eaec" @change="updateFilter('complianceStatus', ($event.target as HTMLSelectElement).value)">
                     <option value="all">All devices</option>
                     <option value="compliant">Compliant only</option>
                     <option value="non_compliant">Non-compliant only</option>
                   </select>
                 </div>
                 <label class="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" :checked="!!local.filters.inactive24h" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" @change="updateFilter('inactive24h', ($event.target as HTMLInputElement).checked)" />
-                  <span class="text-sm font-medium text-gray-900">Not reported in last 24h</span>
+                  <input type="checkbox" :checked="!!local.filters.inactive24h" class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500" @change="updateFilter('inactive24h', ($event.target as HTMLInputElement).checked)" />
+                  <span class="text-sm font-medium text-gray-900 dark:text-white">Not reported in last 24h</span>
                 </label>
               </template>
               <div v-if="FILTER_SOURCES_WITH_ROLE.has(local.stat)">
-                <label class="block text-xs font-medium mb-2 text-gray-500">Role</label>
-                <select :value="local.filters.role || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white text-gray-900" style="border-color: #e9eaec" @change="updateFilter('role', ($event.target as HTMLSelectElement).value)">
+                <label class="block text-xs font-medium mb-2 text-gray-500 dark:text-gray-400">Role</label>
+                <select :value="local.filters.role || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" style="border-color: #e9eaec" @change="updateFilter('role', ($event.target as HTMLSelectElement).value)">
                   <option value="all">All roles</option>
                   <option value="owner">Owner</option>
                   <option value="admin">Admin</option>
@@ -218,8 +218,8 @@ function blockDims(id: "small" | "half" | "full") {
                 </select>
               </div>
               <div v-if="FILTER_SOURCES_WITH_AUTH_ORIGIN.has(local.stat)">
-                <label class="block text-xs font-medium mb-2 text-gray-500">Authentication Origin</label>
-                <select :value="local.filters.authOrigin || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white text-gray-900" style="border-color: #e9eaec" @change="updateFilter('authOrigin', ($event.target as HTMLSelectElement).value)">
+                <label class="block text-xs font-medium mb-2 text-gray-500 dark:text-gray-400">Authentication Origin</label>
+                <select :value="local.filters.authOrigin || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" style="border-color: #e9eaec" @change="updateFilter('authOrigin', ($event.target as HTMLSelectElement).value)">
                   <option value="all">All origins</option>
                   <option value="dashboard">Dashboard</option>
                   <option value="sso">SSO</option>
@@ -230,7 +230,7 @@ function blockDims(id: "small" | "half" | "full") {
 
           <!-- Visual Style -->
           <div v-if="local.stat">
-            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500">Visual Style</label>
+            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500 dark:text-gray-400">Visual Style</label>
             <div class="grid grid-cols-2 gap-2.5">
               <button
                 v-for="type in availableChartTypes"
@@ -241,15 +241,15 @@ function blockDims(id: "small" | "half" | "full") {
                 @click="pickChartType(type.id)"
               >
                 <component :is="resolveIcon(CHART_ICON_NAMES[type.id])" :size="18" weight="Linear" :style="{ color: local.type === type.id ? PRIMARY_BLUE : '#6B7280' }" />
-                <div class="font-semibold text-[12px] mt-2" :style="{ color: local.type === type.id ? PRIMARY_BLUE : '#111827' }">{{ type.label }}</div>
-                <div class="text-[10px] leading-tight mt-0.5 text-center text-gray-500">{{ type.desc }}</div>
+                <div class="font-semibold text-[12px] mt-2" :style="{ color: local.type === type.id ? PRIMARY_BLUE : 'var(--foreground)' }">{{ type.label }}</div>
+                <div class="text-[10px] leading-tight mt-0.5 text-center text-gray-500 dark:text-gray-400">{{ type.desc }}</div>
               </button>
             </div>
           </div>
 
           <!-- Card Size -->
           <div v-if="local.stat">
-            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500">Card Size</label>
+            <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500 dark:text-gray-400">Card Size</label>
             <div class="flex gap-2.5">
               <button
                 v-for="size in WIDGET_SIZES"
@@ -260,8 +260,8 @@ function blockDims(id: "small" | "half" | "full") {
                 @click="pickSize(size.id)"
               >
                 <div class="rounded-[3px]" :style="{ ...blockDims(size.id), backgroundColor: local.size === size.id ? PRIMARY_BLUE : '#6B7280', opacity: local.size === size.id ? 0.7 : 0.25 }" />
-                <span class="font-semibold text-[12px]" :style="{ color: local.size === size.id ? PRIMARY_BLUE : '#111827' }">{{ size.label }}</span>
-                <span class="text-[10px] text-gray-500">{{ size.desc }}</span>
+                <span class="font-semibold text-[12px]" :style="{ color: local.size === size.id ? PRIMARY_BLUE : 'var(--foreground)' }">{{ size.label }}</span>
+                <span class="text-[10px] text-gray-500 dark:text-gray-400">{{ size.desc }}</span>
               </button>
             </div>
           </div>
@@ -269,8 +269,8 @@ function blockDims(id: "small" | "half" | "full") {
       </div>
 
       <!-- Footer -->
-      <div class="px-6 py-4 border-t flex justify-between gap-3 shrink-0 bg-white" style="border-color: #e9eaec">
-        <button type="button" class="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors hover:opacity-70 text-gray-500 border" style="border-color: #e9eaec" @click="emit('close')">Cancel</button>
+      <div class="px-6 py-4 border-t flex justify-between gap-3 shrink-0 bg-white dark:bg-gray-800" style="border-color: #e9eaec">
+        <button type="button" class="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors hover:opacity-70 text-gray-500 dark:text-gray-400 border" style="border-color: #e9eaec" @click="emit('close')">Cancel</button>
         <button
           type="button"
           class="flex-1 py-2.5 rounded-xl font-semibold text-sm text-white transition-colors disabled:opacity-40"

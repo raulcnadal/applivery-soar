@@ -12,6 +12,7 @@ import { computed, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import { getWidgetInfo } from "../../lib/widgetDescriptions";
 import { colorFor, humanLabel, brighten, PRIMARY_BLUE } from "../../lib/widgetVisuals";
+import { useUiStore } from "../../stores/ui";
 import type { DashboardWidget } from "../../lib/analyticsCatalog";
 import type { WidgetResponse } from "../../lib/widgetData";
 import type { DateRangeValue } from "./DateRangePicker.vue";
@@ -24,12 +25,21 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>();
 
-const CARD_BG = "#FFFFFF";
-const BORDER = "#E5E7EB";
-const TEXT = "#111827";
-const TEXT_MUTED = "#6B7280";
-const BG = "#F9FAFB";
-const GRID_LINE = "#F3F4F6";
+// Theme-aware: this modal renders ECharts (SVG canvas) content, which
+// Tailwind's `dark:` classes can't reach, plus DOM chrome that could use
+// classes but is kept as :style bindings for parity with the original's own
+// `activeTheme`-driven inline styles (App.jsx:1227+ reads activeTheme.card
+// /border/text/textMuted the same way at nearly every usage site below).
+// Exposed as plain computeds (not a single `theme` object) so every existing
+// template `:style="{ color: TEXT }"` binding below keeps working unchanged
+// — Vue auto-unwraps a computed ref referenced bare in a template.
+const uiStore = useUiStore();
+const CARD_BG = computed(() => uiStore.activeTheme.card);
+const BORDER = computed(() => uiStore.activeTheme.border);
+const TEXT = computed(() => uiStore.activeTheme.text);
+const TEXT_MUTED = computed(() => uiStore.activeTheme.textMuted);
+const BG = computed(() => uiStore.activeTheme.bg);
+const GRID_LINE = computed(() => uiStore.activeTheme.gridLine);
 
 const info = computed(() => getWidgetInfo(props.widget?.stat, props.widget?.title));
 const chartData = computed(() => props.data?.chartData ?? []);
@@ -54,8 +64,15 @@ function fmtDate(d: Date | null | undefined): string {
   return d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 }
 
-const tooltipBase = { backgroundColor: CARD_BG, borderColor: BORDER, textStyle: { color: TEXT, fontFamily: "Outfit, sans-serif", fontSize: 12 } };
-const axisLabelStyle = { color: TEXT_MUTED, fontSize: 11, fontFamily: "Outfit, sans-serif" };
+// Called fresh from within each build*Option() below (not module-level
+// consts) so they pick up the current theme value every time a chart is
+// (re-)rendered, same as those functions already re-read chartData.value.
+function tooltipBase() {
+  return { backgroundColor: CARD_BG.value, borderColor: BORDER.value, textStyle: { color: TEXT.value, fontFamily: "Outfit, sans-serif", fontSize: 12 } };
+}
+function axisLabelStyle() {
+  return { color: TEXT_MUTED.value, fontSize: 11, fontFamily: "Outfit, sans-serif" };
+}
 
 // ── Donut / Pie — identical ghost+solid two-series as the live widget ──
 function buildDonutOption() {
@@ -64,7 +81,7 @@ function buildDonutOption() {
   const slices = chartData.value.map((d, i) => ({ name: humanLabel(d.name), value: d.value, color: colorFor(props.widget.stat, d.name, i) }));
   return {
     backgroundColor: "transparent",
-    tooltip: { trigger: "item", formatter: "{b}: <b>{c}</b> ({d}%)", ...tooltipBase },
+    tooltip: { trigger: "item", formatter: "{b}: <b>{c}</b> ({d}%)", ...tooltipBase() },
     legend: { show: false },
     series: [
       {
@@ -95,8 +112,8 @@ function buildDonutOption() {
             left: "center",
             top: "center",
             children: [
-              { type: "text", style: { text: total.value.toLocaleString(), font: "700 32px Outfit,sans-serif", fill: TEXT, textAlign: "center", y: -16 } },
-              { type: "text", style: { text: "Total", font: "400 13px Outfit,sans-serif", fill: TEXT_MUTED, textAlign: "center", y: 22 } },
+              { type: "text", style: { text: total.value.toLocaleString(), font: "700 32px Outfit,sans-serif", fill: TEXT.value, textAlign: "center", y: -16 } },
+              { type: "text", style: { text: "Total", font: "400 13px Outfit,sans-serif", fill: TEXT_MUTED.value, textAlign: "center", y: 22 } },
             ],
           },
         ]
@@ -108,11 +125,11 @@ function buildDonutOption() {
 function buildBarOption() {
   return {
     backgroundColor: "transparent",
-    tooltip: { trigger: "item", ...tooltipBase },
+    tooltip: { trigger: "item", ...tooltipBase() },
     legend: { show: false },
     grid: { top: 12, bottom: 40, left: 48, right: 16 },
-    xAxis: { type: "category", data: chartData.value.map((d) => humanLabel(d.name)), axisLabel: axisLabelStyle, axisLine: { show: false }, axisTick: { show: false } },
-    yAxis: { type: "value", axisLabel: axisLabelStyle, splitLine: { lineStyle: { color: GRID_LINE } }, axisLine: { show: false }, axisTick: { show: false } },
+    xAxis: { type: "category", data: chartData.value.map((d) => humanLabel(d.name)), axisLabel: axisLabelStyle(), axisLine: { show: false }, axisTick: { show: false } },
+    yAxis: { type: "value", axisLabel: axisLabelStyle(), splitLine: { lineStyle: { color: GRID_LINE.value } }, axisLine: { show: false }, axisTick: { show: false } },
     series: [
       {
         type: "bar",
@@ -137,11 +154,11 @@ function buildBarOption() {
 function buildLineOption() {
   return {
     backgroundColor: "transparent",
-    tooltip: { trigger: "axis", ...tooltipBase },
+    tooltip: { trigger: "axis", ...tooltipBase() },
     legend: { show: false },
     grid: { top: 12, bottom: 40, left: 48, right: 16 },
-    xAxis: { type: "category", data: trendData.value?.labels ?? [], axisLabel: axisLabelStyle, axisLine: { show: false }, axisTick: { show: false } },
-    yAxis: { type: "value", axisLabel: axisLabelStyle, splitLine: { lineStyle: { color: GRID_LINE } }, axisLine: { show: false }, axisTick: { show: false } },
+    xAxis: { type: "category", data: trendData.value?.labels ?? [], axisLabel: axisLabelStyle(), axisLine: { show: false }, axisTick: { show: false } },
+    yAxis: { type: "value", axisLabel: axisLabelStyle(), splitLine: { lineStyle: { color: GRID_LINE.value } }, axisLine: { show: false }, axisTick: { show: false } },
     series: [
       {
         type: "line",
@@ -174,13 +191,13 @@ function buildGaugeOption() {
         max: 100,
         pointer: { show: false },
         progress: { show: true, overlap: false, roundCap: true, clip: false, itemStyle: { color, borderWidth: 0 } },
-        axisLine: { lineStyle: { width: 18, color: [[1, BORDER]] } },
+        axisLine: { lineStyle: { width: 18, color: [[1, BORDER.value]] } },
         splitLine: { show: false },
         axisTick: { show: false },
         axisLabel: { show: false },
         data: [{ value: val, name: primaryItem ? humanLabel(primaryItem.name) : "" }],
-        title: { fontSize: 14, color: TEXT_MUTED, offsetCenter: [0, "30%"], fontFamily: "Outfit,sans-serif" },
-        detail: { fontSize: 36, color: TEXT, fontWeight: "bold", offsetCenter: [0, "-5%"], formatter: "{value}%", fontFamily: "Outfit,sans-serif" },
+        title: { fontSize: 14, color: TEXT_MUTED.value, offsetCenter: [0, "30%"], fontFamily: "Outfit,sans-serif" },
+        detail: { fontSize: 36, color: TEXT.value, fontWeight: "bold", offsetCenter: [0, "-5%"], formatter: "{value}%", fontFamily: "Outfit,sans-serif" },
       },
     ],
   };
@@ -191,14 +208,14 @@ function buildRadarOption() {
   const maxVal = Math.max(...chartData.value.map((d) => d.value), 0) * 1.2 || 10;
   return {
     backgroundColor: "transparent",
-    tooltip: { trigger: "item", ...tooltipBase },
+    tooltip: { trigger: "item", ...tooltipBase() },
     radar: {
       indicator: chartData.value.map((d) => ({ name: humanLabel(d.name), max: maxVal })),
       radius: "65%",
-      axisName: { color: TEXT_MUTED, fontSize: 11, fontFamily: "Outfit,sans-serif" },
-      splitLine: { lineStyle: { color: GRID_LINE } },
+      axisName: { color: TEXT_MUTED.value, fontSize: 11, fontFamily: "Outfit,sans-serif" },
+      splitLine: { lineStyle: { color: GRID_LINE.value } },
       splitArea: { show: false },
-      axisLine: { lineStyle: { color: BORDER } },
+      axisLine: { lineStyle: { color: BORDER.value } },
     },
     series: [
       {
@@ -222,14 +239,14 @@ function buildRadarOption() {
 function buildListOption() {
   return {
     backgroundColor: "transparent",
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, ...tooltipBase },
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, ...tooltipBase() },
     legend: { show: false },
     grid: { top: 8, bottom: 8, left: 8, right: 60, containLabel: true },
     xAxis: { type: "value", show: false },
     yAxis: {
       type: "category",
       data: chartData.value.map((d) => humanLabel(d.name)).reverse(),
-      axisLabel: { color: TEXT_MUTED, fontSize: 11, fontFamily: "Outfit,sans-serif" },
+      axisLabel: { color: TEXT_MUTED.value, fontSize: 11, fontFamily: "Outfit,sans-serif" },
       axisLine: { show: false },
       axisTick: { show: false },
     },
@@ -239,7 +256,7 @@ function buildListOption() {
         barMaxWidth: 16,
         emphasis: { focus: "self", blurScope: "global" },
         blur: { itemStyle: { opacity: 0.25 } },
-        label: { show: true, position: "right", color: TEXT_MUTED, fontSize: 11, fontFamily: "Outfit,sans-serif", formatter: "{c}" },
+        label: { show: true, position: "right", color: TEXT_MUTED.value, fontSize: 11, fontFamily: "Outfit,sans-serif", formatter: "{c}" },
         data: chartData.value
           .map((d, i) => {
             const color = colorFor(props.widget.stat, d.name, i);

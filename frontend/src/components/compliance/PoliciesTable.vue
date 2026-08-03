@@ -87,13 +87,13 @@ async function remove(p: CompliancePolicy) {
     description="Define what &quot;out of compliance&quot; means and link it to a workflow to run automatically."
   />
   <div v-else class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    <div v-for="p in policies" :key="p.id" class="rounded-xl p-4 shadow-sm bg-white border border-gray-200">
+    <div v-for="p in policies" :key="p.id" class="rounded-xl p-4 shadow-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
       <div class="flex items-start gap-2 mb-2">
         <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: `${WARNING}12` }">
           <component :is="ICONS.ShieldWarning" :size="16" weight="Linear" :style="{ color: WARNING }" />
         </div>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold truncate text-gray-900">{{ p.name }}</p>
+          <p class="text-sm font-semibold truncate text-gray-900 dark:text-white">{{ p.name }}</p>
           <p class="text-xs truncate text-gray-400">{{ conditionSummary(p) }}</p>
         </div>
       </div>
@@ -145,13 +145,13 @@ async function remove(p: CompliancePolicy) {
       <div class="flex items-center gap-2">
         <button
           title="Evaluate just this policy now"
-          class="p-1.5 rounded-lg border border-gray-200 text-gray-700 disabled:opacity-40"
+          class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40"
           :disabled="evaluatingPolicyId !== null"
           @click="evaluate(p)"
         >
           <component :is="ICONS.Refresh" :size="13" weight="Linear" :class="evaluatingPolicyId === p.id ? 'animate-spin' : ''" />
         </button>
-        <button class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700" @click="emit('edit', p)">
+        <button class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('edit', p)">
           <component :is="ICONS.Pen" :size="12" weight="Linear" /> Edit
         </button>
         <button class="p-1.5 rounded-lg" style="color: #ef4444" @click="remove(p)">

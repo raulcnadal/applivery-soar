@@ -115,7 +115,7 @@ function timeAgo(isoString?: string | null): string | null {
           v-if="currentUserEmail"
           :disabled="!canBulkTriage"
           :title="!canBulkTriage ? notPermittedTitle : undefined"
-          class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 disabled:opacity-50"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
           @click="bulkAssign"
         >
           Assign to me
@@ -132,18 +132,18 @@ function timeAgo(isoString?: string | null): string | null {
       </div>
     </div>
 
-    <div class="rounded-xl overflow-hidden border border-gray-200">
+    <div class="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
       <div
         v-for="(c, i) in cases"
         :key="c.id"
-        class="w-full flex items-center gap-3 px-4 py-3 bg-white hover:bg-gray-50 transition-colors"
-        :class="i > 0 ? 'border-t border-gray-200' : ''"
+        class="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+        :class="i > 0 ? 'border-t border-gray-200 dark:border-gray-700' : ''"
       >
         <input type="checkbox" :checked="selectedIds.has(c.id)" class="shrink-0" @click.stop @change="toggleOne(c.id)" />
         <button class="flex items-center gap-3 flex-1 min-w-0 text-left" @click="emit('open', c)">
           <component :is="ICONS[(SOURCE_META[c.source]?.icon ?? 'Folder') as keyof typeof ICONS]" :size="15" weight="Linear" class="shrink-0 text-gray-400" />
           <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium truncate text-gray-900">{{ c.title }}</p>
+            <p class="text-sm font-medium truncate text-gray-900 dark:text-white">{{ c.title }}</p>
             <p class="text-xs truncate text-gray-400">
               {{ SOURCE_META[c.source]?.label ?? c.source }}{{ c.assignee ? ` · Assigned to ${c.assignee}` : " · Unassigned" }} · Updated {{ timeAgo(c.updatedAt) }}
             </p>

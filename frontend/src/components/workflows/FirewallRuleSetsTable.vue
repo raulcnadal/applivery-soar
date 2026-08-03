@@ -33,7 +33,7 @@ async function remove(rs: FirewallRuleSet) {
 <template>
   <div>
     <div class="mb-4">
-      <h2 class="text-lg font-bold text-gray-900">Firewall Policy Library</h2>
+      <h2 class="text-lg font-bold text-gray-900 dark:text-white">Firewall Policy Library</h2>
       <p class="text-sm mt-1 max-w-2xl text-gray-400">
         Windows-only. Build a set of firewall rules once, then reference it from a workflow's "Apply Firewall Rule Set" and "Restore Firewall" steps. Every rule is tagged so it can be cleanly removed later — a device's normal firewall behavior returns automatically once the tagged rules are gone.
       </p>
@@ -41,12 +41,12 @@ async function remove(rs: FirewallRuleSet) {
 
     <div class="space-y-2.5 max-w-2xl">
       <EmptyState v-if="!isLoading && ruleSets.length === 0" title="Nothing in the library yet" description="Compose a named set of Windows Firewall rules — Isolate Device, Block Lateral Movement, etc. — to apply/restore from a workflow action." />
-      <div v-for="rs in withPosture" :key="rs.id" class="flex items-start gap-2.5 p-2.5 rounded-lg border border-gray-200 shadow-sm bg-white">
+      <div v-for="rs in withPosture" :key="rs.id" class="flex items-start gap-2.5 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
         <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" class="shrink-0 mt-0.5 text-gray-400" />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="text-xs font-semibold truncate text-gray-900">{{ rs.name }}</span>
-            <span class="text-[10px] px-2 py-0.5 rounded-full font-light border border-current/25 bg-gray-100 text-gray-400">
+            <span class="text-xs font-semibold truncate text-gray-900 dark:text-white">{{ rs.name }}</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-light border border-current/25 bg-gray-100 dark:bg-gray-700 text-gray-400">
               {{ rs.rules?.length || 0 }} rule{{ (rs.rules?.length || 0) === 1 ? "" : "s" }}
             </span>
             <span v-if="rs.ensureFirewallEnabled" class="text-[10px] px-2 py-0.5 rounded-full font-light border border-current/25" :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }">Enables Firewall</span>
@@ -63,7 +63,7 @@ async function remove(rs: FirewallRuleSet) {
         </button>
       </div>
 
-      <button class="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-gray-200 text-xs font-medium text-gray-400 hover:text-brand-600 hover:border-brand-500 transition-colors" @click="emit('new')">
+      <button class="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-400 hover:text-brand-600 hover:border-brand-500 transition-colors" @click="emit('new')">
         <component :is="ICONS.AddSquare" :size="13" weight="Linear" /> Add to library
       </button>
     </div>

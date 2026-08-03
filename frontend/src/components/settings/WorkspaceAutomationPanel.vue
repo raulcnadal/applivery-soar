@@ -37,12 +37,12 @@ async function removeCredential() {
     </p>
     <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
 
-    <div class="border border-gray-200 rounded-xl bg-white p-4 space-y-3">
+    <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4 space-y-3">
       <div class="flex items-center gap-2">
-        <span class="text-sm font-medium text-gray-700">Status:</span>
+        <span class="text-sm font-medium text-gray-700 dark:text-gray-200">Status:</span>
         <StatusPill :label="store.status.configured ? 'Configured' : 'Not configured'" :color="store.status.configured ? 'green' : 'gray'" />
       </div>
-      <p v-if="store.status.configured" class="text-sm text-gray-500">
+      <p v-if="store.status.configured" class="text-sm text-gray-500 dark:text-gray-400">
         Set by {{ store.status.configuredBy || "unknown" }} on {{ store.status.configuredAt ? new Date(store.status.configuredAt).toLocaleString() : "—" }}.
         Last refreshed: {{ store.status.lastRefreshedAt ? new Date(store.status.lastRefreshedAt).toLocaleString() : "never" }}.
       </p>

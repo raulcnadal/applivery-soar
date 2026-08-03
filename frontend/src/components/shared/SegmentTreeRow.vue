@@ -31,7 +31,7 @@ function onToggleExpand(e: Event) {
   <div>
     <div
       class="flex items-center py-2 cursor-pointer transition-colors mx-4 rounded-lg"
-      :class="isSelected() ? 'font-medium' : 'hover:bg-black/5'"
+      :class="isSelected() ? 'font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5'"
       :style="{ paddingLeft: `${4 + level * 24}px`, paddingRight: '12px', backgroundColor: isSelected() ? `${PRIMARY_BLUE}15` : 'transparent' }"
       @click="store.select({ id: node.id, name: node.name })"
     >
@@ -43,7 +43,7 @@ function onToggleExpand(e: Event) {
       </div>
       <div class="flex items-center gap-2 overflow-hidden w-full">
         <component :is="getSegmentIcon(node.icon)" :size="16" weight="Linear" :style="{ color: isSelected() ? PRIMARY_BLUE : getSegmentColor(node.color) }" />
-        <span class="text-sm truncate" :style="{ color: isSelected() ? PRIMARY_BLUE : '#111827' }">{{ node.name }}</span>
+        <span class="text-sm truncate" :style="{ color: isSelected() ? PRIMARY_BLUE : 'var(--foreground)' }">{{ node.name }}</span>
       </div>
     </div>
 

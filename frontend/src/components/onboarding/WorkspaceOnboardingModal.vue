@@ -78,14 +78,14 @@ async function clone() {
 
 <template>
   <div class="fixed inset-0 z-[280] flex items-center justify-center bg-black/60 p-4">
-    <div class="w-full max-w-lg rounded-2xl shadow-xl overflow-hidden flex flex-col bg-white" style="max-height: 88vh">
-      <div class="flex items-center justify-between px-5 py-4 shrink-0 border-b border-gray-100">
-        <h3 class="text-sm font-semibold text-gray-900">Set up this workspace</h3>
-        <button type="button" class="p-1 rounded-lg hover:opacity-70 text-gray-500" @click="startFromScratch">✕</button>
+    <div class="w-full max-w-lg rounded-2xl shadow-xl overflow-hidden flex flex-col bg-white dark:bg-gray-800" style="max-height: 88vh">
+      <div class="flex items-center justify-between px-5 py-4 shrink-0 border-b border-gray-100 dark:border-gray-800">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Set up this workspace</h3>
+        <button type="button" class="p-1 rounded-lg hover:opacity-70 text-gray-500 dark:text-gray-400" @click="startFromScratch">✕</button>
       </div>
 
       <div class="overflow-y-auto flex-1 px-5 py-4">
-        <p class="text-xs mb-4 text-gray-500">
+        <p class="text-xs mb-4 text-gray-500 dark:text-gray-400">
           This workspace doesn't have any Compliance Policies, Workflows, or other configuration yet.
           <template v-if="siblings.length > 0">
             You have access to other workspaces in this account — want to start from one of them instead of from scratch?
@@ -98,39 +98,39 @@ async function clone() {
           <button
             v-if="siblings.length > 0"
             type="button"
-            class="w-full flex items-start gap-3 px-4 py-3.5 rounded-xl border-2 border-gray-200 text-left transition-all hover:border-brand-500"
+            class="w-full flex items-start gap-3 px-4 py-3.5 rounded-xl border-2 border-gray-200 dark:border-gray-700 text-left transition-all hover:border-brand-500"
             @click="mode = 'copy'"
           >
             <div>
-              <p class="text-sm font-semibold text-gray-900">Copy configuration from another workspace</p>
-              <p class="text-xs mt-0.5 text-gray-500">Bring over Compliance Policies, Workflows, and other settings from a workspace you already have set up.</p>
+              <p class="text-sm font-semibold text-gray-900 dark:text-white">Copy configuration from another workspace</p>
+              <p class="text-xs mt-0.5 text-gray-500 dark:text-gray-400">Bring over Compliance Policies, Workflows, and other settings from a workspace you already have set up.</p>
             </div>
           </button>
           <button
             type="button"
-            class="w-full flex items-start gap-3 px-4 py-3.5 rounded-xl border-2 border-gray-200 text-left transition-all hover:border-brand-500"
+            class="w-full flex items-start gap-3 px-4 py-3.5 rounded-xl border-2 border-gray-200 dark:border-gray-700 text-left transition-all hover:border-brand-500"
             @click="startFromScratch"
           >
             <div>
-              <p class="text-sm font-semibold text-gray-900">Start from scratch</p>
-              <p class="text-xs mt-0.5 text-gray-500">Configure this workspace's policies and workflows yourself. You can still copy from another workspace later from Settings &gt; Backup &amp; Restore.</p>
+              <p class="text-sm font-semibold text-gray-900 dark:text-white">Start from scratch</p>
+              <p class="text-xs mt-0.5 text-gray-500 dark:text-gray-400">Configure this workspace's policies and workflows yourself. You can still copy from another workspace later from Settings &gt; Backup &amp; Restore.</p>
             </div>
           </button>
         </div>
 
         <div v-else class="space-y-4">
           <div>
-            <label class="block text-xs font-semibold mb-1.5 text-gray-900">Copy from</label>
-            <select v-model="sourceSlug" class="w-full px-3 py-2 rounded-lg text-sm border border-gray-200 outline-none focus:ring-2 focus:ring-brand-500">
+            <label class="block text-xs font-semibold mb-1.5 text-gray-900 dark:text-white">Copy from</label>
+            <select v-model="sourceSlug" class="w-full px-3 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700 outline-none focus:ring-2 focus:ring-brand-500">
               <option value="">Select a workspace…</option>
               <option v-for="org in siblings" :key="org.id || org._id || org.slug" :value="org.slug">{{ org.name || org.slug }} ({{ org.slug }})</option>
             </select>
           </div>
 
           <div>
-            <label class="block text-xs font-semibold mb-1.5 text-gray-900">What to copy</label>
+            <label class="block text-xs font-semibold mb-1.5 text-gray-900 dark:text-white">What to copy</label>
             <div class="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-              <label v-for="(label, key) in CONFIG_STORE_LABELS" :key="key" class="flex items-center gap-2 text-xs cursor-pointer text-gray-900">
+              <label v-for="(label, key) in CONFIG_STORE_LABELS" :key="key" class="flex items-center gap-2 text-xs cursor-pointer text-gray-900 dark:text-white">
                 <input type="checkbox" v-model="selected[key]" />
                 {{ label }}
               </label>

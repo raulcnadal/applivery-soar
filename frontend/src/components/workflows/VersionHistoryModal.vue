@@ -89,16 +89,16 @@ async function restore(version: WorkflowVersion) {
       description="A snapshot is saved automatically every time this workflow is edited or restored."
     />
     <div v-else class="space-y-2">
-      <div v-for="v in versions" :key="v.id" class="rounded-lg p-3 border border-gray-200">
+      <div v-for="v in versions" :key="v.id" class="rounded-lg p-3 border border-gray-200 dark:border-gray-700">
         <div class="flex items-center justify-between gap-3">
           <div class="min-w-0">
-            <p class="text-sm font-medium text-gray-900">{{ versionReasonLabel(v.reason) }}</p>
+            <p class="text-sm font-medium text-gray-900 dark:text-white">{{ versionReasonLabel(v.reason) }}</p>
             <p class="text-xs mt-0.5 text-gray-400">
               {{ new Date(v.createdAt).toLocaleString() }} · {{ v.createdBy || "unknown" }} · {{ (v.snapshot as any)?.steps?.length || 0 }} step{{ ((v.snapshot as any)?.steps?.length || 0) === 1 ? "" : "s" }}
             </p>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            <button class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700" @click="diffOpenId = diffOpenId === v.id ? null : v.id">
+            <button class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="diffOpenId = diffOpenId === v.id ? null : v.id">
               {{ diffOpenId === v.id ? "Hide changes" : "Show changes" }}
             </button>
             <Button size="sm" variant="secondary" :loading="restoringId === v.id" @click="restore(v)">

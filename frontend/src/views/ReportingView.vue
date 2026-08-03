@@ -112,22 +112,22 @@ async function runNow(rep: ScheduledReport) {
     <header class="flex justify-between items-start mb-8 gap-4 flex-wrap">
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-semibold leading-tight text-gray-900">Reporting</h1>
+          <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white">Reporting</h1>
           <HelpIcon slug="reporting" :anchor="helpAnchor" title="Reporting admin guide" />
         </div>
         <p class="text-sm mt-1 text-gray-400">Build, schedule, and manage automated reports.</p>
       </div>
-      <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 bg-gray-50 shrink-0">
+      <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
         <button
           class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-          :class="tab === 'builder' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+          :class="tab === 'builder' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
           @click="selectTab('builder')"
         >
           <component :is="ICONS.DocumentText" :size="14" weight="Linear" /> Builder
         </button>
         <button
           class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-          :class="tab === 'scheduled' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+          :class="tab === 'scheduled' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
           @click="selectTab('scheduled')"
         >
           <component :is="ICONS.Calendar" :size="14" weight="Linear" /> Schedules ({{ store.scheduledReports.length }})
@@ -148,7 +148,7 @@ async function runNow(rep: ScheduledReport) {
         <component :is="ICONS.DocumentText" :size="28" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
       </div>
       <div class="text-center">
-        <h2 class="text-lg font-semibold mb-1 text-gray-900">Build a Report</h2>
+        <h2 class="text-lg font-semibold mb-1 text-gray-900 dark:text-white">Build a Report</h2>
         <p class="text-sm text-gray-400">Configure data sources, filters, and delivery to generate a PDF report.</p>
       </div>
       <button
@@ -169,15 +169,15 @@ async function runNow(rep: ScheduledReport) {
           <component :is="ICONS.Calendar" :size="24" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
         </div>
         <div>
-          <p class="text-sm font-medium text-gray-900">No scheduled reports yet</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">No scheduled reports yet</p>
           <p class="text-xs mt-1 text-gray-400">Build a report and turn on Automation &amp; Scheduling to get here.</p>
         </div>
         <button class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700" @click="openNewReport">Open Builder</button>
       </div>
 
-      <div v-for="rep in store.scheduledReports" :key="rep.id" class="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 bg-white">
+      <div v-for="rep in store.scheduledReports" :key="rep.id" class="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div class="min-w-0">
-          <p class="text-sm font-medium text-gray-900 truncate">{{ rep.name || "Untitled report" }}</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ rep.name || "Untitled report" }}</p>
           <div class="flex items-center gap-2 mt-1 flex-wrap">
             <span class="text-[10px] font-medium px-2.5 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }">
               {{ FREQUENCY_LABEL[rep.schedule.frequency] || "Weekly (Mon)" }}
@@ -210,7 +210,7 @@ async function runNow(rep: ScheduledReport) {
 
       <button
         v-if="store.scheduledReports.length"
-        class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5"
         @click="openNewReport"
       >
         <component :is="ICONS.AddCircle" :size="14" weight="Linear" /> Add Another Schedule

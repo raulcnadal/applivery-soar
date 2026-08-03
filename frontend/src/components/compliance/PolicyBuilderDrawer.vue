@@ -306,12 +306,12 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
   <Modal :open="open" size="lg" class="max-w-2xl" @close="emit('close')">
     <div class="flex items-center justify-between gap-2 mb-4 -mt-1">
       <div class="flex items-center gap-2 min-w-0">
-        <span class="text-sm font-semibold text-gray-900">{{ policy ? "Edit Compliance Policy" : "Create Compliance Policy" }}</span>
+        <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ policy ? "Edit Compliance Policy" : "Create Compliance Policy" }}</span>
         <span v-if="templateFramework" class="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }">
           {{ FRAMEWORK_SHORT_LABELS[templateFramework] || templateFramework }}{{ templateControlRef ? ` — ${templateControlRef}` : "" }}
         </span>
       </div>
-      <button class="p-1 rounded-lg hover:bg-gray-100 text-gray-400 shrink-0" @click="emit('close')">
+      <button class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 shrink-0" @click="emit('close')">
         <component :is="ICONS.CloseCircle" :size="18" weight="Linear" />
       </button>
     </div>
@@ -320,8 +320,8 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
       <div v-if="saveError" class="mb-4 px-3 py-2 rounded-lg text-xs font-medium border" :style="{ backgroundColor: `${DANGER}12`, color: DANGER, borderColor: `${DANGER}30` }">{{ saveError }}</div>
 
       <div class="space-y-2 mb-5">
-        <input v-model="form.name" placeholder="Policy name, e.g. Stale or non-compliant devices" class="w-full px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500" />
-        <textarea v-model="form.description" placeholder="Description (optional)" rows="2" class="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none border border-gray-200 focus:ring-2 focus:ring-brand-500" />
+        <input v-model="form.name" placeholder="Policy name, e.g. Stale or non-compliant devices" class="w-full px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
+        <textarea v-model="form.description" placeholder="Description (optional)" rows="2" class="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
       </div>
 
       <div v-if="policy?.autoRunTripped" class="flex items-start gap-2.5 px-3 py-2.5 rounded-lg mb-4 border" :style="{ backgroundColor: `${DANGER}10`, borderColor: `${DANGER}30` }">
@@ -333,20 +333,20 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
       </div>
 
       <div class="grid grid-cols-2 gap-3 mb-5">
-        <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200">
-          <input v-model="form.enabled" type="checkbox" /> <span class="text-gray-900">Enabled</span>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700">
+          <input v-model="form.enabled" type="checkbox" /> <span class="text-gray-900 dark:text-white">Enabled</span>
         </label>
-        <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200">
-          <input v-model="form.autoRun" type="checkbox" /> <span class="text-gray-900">Auto-run workflow (skip review queue)</span>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700">
+          <input v-model="form.autoRun" type="checkbox" /> <span class="text-gray-900 dark:text-white">Auto-run workflow (skip review queue)</span>
         </label>
       </div>
 
-      <div v-if="form.autoRun" class="mb-5 p-3 rounded-lg border border-gray-200 bg-gray-50">
+      <div v-if="form.autoRun" class="mb-5 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
         <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">autoRun safety limits</p>
-        <label class="block text-xs mb-1 text-gray-900">Max devices auto-fired per evaluation pass</label>
+        <label class="block text-xs mb-1 text-gray-900 dark:text-white">Max devices auto-fired per evaluation pass</label>
         <div class="flex items-center gap-3 flex-wrap">
-          <input v-model.number="form.autoRunBatchCap" type="number" min="1" max="1000" :disabled="form.noBatchCap" class="w-28 px-3 py-1.5 rounded-lg text-sm outline-none border border-gray-200 bg-white disabled:opacity-40 focus:ring-2 focus:ring-brand-500" />
-          <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900">
+          <input v-model.number="form.autoRunBatchCap" type="number" min="1" max="1000" :disabled="form.noBatchCap" class="w-28 px-3 py-1.5 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-40 focus:ring-2 focus:ring-brand-500" />
+          <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
             <input v-model="form.noBatchCap" type="checkbox" /> No limit
           </label>
         </div>
@@ -367,21 +367,21 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
           <div class="flex-1">
             <p class="text-xs font-semibold" :style="{ color: DANGER }">"{{ destructiveWorkflowName }}" includes a destructive action</p>
             <p class="text-[11px] mt-0.5 mb-2 leading-relaxed text-gray-400">Enabling autoRun means this fires unattended against every violating device (or every escalated one), with no human review, the moment they're detected.</p>
-            <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900">
+            <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
               <input v-model="form.autoRunDestructiveAck" type="checkbox" /> I understand and want autoRun to fire this unattended
             </label>
           </div>
         </div>
 
-        <div class="mt-3 pt-3 border-t border-gray-200">
+        <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
           <p class="text-[11px] font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Escalate on high-risk devices (optional)</p>
           <p class="text-[11px] mb-2 leading-relaxed text-gray-400">Run a different, tougher workflow instead of the one above when the violating device's own risk tier is already at or above the threshold.</p>
           <div class="grid grid-cols-2 gap-2">
-            <select v-model="form.escalatedWorkflowId" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500">
+            <select v-model="form.escalatedWorkflowId" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500">
               <option value="">No escalation — always run the default workflow</option>
               <option v-for="w in workflowsStore.workflows.filter((w) => w.id !== form.workflowId)" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
-            <select v-if="form.escalatedWorkflowId" v-model="form.escalatedWorkflowMinRiskTier" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500">
+            <select v-if="form.escalatedWorkflowId" v-model="form.escalatedWorkflowMinRiskTier" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500">
               <option value="medium">At risk tier: Medium or above</option>
               <option value="high">At risk tier: High or above</option>
               <option value="critical">At risk tier: Critical only</option>
@@ -395,8 +395,8 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
           <component :is="ICONS.ClockCircle" :size="12" weight="Linear" /> Evaluation frequency
         </p>
         <div class="flex items-center gap-2">
-          <input v-model="form.evalAmount" type="number" min="1" placeholder="Default" class="w-28 px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500" />
-          <select v-model="form.evalUnit" class="px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500">
+          <input v-model="form.evalAmount" type="number" min="1" placeholder="Default" class="w-28 px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
+          <select v-model="form.evalUnit" class="px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500">
             <option value="minutes">minutes</option>
             <option value="hours">hours</option>
           </select>
@@ -410,7 +410,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
       <div class="flex items-center justify-between mb-2">
         <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Watch for</p>
         <div class="flex items-center gap-2">
-          <select v-model="form.conditionLogic" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500">
+          <select v-model="form.conditionLogic" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500">
             <option value="any">Match ANY condition</option>
             <option value="all">Match ALL conditions</option>
           </select>
@@ -440,7 +440,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
 
       <div class="mt-5">
         <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">Then run</p>
-        <select :value="form.workflowId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500" @change="onWorkflowChange(($event.target as HTMLSelectElement).value)">
+        <select :value="form.workflowId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" @change="onWorkflowChange(($event.target as HTMLSelectElement).value)">
           <option value="">Select a workflow…</option>
           <option v-for="w in workflowsStore.workflows" :key="w.id" :value="w.id">{{ w.name }}</option>
         </select>
@@ -451,11 +451,11 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">Mark on Applivery console</p>
         <div class="relative">
           <component :is="ICONS.Tag" :size="13" weight="Linear" class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
-          <input v-model="form.nonComplianceTag" placeholder="Tag applied while violated, e.g. non-compliant:stale-os (optional)" class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500" />
+          <input v-model="form.nonComplianceTag" placeholder="Tag applied while violated, e.g. non-compliant:stale-os (optional)" class="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
         </div>
         <p class="text-[11px] mt-1.5 mb-3 leading-relaxed text-gray-400">Tag applied to a device the moment this policy is newly violated, removed automatically once it recovers.</p>
 
-        <select v-model="form.nonComplianceSmartAttributeId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500">
+        <select v-model="form.nonComplianceSmartAttributeId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500">
           <option value="">{{ store.smartAttributes.length ? "No Smart Attribute (optional)" : "No Smart Attributes found" }}</option>
           <option v-for="a in store.smartAttributes" :key="a.id" :value="a.id">{{ a.name }}</option>
         </select>
@@ -469,18 +469,18 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
           <component :is="ICONS.Folder" :size="12" weight="Linear" /> Case Management
         </p>
         <div class="space-y-2">
-          <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200">
-            <input v-model="form.openCaseOnViolation" type="checkbox" /> <span class="text-gray-900">Open a Case when this policy is violated</span>
+          <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700">
+            <input v-model="form.openCaseOnViolation" type="checkbox" /> <span class="text-gray-900 dark:text-white">Open a Case when this policy is violated</span>
           </label>
-          <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200" :class="!form.openCaseOnViolation ? 'opacity-50' : ''">
-            <input v-model="form.autoResolveCaseOnRecovery" type="checkbox" :disabled="!form.openCaseOnViolation" /> <span class="text-gray-900">Auto-resolve the Case once the device recovers</span>
+          <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700" :class="!form.openCaseOnViolation ? 'opacity-50' : ''">
+            <input v-model="form.autoResolveCaseOnRecovery" type="checkbox" :disabled="!form.openCaseOnViolation" /> <span class="text-gray-900 dark:text-white">Auto-resolve the Case once the device recovers</span>
           </label>
         </div>
       </div>
 
       <div class="mt-5">
         <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">MITRE ATT&amp;CK Tagging</p>
-        <div v-if="unsuggested.length > 0" class="mb-2 p-2 rounded-lg border border-dashed border-gray-200 bg-gray-50">
+        <div v-if="unsuggested.length > 0" class="mb-2 p-2 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
           <p class="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Suggested from your conditions</p>
           <div class="flex flex-wrap gap-1.5">
             <button
@@ -496,7 +496,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
             </button>
           </div>
         </div>
-        <div class="flex flex-wrap gap-2 max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2">
+        <div class="flex flex-wrap gap-2 max-h-32 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2">
           <label v-for="t in store.mitreTechniques" :key="t.id" class="flex items-center gap-1 text-xs px-2 py-1">
             <input type="checkbox" :checked="form.mitreTechniques.includes(t.id)" @change="toggleTechnique(t.id)" />
             {{ t.id }} — {{ t.name }}
@@ -517,21 +517,21 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         <p class="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5 text-gray-400">
           <component :is="ICONS.Layers" :size="12" weight="Linear" /> Devices that will receive this policy
         </p>
-        <div v-if="!form.targetDeviceAudienceId" class="rounded-lg px-3 py-2.5 text-xs border border-gray-200 text-gray-400">
+        <div v-if="!form.targetDeviceAudienceId" class="rounded-lg px-3 py-2.5 text-xs border border-gray-200 dark:border-gray-700 text-gray-400">
           No Device Audience selected above — this policy applies to every device in the fleet.
         </div>
-        <div v-else-if="matchedDevicesLoading" class="rounded-lg px-3 py-2.5 text-xs border border-gray-200 text-gray-400">Checking which devices currently belong to this audience…</div>
+        <div v-else-if="matchedDevicesLoading" class="rounded-lg px-3 py-2.5 text-xs border border-gray-200 dark:border-gray-700 text-gray-400">Checking which devices currently belong to this audience…</div>
         <div v-else-if="matchedDevicesError" class="rounded-lg px-3 py-2.5 text-xs border" :style="{ borderColor: `${DANGER}40`, backgroundColor: `${DANGER}10`, color: DANGER }">{{ matchedDevicesError }}</div>
         <div v-else-if="matchedDevices" class="rounded-lg border" :style="{ borderColor: matchedDevices.length === 0 ? `${WARNING}60` : '#E5E7EB' }">
-          <div class="px-3 py-2 flex items-center justify-between" :class="matchedDevices.length ? 'border-b border-gray-200' : ''">
-            <span class="text-xs font-semibold" :style="{ color: matchedDevices.length === 0 ? WARNING : '#111827' }">
+          <div class="px-3 py-2 flex items-center justify-between" :class="matchedDevices.length ? 'border-b border-gray-200 dark:border-gray-700' : ''">
+            <span class="text-xs font-semibold" :style="{ color: matchedDevices.length === 0 ? WARNING : 'var(--foreground)' }">
               {{ matchedDevices.length === 0 ? "No devices currently match this audience" : `${matchedDevices.length} device${matchedDevices.length === 1 ? "" : "s"} match this audience right now` }}
             </span>
           </div>
           <div v-if="matchedDevices.length === 0" class="px-3 pb-2.5">
             <p class="text-[11px] leading-relaxed text-gray-400">This policy will have nothing to evaluate until a device matches. Double-check the audience's selectors in Applivery, or pick a different audience above.</p>
-            <div v-if="matchedDevicesDiagnostics" class="mt-2 rounded-md px-2.5 py-2 text-[11px] leading-relaxed bg-gray-50 border border-gray-200">
-              <p class="font-semibold mb-1 text-gray-900">What Applivery's API returned just now</p>
+            <div v-if="matchedDevicesDiagnostics" class="mt-2 rounded-md px-2.5 py-2 text-[11px] leading-relaxed bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
+              <p class="font-semibold mb-1 text-gray-900 dark:text-white">What Applivery's API returned just now</p>
               <p v-if="matchedDevicesDiagnostics.error" style="color: #ef4444">
                 HTTP {{ matchedDevicesDiagnostics.httpStatus ?? "error" }} — {{ matchedDevicesDiagnostics.error }}
                 {{ matchedDevicesDiagnostics.httpStatus === 401 || matchedDevicesDiagnostics.httpStatus === 403 ? " — likely a permissions issue on the API token." : "" }}
@@ -549,9 +549,9 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
               <p v-else class="text-gray-400">Applivery returned zero members for this audience right now — the audience itself currently matches nothing on Applivery's side.</p>
             </div>
           </div>
-          <div v-else class="max-h-40 overflow-y-auto divide-y divide-gray-100">
+          <div v-else class="max-h-40 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
             <div v-for="d in matchedDevices" :key="d.id" class="px-3 py-1.5 flex items-center justify-between gap-2 text-xs">
-              <span class="truncate text-gray-900">{{ d.displayName || d.id }}</span>
+              <span class="truncate text-gray-900 dark:text-white">{{ d.displayName || d.id }}</span>
               <span class="flex items-center gap-1.5 shrink-0">
                 <span class="text-[10px] text-gray-400">{{ d.platformLabel }}</span>
                 <span class="w-1.5 h-1.5 rounded-full shrink-0" :title="d.isCompliant ? 'Compliant' : 'Not compliant'" :style="{ backgroundColor: d.isCompliant ? '#22C55E' : DANGER }" />
@@ -563,8 +563,8 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
       </div>
     </div>
 
-    <div class="flex gap-3 justify-end pt-4 border-t border-gray-100 mt-4">
-      <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700" @click="emit('close')">Cancel</button>
+    <div class="flex gap-3 justify-end pt-4 border-t border-gray-100 dark:border-gray-800 mt-4">
+      <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('close')">Cancel</button>
       <button :disabled="isSaving" class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50" @click="save">
         {{ isSaving ? "Saving…" : "Save policy" }}
       </button>

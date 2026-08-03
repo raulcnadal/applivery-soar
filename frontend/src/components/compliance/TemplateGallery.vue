@@ -48,18 +48,19 @@ function useTemplate(t: ComplianceTemplate) {
   <Modal :open="open" size="lg" class="max-w-3xl" @close="emit('close')">
     <div class="flex items-center justify-between gap-2 mb-4 -mt-1">
       <div>
-        <h3 class="text-sm font-semibold text-gray-900">Compliance Policy Templates</h3>
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Compliance Policy Templates</h3>
         <p class="text-xs mt-0.5 text-gray-400">Starting points mapped to well-known frameworks. Pick one to pre-fill the policy builder for review.</p>
       </div>
-      <button class="p-1 rounded-lg hover:bg-gray-100 text-gray-400 shrink-0" @click="emit('close')">
+      <button class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 shrink-0" @click="emit('close')">
         <component :is="ICONS.CloseCircle" :size="18" weight="Linear" />
       </button>
     </div>
 
-    <div class="flex items-center gap-2 pb-3 mb-3 overflow-x-auto border-b border-gray-200">
+    <div class="flex items-center gap-2 pb-3 mb-3 overflow-x-auto border-b border-gray-200 dark:border-gray-700">
       <button
         class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors"
-        :style="activeFramework === 'all' ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : { border: '1px solid #E5E7EB', color: '#111827' }"
+        :class="activeFramework !== 'all' ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
+        :style="activeFramework === 'all' ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
         @click="activeFramework = 'all'"
       >
         All frameworks
@@ -68,7 +69,8 @@ function useTemplate(t: ComplianceTemplate) {
         v-for="f in store.frameworks"
         :key="f.key"
         class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors"
-        :style="activeFramework === f.key ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : { border: '1px solid #E5E7EB', color: '#111827' }"
+        :class="activeFramework !== f.key ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
+        :style="activeFramework === f.key ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
         @click="activeFramework = f.key"
       >
         {{ (f as any).shortLabel || f.name }}
@@ -82,12 +84,12 @@ function useTemplate(t: ComplianceTemplate) {
 
       <p v-if="isLoading" class="text-xs text-gray-400">Loading templates…</p>
 
-      <div v-if="!isLoading && activeFramework !== 'all' && (frameworksByKey as any)[activeFramework]?.caveats" class="mb-4 px-3 py-2 rounded-lg text-xs border text-gray-900" :style="{ backgroundColor: `${PRIMARY_BLUE}08`, borderColor: `${PRIMARY_BLUE}25` }">
+      <div v-if="!isLoading && activeFramework !== 'all' && (frameworksByKey as any)[activeFramework]?.caveats" class="mb-4 px-3 py-2 rounded-lg text-xs border text-gray-900 dark:text-white" :style="{ backgroundColor: `${PRIMARY_BLUE}08`, borderColor: `${PRIMARY_BLUE}25` }">
         <strong>Scope note:</strong> {{ (frameworksByKey as any)[activeFramework].caveats }}
       </div>
 
       <div class="space-y-3">
-        <div v-for="t in visibleTemplates" :key="t.id" class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+        <div v-for="t in visibleTemplates" :key="t.id" class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
@@ -99,7 +101,7 @@ function useTemplate(t: ComplianceTemplate) {
                   {{ t.severity }}
                 </span>
               </div>
-              <p class="text-sm font-medium mt-1.5 text-gray-900">{{ t.title }}</p>
+              <p class="text-sm font-medium mt-1.5 text-gray-900 dark:text-white">{{ t.title }}</p>
               <p class="text-xs mt-1 text-gray-400">{{ t.description }}</p>
             </div>
             <button class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 transition-colors" @click="useTemplate(t)">

@@ -371,25 +371,26 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="rounded-xl overflow-hidden bg-white border border-gray-200 shadow-sm">
+  <div class="rounded-xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
     <!-- Toolbar -->
-    <div class="p-4 flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 border-b border-gray-200">
+    <div class="p-4 flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 border-b border-gray-200 dark:border-gray-700">
       <div class="relative flex-1 max-w-sm">
         <component :is="ICONS.Magnifer" :size="15" weight="Linear" class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
         <input
           v-model="search"
           type="text"
           placeholder="Search devices, users, serial, IMEI…"
-          class="w-full pl-9 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 bg-white focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+          class="w-full pl-9 pr-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
         />
       </div>
 
-      <div class="inline-flex rounded-lg overflow-hidden border border-gray-200">
+      <div class="inline-flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
         <button
           v-for="p in PLATFORM_FILTERS"
           :key="p.key"
-          class="px-3 py-2 text-xs font-medium transition-colors border-r border-gray-200 last:border-r-0"
-          :style="{ backgroundColor: platformFilter === p.key ? PRIMARY_BLUE : '#fff', color: platformFilter === p.key ? '#fff' : '#111827' }"
+          class="px-3 py-2 text-xs font-medium transition-colors border-r border-gray-200 dark:border-gray-700 last:border-r-0"
+          :class="platformFilter !== p.key ? 'bg-white dark:bg-gray-800' : ''"
+          :style="{ backgroundColor: platformFilter === p.key ? PRIMARY_BLUE : undefined, color: platformFilter === p.key ? '#fff' : 'var(--foreground)' }"
           @click="platformFilter = p.key"
         >
           {{ p.label }}
@@ -408,7 +409,7 @@ onMounted(() => {
         Non-compliant{{ complianceFilter !== "non_compliant" ? ` (${nonCompliantCount})` : "" }}
       </button>
 
-      <select v-model="riskFilter" class="px-2.5 py-2 text-xs font-medium rounded-lg outline-none border border-gray-200 bg-white">
+      <select v-model="riskFilter" class="px-2.5 py-2 text-xs font-medium rounded-lg outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <option value="all">All risk tiers</option>
         <option value="low">Low risk</option>
         <option value="medium">Medium risk</option>
@@ -417,24 +418,24 @@ onMounted(() => {
       </select>
 
       <div class="flex items-center gap-1">
-        <input v-model="minRiskScore" type="number" min="0" max="100" placeholder="Min" class="w-16 px-2 py-2 text-xs rounded-lg outline-none border border-gray-200" />
+        <input v-model="minRiskScore" type="number" min="0" max="100" placeholder="Min" class="w-16 px-2 py-2 text-xs rounded-lg outline-none border border-gray-200 dark:border-gray-700" />
         <span class="text-xs text-gray-400">–</span>
-        <input v-model="maxRiskScore" type="number" min="0" max="100" placeholder="Max" class="w-16 px-2 py-2 text-xs rounded-lg outline-none border border-gray-200" />
+        <input v-model="maxRiskScore" type="number" min="0" max="100" placeholder="Max" class="w-16 px-2 py-2 text-xs rounded-lg outline-none border border-gray-200 dark:border-gray-700" />
       </div>
 
-      <select v-if="savedFilters.length > 0" class="px-2.5 py-2 text-xs font-medium rounded-lg outline-none border border-gray-200 bg-white max-w-[140px]" @change="(e) => { const f = savedFilters.find(x => x.name === (e.target as HTMLSelectElement).value); if (f) applySavedFilter(f); (e.target as HTMLSelectElement).value = ''; }">
+      <select v-if="savedFilters.length > 0" class="px-2.5 py-2 text-xs font-medium rounded-lg outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 max-w-[140px]" @change="(e) => { const f = savedFilters.find(x => x.name === (e.target as HTMLSelectElement).value); if (f) applySavedFilter(f); (e.target as HTMLSelectElement).value = ''; }">
         <option value="">Saved filters…</option>
         <option v-for="f in savedFilters" :key="f.name" :value="f.name">{{ f.name }}</option>
       </select>
-      <button title="Save the current search/filter combination for reuse" class="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-medium border border-gray-200 text-gray-700" @click="handleSaveCurrentFilter">
+      <button title="Save the current search/filter combination for reuse" class="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="handleSaveCurrentFilter">
         <component :is="ICONS.BookmarkSquare" :size="13" weight="Linear" />
       </button>
 
       <span class="text-xs ml-auto shrink-0 text-gray-400">{{ filtered.length }} of {{ devices.length }}</span>
     </div>
 
-    <div v-if="savedFilters.length > 0" class="px-4 py-1.5 flex items-center gap-1.5 flex-wrap border-b border-gray-200">
-      <span v-for="f in savedFilters" :key="f.name" class="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-500">
+    <div v-if="savedFilters.length > 0" class="px-4 py-1.5 flex items-center gap-1.5 flex-wrap border-b border-gray-200 dark:border-gray-700">
+      <span v-for="f in savedFilters" :key="f.name" class="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
         <button @click="applySavedFilter(f)">{{ f.name }}</button>
         <button style="color: #ef4444" @click="deleteSavedFilter(f.name)">
           <component :is="ICONS.TrashBinMinimalistic" :size="9" weight="Linear" />
@@ -443,7 +444,7 @@ onMounted(() => {
     </div>
 
     <!-- Bulk action bar -->
-    <div v-if="selectedIds.size > 0" class="flex items-center gap-3 px-4 py-2.5 border-b border-gray-200" :style="{ backgroundColor: `${PRIMARY_BLUE}08` }">
+    <div v-if="selectedIds.size > 0" class="flex items-center gap-3 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700" :style="{ backgroundColor: `${PRIMARY_BLUE}08` }">
       <span class="text-xs font-medium" :style="{ color: PRIMARY_BLUE }">{{ selectedIds.size }} selected</span>
       <button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200" @click="isPickingWorkflow = true">
         <component :is="ICONS.Play" :size="12" weight="Linear" /> Run workflow…
@@ -451,26 +452,26 @@ onMounted(() => {
       <button
         :disabled="isReattesting"
         title="Push the Windows/macOS security-attestation reporter script now instead of waiting for its next scheduled run"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 disabled:opacity-50"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
         @click="handleBulkReattest"
       >
         <component :is="ICONS.RefreshCircle" :size="12" weight="Linear" :class="isReattesting ? 'animate-spin' : ''" /> {{ isReattesting ? "Pushing…" : "Re-attest now" }}
       </button>
-      <button :disabled="isBulkActing" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 disabled:opacity-50" @click="isBulkTagging = true">
+      <button :disabled="isBulkActing" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50" @click="isBulkTagging = true">
         <component :is="ICONS.Tag" :size="12" weight="Linear" /> Add tag…
       </button>
-      <button :disabled="isBulkActing" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 disabled:opacity-50" @click="isBulkMovingSegment = true">
+      <button :disabled="isBulkActing" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50" @click="isBulkMovingSegment = true">
         <component :is="ICONS.Layers" :size="12" weight="Linear" /> Move segment…
       </button>
       <button class="text-xs text-gray-400" @click="selectedIds = new Set()">Clear</button>
     </div>
 
-    <div v-if="isBulkTagging" class="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200" :style="{ backgroundColor: `${PRIMARY_BLUE}08` }">
+    <div v-if="isBulkTagging" class="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700" :style="{ backgroundColor: `${PRIMARY_BLUE}08` }">
       <input
         v-model="bulkTagDraft"
         autofocus
         placeholder="Tag to add to all selected devices…"
-        class="flex-1 max-w-xs px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 focus:ring-2 focus:ring-brand-500"
+        class="flex-1 max-w-xs px-2.5 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500"
         @keydown.enter="handleBulkAddTag"
         @keydown.escape="isBulkTagging = false"
       />
@@ -478,12 +479,12 @@ onMounted(() => {
       <button class="text-xs text-gray-400" @click="isBulkTagging = false">Cancel</button>
     </div>
 
-    <div v-if="reattestResult" class="flex items-center justify-between gap-3 px-4 py-2.5 text-xs border-b border-gray-200 text-gray-900" :style="{ backgroundColor: `${SUCCESS}08` }">
+    <div v-if="reattestResult" class="flex items-center justify-between gap-3 px-4 py-2.5 text-xs border-b border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white" :style="{ backgroundColor: `${SUCCESS}08` }">
       <span>Re-attestation pushed to {{ reattestResult.succeeded }}/{{ reattestResult.total }} device(s){{ reattestResult.succeeded < reattestResult.total ? " — some were skipped (unsupported platform or push failure)" : "" }}.</span>
       <button class="font-semibold shrink-0 text-gray-400" @click="reattestResult = null">Dismiss</button>
     </div>
 
-    <div v-if="bulkActionResult" class="flex items-center justify-between gap-3 px-4 py-2.5 text-xs border-b border-gray-200 text-gray-900" :style="{ backgroundColor: `${SUCCESS}08` }">
+    <div v-if="bulkActionResult" class="flex items-center justify-between gap-3 px-4 py-2.5 text-xs border-b border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white" :style="{ backgroundColor: `${SUCCESS}08` }">
       <span>{{ bulkActionResult.label }} on {{ bulkActionResult.succeeded }}/{{ bulkActionResult.total }} device(s){{ bulkActionResult.succeeded < bulkActionResult.total ? " — some failed" : "" }}.</span>
       <button class="font-semibold shrink-0 text-gray-400" @click="bulkActionResult = null">Dismiss</button>
     </div>
@@ -492,7 +493,7 @@ onMounted(() => {
     <EmptyState v-if="filtered.length === 0 && !isLoading" title="No devices match your filters" description="Try adjusting your search or filter criteria" />
     <div v-else class="overflow-x-auto">
       <table class="w-full text-sm text-left">
-        <thead class="bg-gray-50">
+        <thead class="bg-gray-50 dark:bg-gray-900/50">
           <tr>
             <th class="pl-4 pr-1 py-2.5 w-6">
               <input
@@ -513,7 +514,7 @@ onMounted(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(d, idx) in sorted" :key="d.id" class="transition-colors cursor-pointer select-none hover:bg-gray-50" :class="idx > 0 ? 'border-t border-gray-100' : ''" @click="emit('open-device', d.id)">
+          <tr v-for="(d, idx) in sorted" :key="d.id" class="transition-colors cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-white/5" :class="idx > 0 ? 'border-t border-gray-100 dark:border-gray-800' : ''" @click="emit('open-device', d.id)">
             <td class="pl-4 pr-1 py-3 w-6" @click.stop>
               <input type="checkbox" :checked="selectedIds.has(d.id)" @change="toggleSelect(d.id)" />
             </td>
@@ -521,7 +522,7 @@ onMounted(() => {
               <div class="flex items-center gap-2">
                 <DeviceMockup :platform="d.platform" />
                 <div class="min-w-0">
-                  <p class="font-semibold truncate text-gray-900">{{ d.displayName }}</p>
+                  <p class="font-semibold truncate text-gray-900 dark:text-white">{{ d.displayName }}</p>
                   <span class="text-[11px] text-gray-400">{{ d.platformLabel }}</span>
                 </div>
               </div>
@@ -532,7 +533,7 @@ onMounted(() => {
                   {{ getUserInitials(d.mdmUser).toUpperCase() }}
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p v-if="getUserDisplayName(d.mdmUser)" class="text-xs font-semibold truncate leading-tight text-gray-900">{{ getUserDisplayName(d.mdmUser) }}</p>
+                  <p v-if="getUserDisplayName(d.mdmUser)" class="text-xs font-semibold truncate leading-tight text-gray-900 dark:text-white">{{ getUserDisplayName(d.mdmUser) }}</p>
                   <p v-if="(d.mdmUser as any).email" class="text-[11px] truncate leading-tight mt-0.5 text-gray-400">{{ (d.mdmUser as any).email }}</p>
                 </div>
               </div>
@@ -540,7 +541,7 @@ onMounted(() => {
             </td>
             <td class="px-3 py-3">
               <div class="min-w-0">
-                <p class="text-xs font-medium truncate max-w-[160px] text-gray-900">{{ d.manufacturer ? `${d.manufacturer} ${d.model}`.trim() : d.model || "—" }}</p>
+                <p class="text-xs font-medium truncate max-w-[160px] text-gray-900 dark:text-white">{{ d.manufacturer ? `${d.manufacturer} ${d.model}`.trim() : d.model || "—" }}</p>
                 <div v-if="d.battery !== null && d.battery !== undefined" class="flex items-center gap-1 mt-1">
                   <component :is="ICONS.BatteryFull" :size="11" weight="Linear" :style="{ color: batteryColor(d.battery) }" />
                   <span class="text-[10px] font-semibold" :style="{ color: batteryColor(d.battery) }">{{ d.battery }}%</span>
@@ -592,12 +593,12 @@ onMounted(() => {
                     {{ riskMeta(d.riskTier).label }} · {{ d.riskScore }}
                   </span>
                 </button>
-                <div v-if="expandedRiskId === d.id" class="absolute z-20 top-full left-3 mt-1 w-64 rounded-lg shadow-xl p-3 bg-white border border-gray-200" @click.stop>
+                <div v-if="expandedRiskId === d.id" class="absolute z-20 top-full left-3 mt-1 w-64 rounded-lg shadow-xl p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700" @click.stop>
                   <p class="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-gray-400">What's driving this score</p>
                   <p v-if="(d.riskFactors || []).length === 0" class="text-xs text-gray-400">No contributing factors — baseline score.</p>
                   <div v-else class="space-y-1">
                     <div v-for="(f, fi) in d.riskFactors" :key="fi" class="flex items-center justify-between gap-2 text-xs">
-                      <span class="text-gray-900">{{ f.label }}</span>
+                      <span class="text-gray-900 dark:text-white">{{ f.label }}</span>
                       <span class="font-semibold shrink-0" style="color: #ef4444">+{{ f.points }}</span>
                     </div>
                   </div>

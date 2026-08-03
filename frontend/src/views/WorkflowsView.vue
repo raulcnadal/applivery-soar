@@ -109,7 +109,7 @@ onMounted(async () => {
     <header class="flex justify-between items-start mb-8 gap-4 flex-wrap">
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-semibold leading-tight text-gray-900">Workflows</h1>
+          <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white">Workflows</h1>
           <HelpIcon slug="workflows" :anchor="helpAnchor" title="Workflows admin guide" />
         </div>
         <p class="text-sm mt-1 text-gray-400">
@@ -117,24 +117,24 @@ onMounted(async () => {
         </p>
       </div>
       <div class="flex items-center gap-2 shrink-0 ml-auto">
-        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 bg-gray-50 shrink-0">
+        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
           <button
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="tab === 'workflows' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+            :class="tab === 'workflows' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
             @click="selectTab('workflows')"
           >
             <component :is="ICONS.Structure" :size="14" weight="Linear" /> Workflows
           </button>
           <button
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="tab === 'library' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+            :class="tab === 'library' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
             @click="selectTab('library')"
           >
             <component :is="ICONS.Library" :size="14" weight="Linear" /> Script &amp; OMA-URI Library
           </button>
           <button
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="tab === 'firewall' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+            :class="tab === 'firewall' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
             @click="selectTab('firewall')"
           >
             <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> Firewall Policy Library

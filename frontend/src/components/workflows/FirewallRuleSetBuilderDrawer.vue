@@ -74,7 +74,7 @@ async function save() {
       <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
 
       <div v-if="!ruleSet && store.templates.length" class="space-y-2">
-        <p class="text-xs font-semibold text-gray-700">Start from a template (optional)</p>
+        <p class="text-xs font-semibold text-gray-700 dark:text-gray-200">Start from a template (optional)</p>
         <div class="flex flex-wrap gap-2">
           <Button v-for="t in store.templates" :key="t.key" size="sm" variant="ghost" @click="applyTemplate(t.key)">{{ t.name }}</Button>
         </div>
@@ -83,7 +83,7 @@ async function save() {
       <div class="space-y-3">
         <Input v-model="form.name" label="Name" />
         <Input v-model="form.description" label="Description" />
-        <label class="flex items-start gap-2 text-xs p-2 rounded-lg bg-gray-50 text-gray-700">
+        <label class="flex items-start gap-2 text-xs p-2 rounded-lg bg-gray-50 dark:bg-gray-900/50 text-gray-700 dark:text-gray-200">
           <input type="checkbox" class="mt-0.5" v-model="form.ensureFirewallEnabled" />
           <span>
             <span class="font-semibold">Ensure Windows Firewall is enabled when applying</span><br />
@@ -106,16 +106,16 @@ async function save() {
             @update:model-value="form.defaultOutboundAction = $event as string"
           />
         </div>
-        <p class="text-xs text-gray-500">Windows Firewall always lets an explicit Block rule beat an explicit Allow rule, regardless of order — so a genuine "block everything except these exceptions" posture only works by changing the default action here, then adding Allow rules below as the exceptions. Leave both "as-is" for rule sets that just add specific Block/Allow rules (e.g. blocking one port) without changing the fleet-wide default. Restore reverts these to Windows' own out-of-box defaults (inbound Block, outbound Allow).</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">Windows Firewall always lets an explicit Block rule beat an explicit Allow rule, regardless of order — so a genuine "block everything except these exceptions" posture only works by changing the default action here, then adding Allow rules below as the exceptions. Leave both "as-is" for rule sets that just add specific Block/Allow rules (e.g. blocking one port) without changing the fleet-wide default. Restore reverts these to Windows' own out-of-box defaults (inbound Block, outbound Allow).</p>
       </div>
 
       <section>
         <div class="flex items-center justify-between mb-2">
-          <p class="text-sm font-semibold text-gray-900">Rules</p>
+          <p class="text-sm font-semibold text-gray-900 dark:text-white">Rules</p>
           <Button size="sm" variant="secondary" @click="addRule">Add rule</Button>
         </div>
         <div class="space-y-2">
-          <div v-for="(rule, idx) in form.rules" :key="rule.id || idx" class="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/50">
+          <div v-for="(rule, idx) in form.rules" :key="rule.id || idx" class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2 bg-gray-50/50">
             <div class="flex items-center gap-2">
               <Input v-model="rule.name" placeholder="Rule name" class="flex-1" />
               <Button size="sm" variant="ghost" @click="removeRule(idx)">✕</Button>
@@ -154,7 +154,7 @@ async function save() {
                 @update:model-value="rule.profile = $event as string"
               />
             </div>
-            <label class="flex items-center gap-2 text-xs text-gray-600">
+            <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
               <input type="checkbox" v-model="rule.enabled" /> Enabled
             </label>
           </div>

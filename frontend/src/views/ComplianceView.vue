@@ -108,7 +108,7 @@ onMounted(async () => {
     <header class="flex justify-between items-start mb-8 gap-4 flex-wrap">
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-semibold leading-tight text-gray-900">Compliance</h1>
+          <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white">Compliance</h1>
           <HelpIcon slug="compliance" title="Compliance admin guide" />
         </div>
         <p class="text-sm mt-1 text-gray-400">Policies watch device conditions and fire a linked Workflow the moment a device falls out of compliance.</p>
@@ -118,31 +118,31 @@ onMounted(async () => {
           v-model="evaluateScopePolicyId"
           :disabled="isEvaluating"
           title="Which polic(ies) 'Evaluate now' checks"
-          class="px-2.5 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 bg-white disabled:opacity-50 focus:ring-2 focus:ring-brand-500"
+          class="px-2.5 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-50 focus:ring-2 focus:ring-brand-500"
         >
           <option value="">All policies</option>
           <option v-for="p in store.policies" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
-        <button :disabled="isEvaluating" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 disabled:opacity-50" @click="evaluateNow">
+        <button :disabled="isEvaluating" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50" @click="evaluateNow">
           <component :is="ICONS.Refresh" :size="14" weight="Linear" :class="isEvaluating ? 'animate-spin' : ''" /> {{ isEvaluating ? "Evaluating…" : "Evaluate now" }}
         </button>
-        <button class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-700" @click="isTemplateGalleryOpen = true">
+        <button class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="isTemplateGalleryOpen = true">
           <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> New from Template
         </button>
         <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200" @click="openNewPolicy">
           <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Compliance Policy
         </button>
-        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 bg-gray-50 shrink-0">
+        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
           <button
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="subView === 'policies' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+            :class="subView === 'policies' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
             @click="subView = 'policies'"
           >
             <component :is="ICONS.ShieldWarning" :size="14" weight="Linear" /> Policies
           </button>
           <button
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="subView === 'app-lists' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'"
+            :class="subView === 'app-lists' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
             @click="subView = 'app-lists'"
           >
             <component :is="ICONS.Checklist" :size="14" weight="Linear" /> App Lists
@@ -151,7 +151,7 @@ onMounted(async () => {
       </div>
     </header>
 
-    <div v-if="evalSummary" class="mb-6 px-4 py-3 rounded-xl text-xs border text-gray-900" :style="{ backgroundColor: `${PRIMARY_BLUE}08`, borderColor: `${PRIMARY_BLUE}30` }">
+    <div v-if="evalSummary" class="mb-6 px-4 py-3 rounded-xl text-xs border text-gray-900 dark:text-white" :style="{ backgroundColor: `${PRIMARY_BLUE}08`, borderColor: `${PRIMARY_BLUE}30` }">
       <template v-if="evalSummary.scopedPolicyName">
         Checked {{ evalSummary.devicesChecked }} device{{ evalSummary.devicesChecked === 1 ? "" : "s" }} against <span class="font-semibold">"{{ evalSummary.scopedPolicyName }}"</span> —
       </template>

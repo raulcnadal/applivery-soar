@@ -109,19 +109,19 @@ async function save() {
           <Input v-model="searchText" placeholder="Search Applivery script Assets by name" class="flex-1" @keyup.enter="runSearch" />
           <Button size="sm" variant="secondary" @click="runSearch">Search</Button>
         </div>
-        <div v-if="searchResults.length" class="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
+        <div v-if="searchResults.length" class="border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700 max-h-40 overflow-y-auto">
           <button
             v-for="a in searchResults"
             :key="a.id"
             type="button"
-            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-white/5"
             :class="{ 'bg-brand-50': form.assetId === a.id }"
             @click="pickAsset(a)"
           >
             {{ a.name }} <span class="text-xs text-gray-400">{{ a.description }}</span>
           </button>
         </div>
-        <p v-if="form.assetId" class="text-xs text-gray-500">Selected: {{ form.assetName || form.assetId }}</p>
+        <p v-if="form.assetId" class="text-xs text-gray-500 dark:text-gray-400">Selected: {{ form.assetName || form.assetId }}</p>
         <Input v-model="form.arguments" label="Arguments (optional — supports {{ device.x }}/{{ user.x }}, Applivery-resolved)" />
         <Input
           :model-value="form.scope"
@@ -133,7 +133,7 @@ async function save() {
       </template>
 
       <template v-else>
-        <p class="text-xs text-gray-500">OMA-URI entries always target Windows and send a raw SyncML command directly (customOmaUri) — bypasses Applivery's Policy pipeline entirely.</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">OMA-URI entries always target Windows and send a raw SyncML command directly (customOmaUri) — bypasses Applivery's Policy pipeline entirely.</p>
         <Input v-model="form.path" label="OMA-URI path" placeholder="./Device/Vendor/MSFT/..." />
         <div class="grid grid-cols-2 gap-2">
           <Input

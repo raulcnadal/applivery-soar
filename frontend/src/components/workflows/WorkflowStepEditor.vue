@@ -116,7 +116,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
 </script>
 
 <template>
-  <div class="border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50/50">
+  <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3 bg-gray-50/50">
     <div class="flex items-center gap-2">
       <span class="text-xs font-semibold text-gray-400 w-6">#{{ stepIndex + 1 }}</span>
       <Input v-model="step.name" placeholder="Step name" class="flex-1" />
@@ -242,7 +242,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
         :label="step.type === 'policy_replace' ? 'Replacement policy' : 'Policy to add'"
         @update:model-value="step.config.policyId = $event; step.config.policyName = mdmPolicies.find((p) => p.id === $event)?.name || ''"
       />
-      <p v-if="step.type === 'policy_replace'" class="text-xs text-gray-500">Quarantine — replaces ALL of the device's current policies with this one. The original stack is snapshotted automatically.</p>
+      <p v-if="step.type === 'policy_replace'" class="text-xs text-gray-500 dark:text-gray-400">Quarantine — replaces ALL of the device's current policies with this one. The original stack is snapshotted automatically.</p>
       <Input
         v-if="step.type === 'policy_add'"
         :model-value="step.config.priority || 'bottom'"
@@ -257,7 +257,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
     </div>
 
     <!-- policy_restore -->
-    <p v-else-if="step.type === 'policy_restore'" class="pl-8 text-xs text-gray-500">Restores this device's policy stack from the snapshot taken by the first quarantine step. No configuration needed.</p>
+    <p v-else-if="step.type === 'policy_restore'" class="pl-8 text-xs text-gray-500 dark:text-gray-400">Restores this device's policy stack from the snapshot taken by the first quarantine step. No configuration needed.</p>
 
     <!-- monitor -->
     <div v-else-if="step.type === 'monitor'" class="space-y-2 pl-8">
@@ -268,14 +268,14 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
         label="Compliance policy to re-check"
         @update:model-value="step.config.compliancePolicyId = $event"
       />
-      <label class="flex items-center gap-2 text-sm text-gray-700">
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
         <input type="checkbox" v-model="step.config.restoreOnCompliant" /> Restore quarantined policies once compliant again
       </label>
     </div>
 
     <!-- wait / run_script_wait -->
     <div v-else-if="step.type === 'wait'" class="space-y-2 pl-8">
-      <p class="text-xs text-gray-500">Persists to durable storage and resumes on its own schedule — survives an API restart mid-wait.</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Persists to durable storage and resumes on its own schedule — survives an API restart mid-wait.</p>
       <div class="grid grid-cols-2 gap-2">
         <Input v-model.number="step.config.amount" type="number" label="Amount" />
         <Input
@@ -288,7 +288,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
       </div>
     </div>
     <div v-else-if="step.type === 'run_script_wait'" class="space-y-2 pl-8">
-      <p class="text-xs text-gray-500">Dispatches the script, then parks this device's chain until the agent's actual result is known (resolved early by the script log reconciler, or by the timeout below as a fallback).</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Dispatches the script, then parks this device's chain until the agent's actual result is known (resolved early by the script log reconciler, or by the timeout below as a fallback).</p>
       <Input
         :model-value="step.config.libraryId || ''"
         type="select"
@@ -299,7 +299,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
       <Input v-model.number="step.config.timeoutMinutes" type="number" label="Timeout (minutes, default 30)" placeholder="30" />
     </div>
 
-    <div v-if="showBranching" class="grid grid-cols-2 gap-2 pl-8 pt-1 border-t border-gray-200">
+    <div v-if="showBranching" class="grid grid-cols-2 gap-2 pl-8 pt-1 border-t border-gray-200 dark:border-gray-700">
       <Input
         :model-value="step.onSuccess || ''"
         type="select"

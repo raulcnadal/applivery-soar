@@ -166,14 +166,14 @@ function formatDate(value: string | null): string {
 <template>
   <template v-if="device">
     <div class="fixed inset-0 z-[260] bg-black/40" @click="emit('close')" />
-    <div class="fixed inset-y-0 right-0 z-[260] w-full sm:w-[440px] shadow-2xl flex flex-col bg-white">
+    <div class="fixed inset-y-0 right-0 z-[260] w-full sm:w-[440px] shadow-2xl flex flex-col bg-white dark:bg-gray-800">
       <!-- Header -->
-      <div class="shrink-0 px-5 pt-5 pb-4 border-b border-gray-200">
+      <div class="shrink-0 px-5 pt-5 pb-4 border-b border-gray-200 dark:border-gray-700">
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-3 min-w-0">
             <DeviceMockup :platform="device.platform" :size="44" />
             <div class="min-w-0">
-              <p class="font-semibold truncate text-gray-900">{{ device.displayName }}</p>
+              <p class="font-semibold truncate text-gray-900 dark:text-white">{{ device.displayName }}</p>
               <p class="text-xs truncate text-gray-400">{{ device.platformLabel }} · {{ device.manufacturer ? `${device.manufacturer} ${device.model}`.trim() : device.model || "—" }}</p>
             </div>
           </div>
@@ -207,7 +207,7 @@ function formatDate(value: string | null): string {
       </div>
 
       <!-- Tabs -->
-      <div class="shrink-0 flex px-5 border-b border-gray-200">
+      <div class="shrink-0 flex px-5 border-b border-gray-200 dark:border-gray-700">
         <button
           v-for="t in [{ key: 'overview', label: 'Overview' }, { key: 'compliance', label: 'Compliance' }, { key: 'location', label: 'Location' }]"
           :key="t.key"
@@ -236,9 +236,9 @@ function formatDate(value: string | null): string {
               ['EMM device ID', device.identifiers?.emmDeviceId],
               ['Windows ID', device.identifiers?.winId],
             ]" :key="row[0] as string">
-              <div v-if="row[1]" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100">
+              <div v-if="row[1]" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
                 <span class="text-gray-400">{{ row[0] }}</span>
-                <span class="font-mono text-xs text-gray-900">{{ row[1] }}</span>
+                <span class="font-mono text-xs text-gray-900 dark:text-white">{{ row[1] }}</span>
               </div>
             </div>
           </div>
@@ -254,9 +254,9 @@ function formatDate(value: string | null): string {
               ['State', device.state],
               ['Last seen', device.lastSeen ? formatDate(device.lastSeen) : null],
             ]" :key="row[0] as string">
-              <div v-if="row[1]" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100">
+              <div v-if="row[1]" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
                 <span class="text-gray-400">{{ row[0] }}</span>
-                <span class="text-gray-900">{{ row[1] }}</span>
+                <span class="text-gray-900 dark:text-white">{{ row[1] }}</span>
               </div>
             </div>
           </div>
@@ -271,9 +271,9 @@ function formatDate(value: string | null): string {
               <p class="text-xs font-medium" :style="{ color: WARNING }">
                 {{ (device.osUpdateStatus as any).pendingCount }} security update{{ (device.osUpdateStatus as any).pendingCount === 1 ? "" : "s" }} behind (latest known build .{{ (device.osUpdateStatus as any).latestKnownUbr }})
               </p>
-              <div v-for="kb in (device.osUpdateStatus as any).pendingKbs" :key="kb.kb" class="px-3 py-1.5 rounded-lg text-xs bg-gray-50">
+              <div v-for="kb in (device.osUpdateStatus as any).pendingKbs" :key="kb.kb" class="px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-gray-900">KB{{ kb.kb }} <span class="text-gray-400">· {{ kb.updateType || "Security" }} update · {{ kb.releaseMonth }}</span></span>
+                  <span class="text-gray-900 dark:text-white">KB{{ kb.kb }} <span class="text-gray-400">· {{ kb.updateType || "Security" }} update · {{ kb.releaseMonth }}</span></span>
                   <span class="font-semibold shrink-0" :style="{ color: kb.maxSeverity?.toLowerCase() === 'critical' ? DANGER : WARNING }">
                     {{ kb.maxSeverity || "Unknown" }}{{ kb.cveCount ? ` · ${kb.cveCount} CVE${kb.cveCount === 1 ? "" : "s"}` : "" }}
                   </span>
@@ -311,8 +311,8 @@ function formatDate(value: string | null): string {
             </p>
             <div v-else-if="(device.vulnStatus as any).pendingCount > 0" class="space-y-1.5">
               <p class="text-xs font-medium" :style="{ color: WARNING }">{{ (device.vulnStatus as any).pendingCount }} known CVE{{ (device.vulnStatus as any).pendingCount === 1 ? "" : "s" }} fixed in a newer version</p>
-              <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50">
-                <span class="text-gray-900">{{ c.cveId }} <span class="text-gray-400">· fixed in {{ c.fixedVersion || c.fixedInMajor }}</span></span>
+              <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                <span class="text-gray-900 dark:text-white">{{ c.cveId }} <span class="text-gray-400">· fixed in {{ c.fixedVersion || c.fixedInMajor }}</span></span>
                 <span class="font-semibold shrink-0" :style="{ color: c.exploited || c.baseSeverity === 'Critical' ? DANGER : WARNING }">
                   {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}
                 </span>
@@ -351,8 +351,8 @@ function formatDate(value: string | null): string {
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Firewall Rule Sets</p>
             <p v-if="firewallState.active.length === 0" class="text-xs text-gray-400">No Applivery SOAR-managed firewall rule sets currently active on this device.</p>
             <div v-else class="space-y-1.5">
-              <div v-for="a in firewallState.active" :key="a.ruleSetId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50">
-                <span class="inline-flex items-center gap-1.5 text-gray-900">
+              <div v-for="a in firewallState.active" :key="a.ruleSetId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                <span class="inline-flex items-center gap-1.5 text-gray-900 dark:text-white">
                   <component :is="ICONS.ShieldCheck" :size="12" weight="Linear" :style="{ color: WARNING }" />
                   {{ a.ruleSetName || a.ruleSetId }}
                 </span>
@@ -374,9 +374,9 @@ function formatDate(value: string | null): string {
 
           <div v-if="(device.smartAttributes || []).length > 0" class="mb-6">
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Smart Attributes</p>
-            <div v-for="a in device.smartAttributes" :key="a.name" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100">
+            <div v-for="a in device.smartAttributes" :key="a.name" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
               <span class="text-gray-400">{{ a.name }}</span>
-              <span class="text-gray-900">{{ a.value }}</span>
+              <span class="text-gray-900 dark:text-white">{{ a.value }}</span>
             </div>
           </div>
 
@@ -385,9 +385,9 @@ function formatDate(value: string | null): string {
               <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Segment</p>
               <button :disabled="busy" class="text-xs font-medium disabled:opacity-50" :style="{ color: PRIMARY_BLUE }" @click="activePicker = 'segment'">Change</button>
             </div>
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50">
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50">
               <component :is="ICONS.Layers" :size="14" weight="Linear" class="text-gray-400" />
-              <span class="text-sm text-gray-900">{{ segmentName }}</span>
+              <span class="text-sm text-gray-900 dark:text-white">{{ segmentName }}</span>
             </div>
           </div>
 
@@ -436,7 +436,7 @@ function formatDate(value: string | null): string {
               </span>
             </div>
             <div v-if="typeof device.riskScore === 'number'">
-              <div class="h-2 rounded-full overflow-hidden bg-gray-100">
+              <div class="h-2 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
                 <div class="h-full rounded-full transition-all" :style="{ width: `${Math.min(Math.max(device.riskScore, 0), 100)}%`, backgroundColor: riskMeta(device.riskTier).color }" />
               </div>
               <p class="text-[10px] mt-1 text-gray-400">Risk score {{ device.riskScore }}/100 — higher means more attention needed.</p>
@@ -447,7 +447,7 @@ function formatDate(value: string | null): string {
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Risk Factors</p>
             <div class="space-y-1.5">
               <div v-for="(f, i) in device.riskFactors" :key="i" class="flex items-center justify-between py-1 text-sm">
-                <span class="text-gray-900">{{ f.label }}</span>
+                <span class="text-gray-900 dark:text-white">{{ f.label }}</span>
                 <span class="text-xs font-semibold" :style="{ color: riskMeta(device.riskTier).color }">+{{ f.points }}</span>
               </div>
             </div>
@@ -458,8 +458,8 @@ function formatDate(value: string | null): string {
               Compliance Policy Violations{{ (device.policyViolations || []).length ? ` (${device.policyViolations.length})` : "" }}
             </p>
             <div v-if="(device.policyViolations || []).length > 0" class="space-y-1.5">
-              <div v-for="(v, i) in device.policyViolations" :key="v.policyId || i" class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm bg-gray-50">
-                <span class="truncate text-gray-900">{{ v.policyName || "Unknown policy" }}</span>
+              <div v-for="(v, i) in device.policyViolations" :key="v.policyId || i" class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm bg-gray-50 dark:bg-gray-900/50">
+                <span class="truncate text-gray-900 dark:text-white">{{ v.policyName || "Unknown policy" }}</span>
                 <span class="text-[10px] font-semibold shrink-0 uppercase" :style="{ color: v.status === 'pending' ? WARNING : v.status === 'auto_fired' ? PRIMARY_BLUE : '#9CA3AF' }">
                   {{ String(v.status || "").replace("_", " ") || "—" }}
                 </span>
@@ -471,8 +471,8 @@ function formatDate(value: string | null): string {
           <div v-if="(device.activeViolations || []).length > 0" class="mb-6">
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Awaiting Review ({{ device.activeViolations.length }})</p>
             <div class="space-y-1.5">
-              <button v-for="v in device.activeViolations" :key="v.id" title="View this device's history in the Audit Log" class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm bg-gray-50" @click="openDeviceAudit">
-                <span class="truncate text-gray-900">{{ v.policyName || "Unknown policy" }}</span>
+              <button v-for="v in device.activeViolations" :key="v.id" title="View this device's history in the Audit Log" class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm bg-gray-50 dark:bg-gray-900/50" @click="openDeviceAudit">
+                <span class="truncate text-gray-900 dark:text-white">{{ v.policyName || "Unknown policy" }}</span>
                 <span class="text-[10px] font-semibold shrink-0" :style="{ color: DANGER }">Awaiting review →</span>
               </button>
             </div>
@@ -481,8 +481,8 @@ function formatDate(value: string | null): string {
           <div v-if="(device.openCases || []).length > 0" class="mb-6">
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Open Cases ({{ device.openCases.length }})</p>
             <div class="space-y-1.5">
-              <button v-for="c in device.openCases" :key="c.id" title="Open this case" class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm bg-gray-50" @click="openCase(c.id)">
-                <span class="truncate text-gray-900">{{ c.title }}</span>
+              <button v-for="c in device.openCases" :key="c.id" title="Open this case" class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm bg-gray-50 dark:bg-gray-900/50" @click="openCase(c.id)">
+                <span class="truncate text-gray-900 dark:text-white">{{ c.title }}</span>
                 <span class="text-[10px] font-semibold shrink-0" :style="{ color: PRIMARY_BLUE }">{{ c.severity }} →</span>
               </button>
             </div>
@@ -493,13 +493,13 @@ function formatDate(value: string | null): string {
           <template v-if="device.location">
             <div class="mb-4">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Last known location</p>
-              <div class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100">
+              <div class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
                 <span class="text-gray-400">Latitude</span>
-                <span class="font-mono text-xs text-gray-900">{{ device.location.lat?.toFixed(6) }}</span>
+                <span class="font-mono text-xs text-gray-900 dark:text-white">{{ device.location.lat?.toFixed(6) }}</span>
               </div>
-              <div class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100">
+              <div class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
                 <span class="text-gray-400">Longitude</span>
-                <span class="font-mono text-xs text-gray-900">{{ device.location.lng?.toFixed(6) }}</span>
+                <span class="font-mono text-xs text-gray-900 dark:text-white">{{ device.location.lng?.toFixed(6) }}</span>
               </div>
             </div>
             <a
@@ -514,7 +514,7 @@ function formatDate(value: string | null): string {
           </template>
           <div v-else class="flex flex-col items-center justify-center py-10 text-center">
             <component :is="ICONS.MapPoint" :size="24" weight="Linear" class="mb-3 text-gray-400" />
-            <p class="text-sm font-medium mb-1 text-gray-900">No location on file</p>
+            <p class="text-sm font-medium mb-1 text-gray-900 dark:text-white">No location on file</p>
             <p class="text-xs max-w-xs text-gray-400">Sync locations to fetch the latest known position for this fleet.</p>
           </div>
           <button

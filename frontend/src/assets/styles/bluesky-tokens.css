@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Manual, class-based dark mode (App.jsx's themeMode 'light'|'dark'|'system'
+   toggle, ~2804-2919) rather than Tailwind v4's default media-query-only
+   `dark:` variant — `dark:` classes now activate whenever a `.dark` class
+   is present on <html> or an ancestor, which stores/ui.ts toggles reactively
+   (covers the explicit light/dark choices; 'system' mode still resolves to
+   the OS preference, just via JS instead of a bare media query, so the
+   3-way toggle keeps working). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* BlueSky design tokens — ported from the BlueSky design system's
    src/app/globals.css (@theme block), the canonical source for the brand
    color scale used by every @applivery/bluesky-vue component. */
@@ -28,11 +37,19 @@
   --foreground: #0f172a;
 }
 
+/* Dark-theme page background/foreground — App.jsx's THEME.dark.bg/text
+   (~lines 318-326). */
+:root.dark {
+  --background: #030712;
+  --foreground: #ffffff;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
   font-size: 14px;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 @keyframes page-enter {

@@ -110,10 +110,10 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
 
 <template>
   <div v-if="open" class="fixed inset-0 z-[280] flex items-center justify-center bg-black/45 p-4" @click.self="emit('close')">
-    <div class="w-full rounded-xl border border-gray-200 shadow-lg flex flex-col bg-white" style="max-width: 700px; max-height: 85vh">
-      <div class="flex items-start justify-between gap-3 p-4 border-b border-gray-200">
+    <div class="w-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg flex flex-col bg-white dark:bg-gray-800" style="max-width: 700px; max-height: 85vh">
+      <div class="flex items-start justify-between gap-3 p-4 border-b border-gray-200 dark:border-gray-700">
         <div class="min-w-0">
-          <h3 class="text-sm font-semibold truncate text-gray-900">Import scripts from a Git repo</h3>
+          <h3 class="text-sm font-semibold truncate text-gray-900 dark:text-white">Import scripts from a Git repo</h3>
           <p class="text-xs mt-0.5 text-gray-400">Browse a connected repo of script files and add selected ones to Applivery + the library.</p>
         </div>
         <button class="p-1 rounded-lg shrink-0 text-gray-400" @click="emit('close')">
@@ -145,7 +145,7 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
             <div v-for="r in store.repos" :key="r.id" class="flex items-center gap-1">
               <button
                 class="flex-1 text-left px-2 py-1.5 rounded-lg text-[11px] truncate"
-                :style="activeRepoId === r.id ? { backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE } : { color: '#111827' }"
+                :style="activeRepoId === r.id ? { backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE } : { color: 'var(--foreground)' }"
                 @click="browse(r.id)"
               >
                 {{ r.name }}
@@ -154,18 +154,18 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
                 <component :is="ICONS.TrashBinMinimalistic" :size="11" weight="Linear" />
               </button>
             </div>
-            <button class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] border border-dashed border-gray-200 text-gray-400" @click="quickAddApplivery">
+            <button class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] border border-dashed border-gray-200 dark:border-gray-700 text-gray-400" @click="quickAddApplivery">
               <component :is="ICONS.AddSquare" :size="11" weight="Linear" /> Applivery's repo
             </button>
-            <button class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] border border-dashed border-gray-200 text-gray-400" @click="showAddForm = !showAddForm">
+            <button class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] border border-dashed border-gray-200 dark:border-gray-700 text-gray-400" @click="showAddForm = !showAddForm">
               <component :is="ICONS.LinkCircle" :size="11" weight="Linear" /> Custom repo…
             </button>
-            <div v-if="showAddForm" class="space-y-1.5 p-2 rounded-lg border border-gray-200">
-              <input v-model="newRepo.name" placeholder="name" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 bg-white text-gray-900" />
-              <input v-model="newRepo.owner" placeholder="owner" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 bg-white text-gray-900" />
-              <input v-model="newRepo.repo" placeholder="repo" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 bg-white text-gray-900" />
-              <input v-model="newRepo.branch" placeholder="branch" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 bg-white text-gray-900" />
-              <input v-model="newRepo.path" placeholder="path (optional)" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 bg-white text-gray-900" />
+            <div v-if="showAddForm" class="space-y-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
+              <input v-model="newRepo.name" placeholder="name" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+              <input v-model="newRepo.owner" placeholder="owner" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+              <input v-model="newRepo.repo" placeholder="repo" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+              <input v-model="newRepo.branch" placeholder="branch" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+              <input v-model="newRepo.path" placeholder="path (optional)" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
               <button class="w-full px-2 py-1 rounded text-[10px] font-semibold text-white" :style="{ backgroundColor: PRIMARY_BLUE }" @click="handleAddRepo">Connect</button>
             </div>
           </div>
@@ -187,16 +187,16 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
 
               <p v-if="items === null" class="text-xs text-gray-400">Loading…</p>
               <p v-else-if="items.length === 0" class="text-xs text-gray-400">Empty directory.</p>
-              <div v-else class="rounded-lg border border-gray-200 max-h-72 overflow-y-auto divide-y divide-gray-100">
+              <div v-else class="rounded-lg border border-gray-200 dark:border-gray-700 max-h-72 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
                 <div v-for="e in items" :key="e.path" class="flex items-center gap-2 px-2.5 py-1.5">
-                  <button v-if="e.type === 'dir'" class="flex items-center gap-2 flex-1 text-left text-xs hover:underline text-gray-900" @click="browse(activeRepoId!, e.path)">
+                  <button v-if="e.type === 'dir'" class="flex items-center gap-2 flex-1 text-left text-xs hover:underline text-gray-900 dark:text-white" @click="browse(activeRepoId!, e.path)">
                     <component :is="ICONS.Folder" :size="13" weight="Linear" class="text-gray-400" /> {{ e.name }}
                   </button>
-                  <label v-else class="flex items-center gap-2 flex-1 text-xs cursor-pointer" :class="e.importable ? 'text-gray-900' : 'text-gray-400'">
+                  <label v-else class="flex items-center gap-2 flex-1 text-xs cursor-pointer" :class="e.importable ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
                     <input type="checkbox" :checked="selected.has(e.path)" :disabled="!e.importable" @change="toggle(e)" />
                     <component :is="ICONS.CodeFile" :size="13" weight="Linear" class="text-gray-400" />
                     <span class="truncate flex-1">{{ e.name }}</span>
-                    <span v-if="e.inferredPlatform" class="text-[9px] px-1.5 py-0.5 rounded-full font-light border border-gray-200 text-gray-400">{{ e.inferredPlatform }}</span>
+                    <span v-if="e.inferredPlatform" class="text-[9px] px-1.5 py-0.5 rounded-full font-light border border-gray-200 dark:border-gray-700 text-gray-400">{{ e.inferredPlatform }}</span>
                   </label>
                 </div>
               </div>
