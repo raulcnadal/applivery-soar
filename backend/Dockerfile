@@ -69,6 +69,20 @@ RUN apk add --no-cache \
     ttf-freefont
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
+# gdmf.apple.com's certificate chain terminates in Apple's own Root CA,
+# which is in neither Alpine's ca-certificates bundle nor Node's own
+# compiled-in (Mozilla-derived) CA list -- Node ignores the OS trust store
+# by default, so `apk add ca-certificates` above doesn't help this one.
+# Without this, every Settings > OS Lifecycle GDMF fetch
+# (modules/catalogs/gdmfCatalog.ts) fails with "self-signed certificate in
+# certificate chain" even though the cert Apple serves is entirely
+# legitimate. NODE_EXTRA_CA_CERTS only *adds* trust for this one root on
+# top of Node's existing list -- unlike NODE_TLS_REJECT_UNAUTHORIZED=0, it
+# doesn't disable verification for the Applivery API calls this same
+# process makes.
+COPY backend/certs/apple-root-ca.pem /app/backend/certs/apple-root-ca.pem
+ENV NODE_EXTRA_CA_CERTS=/app/backend/certs/apple-root-ca.pem
+
 ENV NODE_ENV=production
 COPY backend/package*.json ./
 RUN npm install --omit=dev
