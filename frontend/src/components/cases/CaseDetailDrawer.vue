@@ -427,7 +427,7 @@ function timeAgo(isoString?: string | null): string | null {
             <div class="flex items-center justify-between gap-2 mb-0.5">
               <span class="font-mono truncate text-gray-900 dark:text-white">{{ r.ioc }}</span>
               <div class="flex items-center gap-1 shrink-0">
-                <span v-if="r.cached" :title="`Cached result from ${r.checkedAt ? timeAgo(r.checkedAt) : 'earlier'} — not a fresh lookup`" class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500 dark:text-gray-400">
+                <span v-if="r.cached" :title="`Cached result from ${r.checkedAt ? timeAgo(r.checkedAt) : 'earlier'} — not a fresh lookup`" class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
                   Cached
                 </span>
                 <span

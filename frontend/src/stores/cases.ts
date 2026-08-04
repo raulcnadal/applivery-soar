@@ -138,8 +138,24 @@ export const useCasesStore = defineStore("cases", () => {
     return res.data as Case;
   }
 
-  function exportCasesUrl(): string {
-    return "/api/cases/export";
+  // Port of handleExportCases (CasesView.jsx:319-330) — the export endpoint
+  // sits behind verifyDashboardToken, which only reads the X-Dashboard-Token
+  // header (auth.middleware.ts:28), so a plain `<a href>`/`window.open` to
+  // this URL 401s with no header attached. Must go through `api` (whose
+  // request interceptor stamps that header on every call) and pull the
+  // response down as an authenticated blob instead — same fix as
+  // compliance.ts's exportViolationsCsv.
+  async function exportCasesCsv() {
+    const { api } = await import("../api/http");
+    const res = await api.get("/cases/export", { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cases.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function fetchAssigneeSuggestions() {
@@ -263,7 +279,7 @@ export const useCasesStore = defineStore("cases", () => {
 
   return {
     cases, isLoading, error, activeCase, assigneeSuggestions, slaSettings, autoRunRules,
-    fetchCases, fetchCase, exportCasesUrl, fetchAssigneeSuggestions,
+    fetchCases, fetchCase, exportCasesCsv, fetchAssigneeSuggestions,
     createCase, updateCase, bulkUpdateCases, addNote, runWorkflowFromCase,
     retryIntegrations, syncTicketStatus, enrichCase,
     fetchSlaSettings, updateSlaSettings,

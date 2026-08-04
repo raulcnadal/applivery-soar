@@ -102,6 +102,14 @@ function openCase(c: Case) {
   detailOpen.value = true;
 }
 
+async function exportCsv() {
+  try {
+    await store.exportCasesCsv();
+  } catch {
+    alert("Failed to export cases.");
+  }
+}
+
 async function bulkAssign(caseIds: string[]) {
   if (!authStore.email) return;
   await store.bulkUpdateCases(caseIds, { assignee: authStore.email });
@@ -149,11 +157,9 @@ onMounted(async () => {
         <p class="text-sm mt-1 text-gray-400">The incident layer above raw violations — track investigation status, assign an owner, and keep notes across every detection of the same problem.</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <a :href="store.exportCasesUrl()" target="_blank" rel="noopener">
-          <button class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200">
-            <component :is="ICONS.Download" :size="13" weight="Linear" /> Export CSV
-          </button>
-        </a>
+        <button class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="exportCsv">
+          <component :is="ICONS.Download" :size="13" weight="Linear" /> Export CSV
+        </button>
         <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200" @click="createOpen = true">
           <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> New Case
         </button>
@@ -200,7 +206,7 @@ onMounted(async () => {
         <button
           v-if="authStore.email"
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-          :class="onlyMine ? 'bg-brand-50 text-brand-700 border border-brand-300' : 'border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'"
+          :class="onlyMine ? 'bg-brand-50 dark:bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-300 dark:border-brand-500/40' : 'border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'"
           @click="onlyMine = !onlyMine"
         >
           <component :is="ICONS.UsersGroupRounded" :size="12" weight="Linear" /> My cases

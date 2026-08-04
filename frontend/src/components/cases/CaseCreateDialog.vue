@@ -49,7 +49,12 @@ async function save() {
       <Input
         :model-value="form.severity"
         type="select"
-        :options="['low', 'medium', 'high', 'critical'].map((s) => ({ value: s, label: s }))"
+        :options="[
+          { value: 'low', label: 'Low' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High' },
+          { value: 'critical', label: 'Critical' },
+        ]"
         label="Severity"
         @update:model-value="form.severity = $event as string"
       />
