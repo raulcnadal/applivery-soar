@@ -21,6 +21,12 @@ export const compliancePolicySchema = z.object({
   severity: z.enum(["low", "medium", "high", "critical"]).default("medium"),
   conditionLogic: z.enum(["any", "all"]).default("any"),
   conditions: z.array(conditionRuleSchema).default([]),
+  // See CompliancePolicy.targetPlatform/targetDeploymentModel in
+  // schema.prisma for the full rationale -- same fields/semantics as
+  // Workflow's own targetPlatform/targetDeploymentModel, not present in
+  // the original main.py (a disclosed addition, not a parity port).
+  targetPlatform: z.string().nullable().optional(),
+  targetDeploymentModel: z.string().nullable().optional(),
   workflowId: z.string().nullable().optional(),
   nonComplianceTag: z.string().nullable().optional(),
   nonComplianceSmartAttributeId: z.string().nullable().optional(),

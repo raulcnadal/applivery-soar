@@ -11,10 +11,25 @@ export interface ComplianceFieldDef {
   type: string;
   operators: string[];
   options?: string[];
+  // Which policy targetPlatform(s) this field is meaningful for -- omitted
+  // (undefined) means universal/every platform. Purely a UI filter (Policy
+  // Builder hides fields that don't apply to the policy's locked-in target
+  // platform, mirroring how Workflow's builder hides incompatible MDM
+  // actions) -- the evaluator itself (complianceEvaluate.ts) doesn't
+  // enforce this, so a raw API payload with a mismatched field/platform
+  // combination still evaluates literally rather than erroring, same as
+  // every other condition field always has. Not present in the original
+  // main.py's COMPLIANCE_FIELDS at all -- a disclosed addition to support
+  // per-OS Policy Builder gating.
+  platforms?: string[];
 }
 
 export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   { key: "isCompliant", label: "Applivery compliance flag", type: "boolean", operators: ["equals"] },
+  // Redundant once a policy has a locked-in targetPlatform (the whole
+  // policy is already scoped) -- the Policy Builder hides this field
+  // specifically when targetPlatform is set, but it stays in the catalog
+  // unconditionally since "Common (all platforms)" policies still need it.
   { key: "platform", label: "Platform", type: "select", operators: ["equals", "notEquals"], options: ["apple", "macos", "android", "windows"] },
   { key: "osVersion", label: "OS version", type: "string", operators: ["lessThan", "greaterThan", "equals"] },
   { key: "lastSeenDaysAgo", label: "Days since last check-in", type: "number", operators: ["greaterThan", "lessThan"] },
@@ -26,7 +41,7 @@ export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   { key: "manufacturer", label: "Manufacturer", type: "string", operators: ["equals", "notEquals", "contains"] },
   { key: "model", label: "Model", type: "string", operators: ["equals", "notEquals", "contains"] },
   { key: "serialNumber", label: "Serial number", type: "string", operators: ["equals", "contains"] },
-  { key: "imei", label: "IMEI", type: "string", operators: ["equals", "contains"] },
+  { key: "imei", label: "IMEI", type: "string", operators: ["equals", "contains"], platforms: ["apple", "android"] },
   { key: "mdmUserEmail", label: "MDM user email", type: "string", operators: ["equals", "contains"] },
   { key: "segmentId", label: "Segment ID", type: "string", operators: ["equals", "notEquals"] },
   { key: "tags", label: "Tag", type: "string", operators: ["includes", "excludes"] },
@@ -42,12 +57,12 @@ export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   { key: "disallowedAppList", label: "Has a disallowed app (from an App List)", type: "app_list", operators: ["equals"] },
   { key: "riskScore", label: "Device Risk Score (0-100)", type: "number", operators: ["greaterThan", "lessThan"] },
   { key: "riskTier", label: "Device Risk Tier", type: "select", operators: ["equals", "notEquals"], options: ["low", "medium", "high", "critical"] },
-  { key: "osUpdatePendingCount", label: "Pending Windows security updates", type: "number", operators: ["greaterThan", "lessThan"] },
-  { key: "osUpdateExploitedPending", label: "Pending Windows update fixes an exploited CVE", type: "boolean", operators: ["equals"] },
-  { key: "vulnPendingCveCount", label: "Pending known CVEs (Apple/Android)", type: "number", operators: ["greaterThan", "lessThan"] },
-  { key: "vulnExploitedPending", label: "Pending CVE is exploited in the wild (Apple/Android)", type: "boolean", operators: ["equals"] },
+  { key: "osUpdatePendingCount", label: "Pending Windows security updates", type: "number", operators: ["greaterThan", "lessThan"], platforms: ["windows"] },
+  { key: "osUpdateExploitedPending", label: "Pending Windows update fixes an exploited CVE", type: "boolean", operators: ["equals"], platforms: ["windows"] },
+  { key: "vulnPendingCveCount", label: "Pending known CVEs (Apple/Android)", type: "number", operators: ["greaterThan", "lessThan"], platforms: ["apple", "macos", "android"] },
+  { key: "vulnExploitedPending", label: "Pending CVE is exploited in the wild (Apple/Android)", type: "boolean", operators: ["equals"], platforms: ["apple", "macos", "android"] },
   { key: "osEol", label: "OS version is end of life", type: "boolean", operators: ["equals"] },
-  { key: "appleAppUpdatesPending", label: "Pending Apple app updates", type: "number", operators: ["greaterThan", "lessThan"] },
+  { key: "appleAppUpdatesPending", label: "Pending Apple app updates", type: "number", operators: ["greaterThan", "lessThan"], platforms: ["apple", "macos"] },
   { key: "vulnServiceCriticalHighCount", label: "Critical/high CVEs (Vulnerability Service)", type: "number", operators: ["greaterThan", "lessThan"] },
   { key: "vulnServiceHasKev", label: "Known-exploited CVE present — CISA KEV (Vulnerability Service)", type: "boolean", operators: ["equals"] },
   { key: "vulnServiceChecked", label: "Checked against Vulnerability Service", type: "boolean", operators: ["equals"] },

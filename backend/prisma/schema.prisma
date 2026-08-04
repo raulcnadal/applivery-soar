@@ -102,6 +102,23 @@ model CompliancePolicy {
   severity                    String    @default("medium")
   conditionLogic               String    @default("any")
   conditions                  Json
+  // Which platform (+ deployment model, where applicable) this policy's
+  // conditions were authored for — same fields/semantics as Workflow's own
+  // targetPlatform/targetDeploymentModel (App.jsx has no equivalent; this
+  // is a disclosed addition, not a parity port). Nullable for backward
+  // compatibility: every policy that existed before this column was added
+  // keeps evaluating against every platform exactly as before (see
+  // compliance.service.ts's scopedDevices filter, which only narrows by
+  // platform when this is set). targetDeploymentModel is builder-guidance
+  // only (narrows which condition fields/attribute-name hints are shown) --
+  // unlike targetPlatform, it is NOT enforced against real device data
+  // during evaluation, because Applivery never reports a device's actual
+  // deployment model (supervised/work profile/COPE/etc.) as live telemetry
+  // -- the same limitation Workflow's own targetDeploymentModel already has
+  // (mdmActionExecutor.ts's own comment: "the WORKFLOW's own declared
+  // deployment model ... not something read off the real device").
+  targetPlatform               String?
+  targetDeploymentModel         String?
   workflowId                  String?
   nonComplianceTag             String?
   nonComplianceSmartAttributeId String?

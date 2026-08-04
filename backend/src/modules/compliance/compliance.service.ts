@@ -80,6 +80,8 @@ export async function createCompliancePolicy(workspaceSlug: string, payload: Com
       severity: payload.severity,
       conditionLogic: payload.conditionLogic,
       conditions: payload.conditions as any,
+      targetPlatform: payload.targetPlatform ?? null,
+      targetDeploymentModel: payload.targetDeploymentModel ?? null,
       workflowId: payload.workflowId ?? null,
       nonComplianceTag: payload.nonComplianceTag ?? null,
       nonComplianceSmartAttributeId: payload.nonComplianceSmartAttributeId ?? null,
@@ -122,6 +124,8 @@ export async function updateCompliancePolicy(workspaceSlug: string, policyId: st
       severity: payload.severity,
       conditionLogic: payload.conditionLogic,
       conditions: payload.conditions as any,
+      targetPlatform: payload.targetPlatform ?? null,
+      targetDeploymentModel: payload.targetDeploymentModel ?? null,
       workflowId: payload.workflowId ?? null,
       nonComplianceTag: payload.nonComplianceTag ?? null,
       nonComplianceSmartAttributeId: payload.nonComplianceSmartAttributeId ?? null,
@@ -363,9 +367,18 @@ export async function runComplianceEvaluation(
     const tag = policy.nonComplianceTag;
     const smartAttrId = policy.nonComplianceSmartAttributeId;
     const targetAudienceId = policy.targetDeviceAudienceId;
-    const scopedDevices = targetAudienceId
+    // targetPlatform narrows which devices this policy is even evaluated
+    // against, on top of (not instead of) the Device Audience scoping below
+    // -- a policy with no targetPlatform set (every pre-existing policy,
+    // before this column existed) keeps evaluating against every platform
+    // unchanged. targetDeploymentModel is deliberately NOT used here to
+    // filter devices -- see schema.prisma's comment on that column for why
+    // (no reliable per-device signal for it, same limitation Workflow's own
+    // targetDeploymentModel has always had).
+    const scopedDevices = (targetAudienceId
       ? devices.filter((d) => (d.deviceAudiences ?? []).some((a) => String(a.id) === String(targetAudienceId)))
-      : devices;
+      : devices
+    ).filter((d) => !policy.targetPlatform || d.platform === policy.targetPlatform);
     summary.devicesChecked += scopedDevices.length;
 
     // autoRun circuit breaker — resolved once per policy per pass.

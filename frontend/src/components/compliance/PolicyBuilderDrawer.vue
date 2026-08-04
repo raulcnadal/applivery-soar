@@ -30,6 +30,34 @@ const WARNING = "#F59E0B";
 
 const FRAMEWORK_SHORT_LABELS: Record<string, string> = { iso27001: "ISO 27001", ens: "ENS", nis2: "NIS2" };
 
+// 2-step wizard (Details+Target, then Rules) — same pattern as
+// WorkflowBuilderModal.vue: locking the target platform in on screen 1
+// before conditions are addable, so an admin can't build a Windows-specific
+// condition set then quietly switch to Android with those conditions still
+// attached. Deliberately NOT a forced choice the way Workflow's is, though
+// — a policy watching only platform-agnostic fields (lastSeenDaysAgo,
+// riskScore, tags, ...) across the whole fleet is a legitimate, common
+// case, not just a fallback for pre-existing data, so "Common (all
+// platforms)" is offered as its own explicit chip rather than being what
+// happens if you skip the question.
+const PLATFORM_OPTIONS = [
+  { value: "", label: "Common (all platforms)" },
+  { value: "apple", label: "iOS" },
+  { value: "macos", label: "macOS" },
+  { value: "android", label: "Android" },
+  { value: "windows", label: "Windows" },
+];
+const PLATFORM_LABELS: Record<string, string> = Object.fromEntries(PLATFORM_OPTIONS.map((p) => [p.value, p.label]));
+const DEPLOYMENT_MODELS: Record<string, Array<{ value: string; label: string }>> = {
+  apple: [{ value: "supervised", label: "Supervised" }, { value: "unsupervised", label: "Unsupervised" }],
+  macos: [{ value: "supervised", label: "Supervised" }, { value: "unsupervised", label: "Unsupervised" }],
+  android: [
+    { value: "work_profile", label: "Work Profile" },
+    { value: "cope", label: "COPE" },
+    { value: "device_owner", label: "Device Owner" },
+  ],
+};
+
 const props = defineProps<{
   open: boolean;
   policy: CompliancePolicy | null;
@@ -49,6 +77,13 @@ const devicesStore = useDevicesStore();
 const segmentsStore = useSegmentsStore();
 const workflowsStore = useWorkflowsStore();
 
+const screen = ref<"details" | "rules">("details");
+// Distinguishes "hasn't picked a target yet" (block continuing) from
+// "explicitly picked Common" (form.targetPlatform === "" is valid and
+// intentional) — a plain empty-string check on targetPlatform alone can't
+// tell those two states apart.
+const hasChosenTarget = ref(false);
+
 const form = reactive({
   name: "",
   description: "",
@@ -56,6 +91,8 @@ const form = reactive({
   autoRun: false,
   conditionLogic: "any" as "any" | "all",
   conditions: [] as ConditionRule[],
+  targetPlatform: "",
+  targetDeploymentModel: "",
   workflowId: "",
   autoRunBatchCap: 15 as number | null,
   noBatchCap: false,
@@ -99,12 +136,23 @@ function defaultValueForType(type: string | undefined, options: string[] | undef
 
 function resetForm() {
   const p = props.policy;
+  // Editing an existing policy (or starting from a template's prefill)
+  // jumps straight to the rules screen, target already effectively chosen
+  // — same as WorkflowBuilderModal.vue's `screen.value = w ? "steps" :
+  // "details"`. A prefilled-but-unsaved template is still "new" (no `p`
+  // yet), but its prefillConditions were authored for a specific platform
+  // by whoever built the template, so treat that the same as editing.
+  const startsWithTarget = Boolean(p) || Boolean(props.prefillConditions?.length);
+  screen.value = startsWithTarget ? "rules" : "details";
+  hasChosenTarget.value = startsWithTarget;
   form.name = p?.name ?? props.prefillName ?? "";
   form.description = p?.description ?? props.prefillDescription ?? "";
   form.enabled = p?.enabled ?? true;
   form.autoRun = p?.autoRun ?? false;
   form.conditionLogic = (p?.conditionLogic ?? props.prefillConditionLogic ?? "any") as "any" | "all";
   form.conditions = JSON.parse(JSON.stringify((p?.conditions ?? props.prefillConditions ?? []).map((c) => ({ ...c, id: (c as any).id ?? newConditionId() }))));
+  form.targetPlatform = p?.targetPlatform ?? "";
+  form.targetDeploymentModel = p?.targetDeploymentModel ?? "";
   form.workflowId = p?.workflowId ?? "";
   form.autoRunBatchCap = p ? p.autoRunBatchCap ?? null : 15;
   form.noBatchCap = p ? p.autoRunBatchCap === null : false;
@@ -154,8 +202,63 @@ onMounted(async () => {
   ]);
 });
 
+const needsDeploymentModel = computed(() => ["apple", "macos", "android"].includes(form.targetPlatform));
+const modelOptions = computed(() => DEPLOYMENT_MODELS[form.targetPlatform] ?? []);
+const modelLabel = computed(() => modelOptions.value.find((m) => m.value === form.targetDeploymentModel)?.label ?? form.targetDeploymentModel);
+
+// Fields available for THIS policy's target — universal fields (no
+// `platforms` restriction) plus whatever's scoped to the chosen platform.
+// The "platform" field itself is hidden once a specific platform is locked
+// in: a per-condition "platform equals X" is redundant (and confusing)
+// once the whole policy is already scoped to X.
+const availableFields = computed(() => {
+  const platform = form.targetPlatform;
+  return store.fields.filter((f) => {
+    if (f.key === "platform" && platform) return false;
+    if (!f.platforms || f.platforms.length === 0) return true;
+    return !platform || f.platforms.includes(platform);
+  });
+});
+
+function reconcileConditionsForTarget() {
+  const allowed = new Set(availableFields.value.map((f) => f.key));
+  form.conditions = form.conditions.map((c) => {
+    if (allowed.has(c.field)) return c;
+    const fallback = availableFields.value[0];
+    if (!fallback) return c;
+    return { ...c, field: fallback.key, operator: fallback.operators[0], value: defaultValueForType(fallback.type, fallback.options) } as ConditionRule;
+  });
+}
+
+function pickPlatform(value: string) {
+  hasChosenTarget.value = true;
+  form.targetPlatform = value;
+  form.targetDeploymentModel = "";
+  reconcileConditionsForTarget();
+}
+function pickDeploymentModel(value: string) {
+  form.targetDeploymentModel = value;
+}
+
+function goToRulesScreen() {
+  if (!form.name.trim()) {
+    saveError.value = "Give this policy a name.";
+    return;
+  }
+  if (!hasChosenTarget.value) {
+    saveError.value = "Choose a target platform before continuing — pick \"Common (all platforms)\" if this policy isn't OS-specific.";
+    return;
+  }
+  if (needsDeploymentModel.value && !form.targetDeploymentModel) {
+    saveError.value = `Choose a deployment model for ${PLATFORM_LABELS[form.targetPlatform]} before continuing.`;
+    return;
+  }
+  saveError.value = null;
+  screen.value = "rules";
+}
+
 function addCondition() {
-  const def = store.fields[0];
+  const def = availableFields.value[0];
   if (!def) return;
   form.conditions.push({ field: def.key, operator: def.operators[0], value: defaultValueForType(def.type, def.options), id: newConditionId() } as any);
 }
@@ -275,6 +378,8 @@ async function save() {
       autoRun: form.autoRun,
       conditionLogic: form.conditionLogic,
       conditions: form.conditions.map(({ field, operator, value }) => ({ field, operator, value })),
+      targetPlatform: form.targetPlatform || null,
+      targetDeploymentModel: form.targetDeploymentModel || null,
       workflowId: form.workflowId,
       autoRunBatchCap: form.noBatchCap ? null : Number.isFinite(Number(form.autoRunBatchCap)) && Number(form.autoRunBatchCap) > 0 ? Number(form.autoRunBatchCap) : 15,
       autoRunDestructiveAck: form.autoRunDestructiveAck,
@@ -323,13 +428,75 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
       </button>
     </div>
 
+    <p class="text-xs mb-3 -mt-1 text-gray-400">{{ screen === "details" ? "Step 1 of 2 — Details & target" : "Step 2 of 2 — Rules & automation" }}</p>
+
     <div class="max-h-[65vh] overflow-y-auto pr-1">
       <div v-if="saveError" class="mb-4 px-3 py-2 rounded-lg text-xs font-medium border" :style="{ backgroundColor: `${DANGER}12`, color: DANGER, borderColor: `${DANGER}30` }">{{ saveError }}</div>
 
-      <div class="space-y-2 mb-5">
-        <input v-model="form.name" placeholder="Policy name, e.g. Stale or non-compliant devices" class="w-full px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
-        <textarea v-model="form.description" placeholder="Description (optional)" rows="2" class="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
-      </div>
+      <template v-if="screen === 'details'">
+        <div class="space-y-2 mb-5">
+          <input v-model="form.name" placeholder="Policy name, e.g. Stale or non-compliant devices" class="w-full px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
+          <textarea v-model="form.description" placeholder="Description (optional)" rows="2" class="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
+        </div>
+
+        <div class="rounded-xl p-4 mb-5 border border-gray-200 dark:border-gray-700">
+          <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">1. Target platform</p>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-1">
+            <button
+              v-for="p in PLATFORM_OPTIONS"
+              :key="p.value"
+              type="button"
+              class="px-3 py-1.5 rounded-lg text-xs font-semibold"
+              :class="!(hasChosenTarget && form.targetPlatform === p.value) ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
+              :style="hasChosenTarget && form.targetPlatform === p.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
+              @click="pickPlatform(p.value)"
+            >
+              {{ p.label }}
+            </button>
+          </div>
+          <p class="text-xs mb-3 text-gray-400">
+            {{
+              hasChosenTarget
+                ? form.targetPlatform
+                  ? `Once you continue, only condition fields that apply to ${PLATFORM_LABELS[form.targetPlatform]} are offered below — fields that don't (e.g. Windows-only pending-update counts on an iOS policy) are hidden, and any condition already using one gets reset.`
+                  : "Common (all platforms): every condition field stays available, and this policy evaluates against every device regardless of platform."
+                : "Pick a platform this policy's conditions are meant for, or Common (all platforms) if they aren't OS-specific."
+            }}
+          </p>
+
+          <template v-if="needsDeploymentModel">
+            <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">2. Deployment model</p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="m in modelOptions"
+                :key="m.value"
+                type="button"
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                :class="form.targetDeploymentModel !== m.value ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
+                :style="form.targetDeploymentModel === m.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
+                @click="pickDeploymentModel(m.value)"
+              >
+                {{ m.label }}
+              </button>
+            </div>
+            <p v-if="!form.targetDeploymentModel" class="text-xs mt-2 inline-flex items-start gap-1.5" :style="{ color: WARNING }">
+              <component :is="ICONS.InfoCircle" :size="12" weight="Linear" class="shrink-0 mt-0.5" /> Required before continuing — {{ PLATFORM_LABELS[form.targetPlatform] }} monitoring needs different attributes/thresholds per deployment model (e.g. full-device encryption isn't checkable the same way on a BYOD Work Profile as it is on Device Owner).
+            </p>
+            <p v-else class="text-[11px] mt-2 leading-relaxed text-gray-400">
+              This narrows which attribute-name hints are suggested for Self-Reported/Custom-field conditions below — Applivery doesn't report a device's live deployment model, so it isn't used to filter which devices get evaluated (only targetPlatform is).
+            </p>
+          </template>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="flex items-center justify-between mb-5 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
+          <div class="flex items-center gap-2 text-xs font-semibold text-gray-900 dark:text-white">
+            <component :is="ICONS.CheckCircle" :size="14" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
+            Target: {{ form.targetPlatform ? PLATFORM_LABELS[form.targetPlatform] : "Common (all platforms)" }}<template v-if="form.targetDeploymentModel"> · {{ modelLabel }}</template>
+          </div>
+          <button type="button" class="text-xs font-medium" :style="{ color: PRIMARY_BLUE }" @click="screen = 'details'">Change</button>
+        </div>
 
       <div v-if="policy?.autoRunTripped" class="flex items-start gap-2.5 px-3 py-2.5 rounded-lg mb-4 border" :style="{ backgroundColor: `${DANGER}10`, borderColor: `${DANGER}30` }">
         <component :is="ICONS.DangerTriangle" :size="15" weight="Linear" class="shrink-0 mt-0.5" :style="{ color: DANGER }" />
@@ -446,7 +613,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         v-for="(c, i) in form.conditions"
         :key="(c as any).id ?? i"
         :condition="c"
-        :fields-catalog="store.fields"
+        :fields-catalog="availableFields"
         :smart-attribute-names="store.smartAttributeNames"
         :self-reported-attribute-names="store.selfReportedAttributeNames"
         :app-lists="store.appLists"
@@ -581,13 +748,21 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         </div>
         <p class="text-[11px] mt-1.5 leading-relaxed text-gray-400">Confirms the "Apply to devices" audience above actually resolves to real devices, refreshed live each time you change the audience.</p>
       </div>
+      </template>
     </div>
 
-    <div class="flex gap-3 justify-end pt-4 border-t border-gray-100 dark:border-gray-800 mt-4">
-      <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('close')">Cancel</button>
-      <button :disabled="isSaving" class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50" @click="save">
-        {{ isSaving ? "Saving…" : "Save policy" }}
+    <div class="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-800 mt-4">
+      <button v-if="screen === 'rules'" type="button" class="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium text-gray-400" @click="screen = 'details'">
+        <component :is="ICONS.AltArrowLeft" :size="15" weight="Linear" /> Back
       </button>
+      <div v-else />
+      <div class="flex gap-3">
+        <button class="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('close')">Cancel</button>
+        <button v-if="screen === 'details'" type="button" class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700" @click="goToRulesScreen">Next: Add rules →</button>
+        <button v-else :disabled="isSaving" class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50" @click="save">
+          {{ isSaving ? "Saving…" : "Save policy" }}
+        </button>
+      </div>
     </div>
   </Modal>
 </template>

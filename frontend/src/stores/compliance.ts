@@ -16,6 +16,12 @@ export interface CompliancePolicy {
   severity: "low" | "medium" | "high" | "critical";
   conditionLogic: "any" | "all";
   conditions: ConditionRule[];
+  // See backend/prisma/schema.prisma's CompliancePolicy.targetPlatform doc
+  // comment -- same fields/semantics as Workflow's targetPlatform/
+  // targetDeploymentModel, nullable/optional for backward compatibility
+  // with policies created before this existed ("Common — all platforms").
+  targetPlatform?: string | null;
+  targetDeploymentModel?: string | null;
   workflowId?: string | null;
   nonComplianceTag?: string | null;
   nonComplianceSmartAttributeId?: string | null;
@@ -64,6 +70,9 @@ export interface ComplianceFieldDef {
   type: string;
   operators: string[];
   options?: string[];
+  // Which policy targetPlatform(s) this field applies to — omitted means
+  // universal. See backend's complianceFields.ts for the full rationale.
+  platforms?: string[];
 }
 
 export interface SmartAttributeDef {

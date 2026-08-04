@@ -17,6 +17,12 @@ const DANGER = "#EF4444";
 const WARNING = "#F59E0B";
 const PRIMARY_BLUE = "#0241E3";
 
+const PLATFORM_LABELS: Record<string, string> = { apple: "iOS", macos: "macOS", android: "Android", windows: "Windows" };
+const DEPLOYMENT_MODEL_LABELS: Record<string, string> = {
+  supervised: "Supervised", unsupervised: "Unsupervised",
+  work_profile: "Work Profile", cope: "COPE", device_owner: "Device Owner",
+};
+
 const props = defineProps<{
   policies: CompliancePolicy[];
   isLoading?: boolean;
@@ -105,6 +111,12 @@ async function remove(p: CompliancePolicy) {
           <p class="text-sm font-semibold truncate text-gray-900 dark:text-white">{{ p.name }}</p>
           <p class="text-xs truncate text-gray-400">{{ conditionSummary(p) }}</p>
         </div>
+        <span
+          class="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+          :style="{ backgroundColor: p.targetPlatform ? `${PRIMARY_BLUE}12` : '#9CA3AF15', color: p.targetPlatform ? PRIMARY_BLUE : '#9CA3AF' }"
+        >
+          {{ p.targetPlatform ? PLATFORM_LABELS[p.targetPlatform] ?? p.targetPlatform : "Common" }}{{ p.targetDeploymentModel ? ` · ${DEPLOYMENT_MODEL_LABELS[p.targetDeploymentModel] ?? p.targetDeploymentModel}` : "" }}
+        </span>
       </div>
       <p v-if="p.description" class="text-xs mb-2 line-clamp-2 text-gray-400">{{ p.description }}</p>
       <p class="text-xs mb-1 inline-flex items-center gap-1 text-gray-400">
