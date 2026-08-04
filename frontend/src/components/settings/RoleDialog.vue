@@ -3,14 +3,27 @@
 // fields" list (main.py:1094 RolePayload) — 8 feature areas x 3-way
 // (none/read/manage) toggle, 5 independent high-risk-action checkboxes,
 // free-typed Applivery tag values, and an optional segment scope.
-import { Alert, Button, Input, Modal } from "@applivery/bluesky-vue";
+//
+// Deliberately NOT a <Modal> — the original's RolesSettings.jsx renders
+// Create/Edit Role as a plain inline state swap inside the Settings
+// content pane (`if (editing) return <RoleEditor .../>`, RolesSettings.jsx
+// ~line 337), replacing the Roles list in place, same left-nav/footer
+// chrome staying visible throughout. This component used to wrap itself in
+// the shared Modal (Teleport-to-body, fixed overlay) instead, which put it
+// visually behind SettingsModal.vue's own overlay/blur (a plain z-index
+// comparison between fixed-position siblings under <body> — no number was
+// ever going to make a floating dialog match "renders inside the settings
+// panel," since the original never puts this behind an overlay at all).
+// RolesSettingsPanel.vue now v-if's between the list view and this
+// component directly, mirroring the original's editing-state swap.
+import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { onMounted, reactive, watch } from "vue";
 import { ref } from "vue";
 import { useRolesStore, type RolePayload, type SoarRole } from "../../stores/roles";
 import { useDevicesStore } from "../../stores/devices";
 import type { FeatureArea, FeatureLevel, RiskyAction } from "../../stores/auth";
 
-const props = defineProps<{ open: boolean; role: SoarRole | null }>();
+const props = defineProps<{ role: SoarRole | null }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
 const store = useRolesStore();
@@ -63,17 +76,22 @@ onMounted(async () => {
   if (devicesStore.segments.length === 0) await devicesStore.fetchPickers();
 });
 
-watch(() => props.open, (open) => {
-  if (!open) return;
-  const r = props.role;
-  form.name = r?.name ?? "";
-  form.description = r?.description ?? "";
-  form.featureAccess = { ...emptyFeatureAccess(), ...(r?.featureAccess ?? {}) } as Record<FeatureArea, FeatureLevel>;
-  form.riskyActions = { ...emptyRiskyActions(), ...(r?.riskyActions ?? {}) } as Record<RiskyAction, boolean>;
-  form.appliveryTagValues = (r?.appliveryTagValues ?? []).join(", ");
-  form.segmentIds = [...(r?.segmentIds ?? [])];
-  saveError.value = null;
-});
+// Runs once at mount (this component only exists in the DOM while active —
+// RolesSettingsPanel.vue v-if's it in/out — so there's no separate "open"
+// transition to react to the way a Modal-based dialog would need).
+watch(
+  () => props.role,
+  (r) => {
+    form.name = r?.name ?? "";
+    form.description = r?.description ?? "";
+    form.featureAccess = { ...emptyFeatureAccess(), ...(r?.featureAccess ?? {}) } as Record<FeatureArea, FeatureLevel>;
+    form.riskyActions = { ...emptyRiskyActions(), ...(r?.riskyActions ?? {}) } as Record<RiskyAction, boolean>;
+    form.appliveryTagValues = (r?.appliveryTagValues ?? []).join(", ");
+    form.segmentIds = [...(r?.segmentIds ?? [])];
+    saveError.value = null;
+  },
+  { immediate: true },
+);
 
 function toggleSegment(id: string) {
   const idx = form.segmentIds.indexOf(id);
@@ -106,8 +124,9 @@ async function save() {
 </script>
 
 <template>
-  <Modal :open="open" :title="role ? `Edit “${role.name}”` : 'New SOAR Role'" size="lg" @close="emit('close')">
-    <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+  <div>
+    <h3 class="text-sm font-bold mb-4 text-gray-900 dark:text-white">{{ role ? `Edit "${role.name}"` : "New SOAR Role" }}</h3>
+    <div class="p-5 rounded-xl border shadow-sm max-w-3xl border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-4">
       <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
       <Input v-model="form.name" label="Role name" />
       <Input v-model="form.description" label="Description" />
@@ -165,5 +184,5 @@ async function save() {
         <Button variant="ghost" @click="emit('close')">Cancel</Button>
       </div>
     </div>
-  </Modal>
+  </div>
 </template>

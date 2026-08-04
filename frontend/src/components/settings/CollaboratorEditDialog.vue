@@ -1,11 +1,23 @@
 <script setup lang="ts">
 // Edit a collaborator's Applivery role/tags directly — writes straight to
 // Applivery (docs/settings.md#roles' "Collaborators & Tags" sub-view).
-import { Alert, Button, Input, Modal } from "@applivery/bluesky-vue";
+//
+// Deliberately NOT a <Modal> — same reasoning as RoleDialog.vue: the
+// original's CollaboratorsPanel (RolesSettings.jsx) expands this inline
+// (within the collaborator's own row card) rather than behind an overlay.
+// This port renders it inline in RolesSettingsPanel.vue's content area
+// instead (swapping out the collaborators table, same pattern RoleDialog
+// uses for the Roles list) rather than reproducing the original's exact
+// per-row expansion, which would need restructuring
+// CollaboratorsDirectoryTable.vue itself — but it fixes the same
+// underlying bug: a Modal-wrapped dialog rendering behind SettingsModal's
+// own overlay is never going to look right regardless of z-index, since
+// the original never puts this behind an overlay at all.
+import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { reactive, ref, watch } from "vue";
 import { useRolesStore, type Collaborator } from "../../stores/roles";
 
-const props = defineProps<{ open: boolean; collaborator: Collaborator | null }>();
+const props = defineProps<{ collaborator: Collaborator | null }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
 const store = useRolesStore();
@@ -25,13 +37,15 @@ function emailOf(c: Collaborator | null): string {
   return String(c?.email ?? (c as any)?.user?.email ?? "");
 }
 
-watch(() => props.open, (open) => {
-  if (!open) return;
-  const c = props.collaborator;
-  form.role = c?.role_normalized || "unassigned";
-  form.tags = (c?.tagCandidates ?? []).join(", ");
-  saveError.value = null;
-});
+watch(
+  () => props.collaborator,
+  (c) => {
+    form.role = c?.role_normalized || "unassigned";
+    form.tags = (c?.tagCandidates ?? []).join(", ");
+    saveError.value = null;
+  },
+  { immediate: true },
+);
 
 async function save() {
   if (!props.collaborator) return;
@@ -53,8 +67,9 @@ async function save() {
 </script>
 
 <template>
-  <Modal :open="open" :title="`Edit ${emailOf(collaborator)}`" size="md" @close="emit('close')">
-    <div class="space-y-3">
+  <div>
+    <h3 class="text-sm font-bold mb-4 text-gray-900 dark:text-white">Edit {{ emailOf(collaborator) }}</h3>
+    <div class="p-5 rounded-xl border shadow-sm max-w-3xl border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3">
       <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
       <p class="text-xs text-gray-400">Changes here write straight to Applivery — the same effect as editing this collaborator in Applivery's own console.</p>
       <Input
@@ -70,5 +85,5 @@ async function save() {
         <Button variant="ghost" @click="emit('close')">Cancel</Button>
       </div>
     </div>
-  </Modal>
+  </div>
 </template>
