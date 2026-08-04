@@ -7,17 +7,21 @@
 import { Alert, Button, EmptyState, PageHeader } from "@applivery/bluesky-vue";
 import { GridLayout, GridItem } from "grid-layout-plus";
 import { ICONS, resolveIcon } from "../lib/solarIcons";
-import { onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import WidgetCard from "../components/overview/WidgetCard.vue";
 import WidgetBuilderPanel from "../components/overview/WidgetBuilderPanel.vue";
 import WidgetInfoModal from "../components/overview/WidgetInfoModal.vue";
 import OrgProfileModal from "../components/overview/OrgProfileModal.vue";
+import WidgetResultsModal from "../components/overview/WidgetResultsModal.vue";
+import InsightDetailModal from "../components/overview/InsightDetailModal.vue";
+import DeviceInsightModal from "../components/playground/DeviceInsightModal.vue";
 import DateRangePicker, { type DateRangeValue } from "../components/overview/DateRangePicker.vue";
 import { useDashboardStateStore } from "../stores/dashboardState";
 import { useSegmentsStore } from "../stores/segments";
 import { WIDGET_ICON_MAP, DEFAULT_WIDGET_ICON, WIDGET_SIZES, type DashboardWidget, type GridLayoutItem } from "../lib/analyticsCatalog";
 import { fetchWidgetData, type WidgetResponse } from "../lib/widgetData";
+import { filterWidgetItemsForClick, insightKind } from "../lib/widgetVisuals";
 
 // App.jsx's PRIMARY_BLUE (~line 20) — the one consistent brand accent used
 // throughout the Overview page's chrome (buttons, icon badges, menus).
@@ -231,6 +235,31 @@ function openOrgProfile(id: string) {
   selectedOrgProfile.value = widgetSlots[id]?.data?.orgProfile ?? null;
 }
 
+// ── Chart-click results + drill-in detail modals — 1:1 port of App.jsx's
+// handleChartClick/selectedWidgetItems/activeInsight/openInsight
+// (~3682-3815, 5351-5412): a slice/bar/row click on any donut/pie/bar/
+// gauge/line/radar/list/progress/scorecard widget filters that widget's raw
+// `items` down to the clicked slice (lib/widgetVisuals.ts's
+// filterWidgetItemsForClick) and opens a results list; clicking one of
+// those results opens its own detail modal (device-shaped items reuse the
+// existing playground DeviceInsightModal.vue; everything else renders via
+// the new InsightDetailModal.vue). ──
+const selectedWidgetItems = ref<{ title: string; items: any[]; stat: string } | null>(null);
+const activeInsight = ref<Record<string, any> | null>(null);
+const activeInsightIsDevice = computed(() => !!activeInsight.value && insightKind(activeInsight.value) === "device");
+
+function onChartClick(id: string, sliceName: string | null) {
+  const w = widgets.value.find((x) => x.id === id);
+  const data = widgetSlots[id]?.data;
+  if (!w || !data?.items?.length) return;
+  const filtered = filterWidgetItemsForClick(w, data.items, sliceName);
+  selectedWidgetItems.value = { title: sliceName ? `${w.title} - ${sliceName}` : w.title, items: filtered, stat: w.stat };
+}
+function openInsight(item: any) {
+  selectedWidgetItems.value = null;
+  activeInsight.value = item;
+}
+
 // ── Add / Edit widget builder panel ──
 const editingWidget = ref<DashboardWidget | null>(null);
 const isBuilderOpen = ref(false);
@@ -367,6 +396,7 @@ async function saveWidgetForm(w: DashboardWidget) {
               :is-loading="widgetSlots[item.i]?.isLoading ?? true"
               :error="widgetSlots[item.i]?.error ?? null"
               @open-org-profile="openOrgProfile(item.i)"
+              @chart-click="onChartClick(item.i, $event)"
             />
           </div>
         </div>
@@ -416,5 +446,8 @@ async function saveWidgetForm(w: DashboardWidget) {
       @close="widgetInfoModalFor = null"
     />
     <OrgProfileModal :profile="selectedOrgProfile" @close="selectedOrgProfile = null" />
+    <WidgetResultsModal :results="selectedWidgetItems" @close="selectedWidgetItems = null" @select-item="openInsight" />
+    <DeviceInsightModal v-if="activeInsightIsDevice" :device="activeInsight" @close="activeInsight = null" />
+    <InsightDetailModal v-else :insight="activeInsight" :widget-stat="selectedWidgetItems?.stat ?? ''" @close="activeInsight = null" />
   </div>
 </template>

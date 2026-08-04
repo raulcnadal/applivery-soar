@@ -66,6 +66,140 @@ export function humanLabel(raw: string): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+/** Port of App.jsx's `_getOsPlatform(stat, name, itemOs)` (~3800-3806). */
+export function getOsPlatform(_stat: string, name: string, itemOs?: string | null): string | null {
+  if (itemOs) return itemOs;
+  const n = String(name).toLowerCase();
+  if (n === "apple" || n === "ios" || n.includes("mac") || n.includes("ipad")) return "apple";
+  if (n === "android") return "android";
+  if (n === "windows" || n === "win") return "windows";
+  return null;
+}
+
+/** Port of App.jsx's `handleChartClick`'s filter dispatch (~3682-3747) — given
+ * a widget, its raw `items`, and the name of the slice/bar/row clicked (or
+ * `null` for a click on a non-sliced chart like scorecard/line/radar),
+ * returns the subset of items that slice represents. Splitting the pure
+ * filter logic out from the click-handling/state-setting lets WidgetCard.vue
+ * (the live grid card) and any future consumer share it without either
+ * owning the `selectedWidgetItems` state itself. */
+export function filterWidgetItemsForClick(widget: { stat: string }, items: any[], sliceName: string | null): any[] {
+  if (!sliceName) return items;
+  const name = String(sliceName).toLowerCase().trim();
+  const stat = widget.stat;
+
+  if (stat === "stats_compliance") {
+    const wantComp = name === "compliant" || name === "compliance";
+    return items.filter((i) => i.is_compliant_normalized === wantComp);
+  }
+  if (stat === "stats_devices_os" || stat === "mdm_devices" || stat === "stats_builds_os" || stat === "app_dist_apps") {
+    return items.filter((i) => {
+      const p_str = JSON.stringify(i.oss || [i.platform_normalized || i.os]).toLowerCase();
+      if (name.includes("ios") || name.includes("apple") || name.includes("ipad") || name.includes("mac")) return p_str.includes("apple") || p_str.includes("ios") || p_str.includes("mac");
+      if (name.includes("win")) return p_str.includes("windows") || p_str.includes("win");
+      if (name.includes("android")) return p_str.includes("android");
+      return p_str.includes("other");
+    });
+  }
+  if (stat === "stats_devices_status") {
+    return items.filter((i) => i.state_normalized === name);
+  }
+  if (stat.includes("collaborator") || stat.includes("role") || stat === "mdm_users" || stat === "app_dist_store_users") {
+    return items.filter((i) => String(i.role_normalized || "user").toLowerCase() === name);
+  }
+  if (stat === "stats_models") {
+    return items.filter((i) => {
+      const mfr = String(i.summary?.manufacturer || i.summary?.brand || "").toLowerCase();
+      const mod = String(i.summary?.model || i.summary?.name || "").toLowerCase();
+      const combined = `${mfr} ${mod}`;
+      return combined.includes(name) || name.includes(mod);
+    });
+  }
+  if (stat === "mdm_segments") {
+    return items.filter((i) => String(i.name || "").toLowerCase() === name);
+  }
+  if (stat === "stats_battery") {
+    return items.filter((i) => {
+      const bat = parseFloat(i.summary?.battery);
+      if (isNaN(bat)) return false;
+      if (name.includes("less than 20")) return bat >= 0 && bat <= 20;
+      if (name.includes("between")) return bat > 20 && bat <= 70;
+      if (name.includes("more than 70")) return bat > 70;
+      return false;
+    });
+  }
+  if (stat === "stats_os_updates_all" || stat === "stats_os_versions") {
+    return items.filter((i) => {
+      const ver = String(i.version || i.osVersion || i.targetVersion || i.value || i.summary?.osVersion || "Unknown").toLowerCase().trim();
+      return name.includes(ver);
+    });
+  }
+  if (stat === "stats_sync_errors") {
+    return items.filter((i) => {
+      const target = String(i.target || "Unknown").replace(/device/i, "").toLowerCase().trim();
+      return name.includes(target);
+    });
+  }
+  if (stat === "cases_summary") {
+    const statusByLabel: Record<string, string> = { open: "open", investigating: "investigating", resolved: "resolved", closed: "closed", "false positive": "false_positive" };
+    const wantStatus = statusByLabel[name] || name;
+    return items.filter((i) => String(i.status || "").toLowerCase() === wantStatus);
+  }
+  return items;
+}
+
+/** Port of App.jsx's item-shape sniffing used by both the `selectedWidgetItems`
+ * results list (getDisplayName/subLabel, ~5364-5388) and the `activeInsight`
+ * detail dispatch (~3988-4111) to tell a device/app/build/download/segment/
+ * generic-user record apart — these payload shapes never carry an explicit
+ * "type" field, so both places re-derive it from which fields are present. */
+export function insightKind(item: Record<string, any>): "segment" | "download" | "build" | "device" | "app" | "user" {
+  if (item.type_normalized === "segment") return "segment";
+  if (item.member !== undefined && item.networkInfo !== undefined) return "download";
+  if (item.versionName !== undefined && (item.applicationInfo !== undefined || item.os !== undefined || item.originalExtension !== undefined)) return "build";
+  const isDevice = !!(
+    item.platform_normalized ||
+    item.summary?.serialNumber ||
+    item.summary?.udid ||
+    item.control?.UDID ||
+    item.emmDevice ||
+    item.admEnterprise ||
+    item.winId ||
+    (item.type && ["android", "apple", "ios", "windows", "macos"].includes(String(item.type).toLowerCase()))
+  );
+  if (isDevice) return "device";
+  if (item.oss !== undefined && item.buildPlatforms !== undefined) return "app";
+  return "user";
+}
+
+/** Port of App.jsx's `getDisplayName`/subLabel logic inside the
+ * `selectedWidgetItems` results-list render (~5364-5388). */
+export function widgetResultRowLabel(item: Record<string, any>): { label: string; subLabel: string; kind: ReturnType<typeof insightKind> } {
+  const kind = insightKind(item);
+  let label: string;
+  if (item.display_name) label = item.display_name;
+  else if (kind === "segment") label = item.name || "Unnamed Segment";
+  else if (kind === "build") label = item.applicationInfo?.name || item.application || "Unknown App";
+  else if (kind === "download") label = `${item.member?.firstName || ""} ${item.member?.lastName || ""}`.trim() || item.member?.email || "Unknown Downloader";
+  else {
+    const target = item.user || item.employee || item;
+    if (target.firstName || target.lastName) label = `${target.firstName || ""} ${target.lastName || ""}`.trim();
+    else if (target.name) label = target.name;
+    else if (item.name) label = item.name;
+    else if (item.displayName) label = item.displayName;
+    else label = target.email || item.email || item.summary?.model || "Unknown Item";
+  }
+
+  let subLabel = "";
+  if (kind === "segment") subLabel = `ID: ${item.id} · Children: ${item.children?.length || 0}`;
+  else if (kind === "build") subLabel = `v${item.versionName} (${item.versionCode}) · ${item.os || "Unknown"}`;
+  else if (kind === "download") subLabel = `IP: ${item.networkInfo?.ip || "N/A"} · ${item.applicationInfo?.name || "App"}`;
+  else if (item.oss && Array.isArray(item.oss)) subLabel = item.oss.join(" · ").toUpperCase();
+  else subLabel = item.display_email || item.email || item.user?.email || item.employee?.email || item.platform_normalized || item.summary?.osVersion || "";
+
+  return { label, subLabel, kind };
+}
+
 /** Lighten a hex color by `amt` (0-1) toward white. Port of App.jsx's `brighten`. */
 export function brighten(hex: string, amt = 0.18): string {
   if (!hex || !hex.startsWith("#")) return hex;
