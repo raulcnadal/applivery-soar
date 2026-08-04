@@ -34,7 +34,13 @@ const auth = useAuthStore();
 const segmentsStore = useSegmentsStore();
 const uiStore = useUiStore();
 const dashboardStateStore = useDashboardStateStore();
-segmentsStore.fetchTree();
+// Guarded defensively — AppShell is only ever supposed to mount for an
+// authenticated session (App.vue renders it unless the route is standalone),
+// but a brief router race on first paint could still get here unauthenticated
+// (see main.ts's router.isReady() comment). An unauthenticated fetchTree()
+// call 401s, which api.ts's interceptor turns into a hard `location.href`
+// reload — restarting that race forever. Cheap to guard here too.
+if (auth.isAuthenticated) segmentsStore.fetchTree();
 
 // New-workspace onboarding (main.py:1802-1811's workspace-status check) —
 // checked once per landing (fresh login, or after a workspace switch's full
@@ -44,6 +50,9 @@ segmentsStore.fetchTree();
 // WorkspaceOnboardingModal.vue's dismissForThisWorkspace).
 const isOnboardingModalOpen = ref(false);
 onMounted(async () => {
+  // Same guard as the fetchTree() call above — see its comment.
+  if (!auth.isAuthenticated) return;
+
   // Backend-persisted theme (roadmap Phase 11) — the localStorage value
   // ui.ts read at store-creation time is already applied (no flash of the
   // wrong theme), this just reconciles against the cross-device value once
