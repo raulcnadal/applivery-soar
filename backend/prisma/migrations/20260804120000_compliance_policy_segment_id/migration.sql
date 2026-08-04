@@ -1,0 +1,21 @@
+-- Adds CompliancePolicy.segmentId (administrative/visibility scope only —
+-- see docs/compliance.md — "does not filter which devices get checked").
+--
+-- This was originally added by editing the already-applied init migration
+-- (00000000000000_init) directly instead of a new migration file. That
+-- works against a fresh database (CI's ephemeral Postgres runs every
+-- migration from scratch on each run, so the edited init file's column was
+-- always present there) but does nothing for an already-provisioned
+-- database like the live production one: `prisma migrate deploy` tracks
+-- each migration's checksum in `_prisma_migrations`, and 00000000000000_init
+-- was already recorded as applied with its original checksum before this
+-- column was added to it — so the edit was silently never applied there,
+-- and every query selecting CompliancePolicy.segmentId (GET
+-- /api/compliance/policies in particular) 500'd against the live database
+-- with "column CompliancePolicy.segmentId does not exist" once the new
+-- backend code (added in commit 9f362a7) actually reached it. Reverted
+-- the init migration back to its original, already-applied content and
+-- added the column here instead, as a proper new migration, which both
+-- CI's fresh databases and the live already-provisioned one can apply
+-- identically going forward.
+ALTER TABLE "CompliancePolicy" ADD COLUMN "segmentId" TEXT;
