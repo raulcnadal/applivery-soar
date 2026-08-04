@@ -186,11 +186,11 @@ function cancelEdit() {
 <template>
   <Teleport to="body">
     <div v-if="open" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4 overflow-y-auto" @click.self="emit('close')">
-      <div class="w-full max-w-2xl rounded-2xl shadow-2xl bg-white dark:bg-gray-800 flex flex-col max-h-[90vh]">
+      <div class="w-full max-w-2xl rounded-2xl shadow-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
         <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-800 shrink-0">
+        <div class="flex items-center justify-between px-6 py-5 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" :style="{ backgroundColor: `${PRIMARY_BLUE}12` }">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" :style="{ backgroundColor: `${PRIMARY_BLUE}15` }">
               <component :is="ICONS.DocumentText" :size="18" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
             </div>
             <div>
@@ -198,8 +198,8 @@ function cancelEdit() {
               <p class="text-xs mt-0.5 text-gray-400">Configure your report and generate or schedule it</p>
             </div>
           </div>
-          <button class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Close" @click="emit('close')">
-            <component :is="ICONS.CloseCircle" :size="18" weight="Linear" />
+          <button class="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-70 transition-opacity text-gray-400 bg-gray-400/10" aria-label="Close" @click="emit('close')">
+            <component :is="ICONS.CloseCircle" :size="15" weight="Linear" />
           </button>
         </div>
 
@@ -211,7 +211,7 @@ function cancelEdit() {
             <!-- Report Name -->
             <div>
               <label class="block text-xs font-semibold uppercase tracking-widest mb-2 text-gray-400">Report Name</label>
-              <input v-model="form.name" placeholder="e.g. Monthly Compliance Summary" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700" />
+              <input v-model="form.name" placeholder="e.g. Monthly Compliance Summary" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
             </div>
 
             <!-- 1. Select Data Sources -->
@@ -221,8 +221,11 @@ function cancelEdit() {
                 <label
                   v-for="item in selectableSources"
                   :key="item.id"
-                  class="flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-colors hover:border-blue-500 bg-white dark:bg-gray-800"
-                  :style="{ borderColor: form.sources.includes(item.id) ? PRIMARY_BLUE : '#E5E7EB' }"
+                  :class="[
+                    'flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-colors hover:border-blue-500 bg-white dark:bg-gray-800',
+                    form.sources.includes(item.id) ? '' : 'border-gray-200 dark:border-gray-700',
+                  ]"
+                  :style="form.sources.includes(item.id) ? { borderColor: PRIMARY_BLUE } : {}"
                 >
                   <input type="checkbox" class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500" :checked="form.sources.includes(item.id)" @change="toggleSource(item.id)" />
                   <component :is="sourceIcon(item.id)" :size="14" weight="Linear" :style="{ color: form.sources.includes(item.id) ? PRIMARY_BLUE : '#9CA3AF' }" />
@@ -234,7 +237,7 @@ function cancelEdit() {
             <!-- 2. Time Lapse -->
             <div>
               <label class="block text-xs font-semibold uppercase tracking-widest mb-2 text-gray-400">2. Time Lapse</label>
-              <select v-model="form.timeLapse" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700">
+              <select v-model="form.timeLapse" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
                 <option value="Last 7 Days">Last 7 Days</option>
                 <option value="Last 30 Days">Last 30 Days</option>
                 <option value="All Time">All Time</option>
@@ -247,7 +250,7 @@ function cancelEdit() {
               <div class="grid grid-cols-2 gap-3">
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Operating System</label>
-                  <select v-model="form.filters.type" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700">
+                  <select v-model="form.filters.type" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
                     <option value="all">All OS</option>
                     <option value="apple">iOS / macOS</option>
                     <option value="android">Android</option>
@@ -256,7 +259,7 @@ function cancelEdit() {
                 </div>
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Compliance</label>
-                  <select v-model="form.filters.complianceStatus" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700">
+                  <select v-model="form.filters.complianceStatus" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
                     <option value="all">All devices</option>
                     <option value="compliant">Compliant only</option>
                     <option value="non_compliant">Non-compliant only</option>
@@ -264,7 +267,7 @@ function cancelEdit() {
                 </div>
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Role</label>
-                  <select v-model="form.filters.role" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700">
+                  <select v-model="form.filters.role" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
                     <option value="all">All roles</option>
                     <option value="owner">Owner</option>
                     <option value="admin">Admin</option>
@@ -274,7 +277,7 @@ function cancelEdit() {
                 </div>
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Auth Origin</label>
-                  <select v-model="form.filters.authOrigin" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700">
+                  <select v-model="form.filters.authOrigin" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
                     <option value="all">All origins</option>
                     <option value="dashboard">Dashboard</option>
                     <option value="sso">SSO</option>
@@ -282,7 +285,7 @@ function cancelEdit() {
                 </div>
               </div>
               <label class="flex items-center gap-2 text-sm mt-3 text-gray-700 dark:text-gray-200">
-                <input type="checkbox" v-model="form.filters.inactive24h" /> Hide devices not reported in last 24h
+                <input type="checkbox" v-model="form.filters.inactive24h" class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500" /> Hide devices not reported in last 24h
               </label>
             </div>
 
@@ -298,7 +301,7 @@ function cancelEdit() {
                     <select
                       v-if="(form.display as any)[row.key]"
                       v-model="(form.display as any)[row.typeKey]"
-                      class="ml-auto rounded-lg px-2.5 py-1 outline-none text-xs border border-gray-200 dark:border-gray-700"
+                      class="ml-auto rounded-lg px-2.5 py-1 outline-none text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                     >
                       <option v-for="[v, l] in row.types" :key="v" :value="v">{{ l }}</option>
                     </select>
@@ -312,30 +315,33 @@ function cancelEdit() {
               <label class="block text-xs font-semibold uppercase tracking-widest mb-3 text-gray-400">5. Delivery</label>
               <div class="flex flex-col gap-2.5">
                 <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-200">
-                  <input type="checkbox" v-model="form.delivery.download" />
+                  <input type="checkbox" v-model="form.delivery.download" class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500" />
                   <component :is="ICONS.Download" :size="14" weight="Linear" class="text-gray-400" />
                   Download PDF directly
                 </label>
                 <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-200">
-                  <input type="checkbox" v-model="form.delivery.chat" />
+                  <input type="checkbox" v-model="form.delivery.chat" class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500" />
                   <component :is="ICONS.ChatRound" :size="14" weight="Linear" class="text-gray-400" />
                   Send to Webhook
                 </label>
                 <p v-if="webhookMissing" class="text-xs text-red-500 pl-6">No Webhook URL configured in Settings.</p>
                 <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-200">
-                  <input type="checkbox" v-model="form.delivery.email" />
+                  <input type="checkbox" v-model="form.delivery.email" class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500" />
                   <component :is="ICONS.Letter" :size="14" weight="Linear" class="text-gray-400" />
                   Send via Email
                 </label>
                 <div v-if="form.delivery.email" class="pl-6">
-                  <input v-model="form.emailRecipients" placeholder="alice@example.com, bob@example.com" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700" />
+                  <input v-model="form.emailRecipients" placeholder="alice@example.com, bob@example.com" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
                   <p v-if="smtpMissing" class="text-xs text-red-500 mt-1">SMTP not configured in Settings.</p>
                 </div>
               </div>
             </div>
 
             <!-- 6. Automation & Scheduling -->
-            <div class="rounded-xl border p-4" :style="form.schedule.enabled ? { backgroundColor: `${PRIMARY_BLUE}06`, borderColor: PRIMARY_BLUE } : { borderColor: '#E5E7EB' }">
+            <div
+              :class="['rounded-xl border p-4', form.schedule.enabled ? '' : 'border-gray-200 dark:border-gray-700']"
+              :style="form.schedule.enabled ? { backgroundColor: `${PRIMARY_BLUE}06`, borderColor: PRIMARY_BLUE } : {}"
+            >
               <div class="flex items-center justify-between">
                 <div>
                   <label class="block text-xs font-semibold uppercase tracking-widest text-gray-400">6. Automation &amp; Scheduling</label>
@@ -343,8 +349,8 @@ function cancelEdit() {
                 </div>
                 <button
                   type="button"
-                  class="px-3 py-1 rounded-full text-xs font-semibold shrink-0"
-                  :style="form.schedule.enabled ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : { backgroundColor: '#E5E7EB', color: '#6B7280' }"
+                  :class="['px-3 py-1 rounded-full text-xs font-semibold shrink-0', form.schedule.enabled ? '' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400']"
+                  :style="form.schedule.enabled ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
                   @click="form.schedule.enabled = !form.schedule.enabled"
                 >
                   {{ form.schedule.enabled ? "ON" : "OFF" }}
@@ -353,7 +359,7 @@ function cancelEdit() {
               <div v-if="form.schedule.enabled" class="grid grid-cols-2 gap-4 mt-4">
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Frequency</label>
-                  <select v-model="form.schedule.frequency" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700">
+                  <select v-model="form.schedule.frequency" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly (Mon)</option>
                     <option value="monthly">Monthly (1st)</option>
@@ -361,17 +367,17 @@ function cancelEdit() {
                 </div>
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Execution Time</label>
-                  <input v-model="form.schedule.time" type="time" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700" />
+                  <input v-model="form.schedule.time" type="time" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
                 </div>
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Timezone</label>
-                  <select v-model="form.schedule.timezone" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700">
+                  <select v-model="form.schedule.timezone" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
                     <option v-for="tz in TIMEZONES" :key="tz" :value="tz">{{ tz.replace(/_/g, " ") }}</option>
                   </select>
                 </div>
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Start Date</label>
-                  <input v-model="form.schedule.startDate" type="date" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700" />
+                  <input v-model="form.schedule.startDate" type="date" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
                 </div>
               </div>
             </div>
@@ -379,7 +385,7 @@ function cancelEdit() {
         </div>
 
         <!-- Footer -->
-        <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-3 shrink-0">
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 shrink-0">
           <div class="flex items-center gap-2">
             <button v-if="editingReport" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5" @click="cancelEdit">Cancel Edit</button>
             <button class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5" @click="emit('close')">Cancel</button>

@@ -6,21 +6,23 @@
 import { ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useDashboardStateStore } from "../../stores/dashboardState";
+import { useUiStore } from "../../stores/ui";
+
+const DANGER = "#EF4444";
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const store = useDashboardStateStore();
+const ui = useUiStore();
 const draft = ref("");
 const isSaving = ref(false);
-const resetConfirm = ref(false);
 
 watch(
   () => props.open,
   (open) => {
     if (open) {
       draft.value = store.customReportTemplate;
-      resetConfirm.value = false;
     }
   },
 );
@@ -35,13 +37,11 @@ async function applyAndSave() {
   }
 }
 
-async function resetToDefault() {
-  if (!resetConfirm.value) {
-    resetConfirm.value = true;
-    return;
-  }
-  draft.value = "";
-  resetConfirm.value = false;
+// Port of the Reset button (App.jsx:6420) — a plain window.confirm(), same
+// idiom used for every other destructive action in this app, not a custom
+// two-click confirm state machine.
+function resetToDefault() {
+  if (window.confirm("Reset to default template?")) draft.value = "";
 }
 
 function close() {
@@ -51,38 +51,36 @@ function close() {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4" @click.self="close">
+    <div v-if="open" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto" @click.self="close">
       <div class="w-full max-w-5xl h-[90vh] rounded-2xl shadow-2xl bg-white dark:bg-gray-800 flex flex-col">
-        <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-800 shrink-0">
+        <div class="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <div>
-            <h2 class="text-base font-bold leading-tight text-gray-900 dark:text-white">Custom HTML Template</h2>
-            <p class="text-xs mt-0.5 text-gray-400">
-              Optional Jinja2 template for generated reports — supports <code v-pre>{{ Workspace_Name }}</code>,
-              <code v-pre>{{ Report_Title }}</code>, <code v-pre>{{ Generated_Date }}</code>, <code v-pre>{{ Time_Lapse }}</code>,
-              a <code>metadata</code> loop, and a <code>report_sections</code> loop. Leave blank to use the default layout.
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white">Custom HTML Template</h2>
+            <p class="text-xs mt-1 text-gray-400">
+              Use Jinja2 syntax to inject data (e.g., <code class="text-blue-500" v-pre>{{ Report_Title }}</code>). Leave blank to fall back to default.
             </p>
           </div>
-          <button class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-600 transition-colors shrink-0" aria-label="Close" @click="close">
-            <component :is="ICONS.CloseCircle" :size="18" weight="Linear" />
+          <button class="text-gray-400 hover:text-red-500 transition-colors" aria-label="Close" @click="close">
+            <component :is="ICONS.CloseCircle" :size="20" weight="Linear" />
           </button>
         </div>
 
-        <div class="flex-1 p-6 overflow-hidden">
+        <div class="p-6 overflow-hidden flex-1 flex flex-col bg-gray-50/50 dark:bg-black/20">
           <textarea
             v-model="draft"
-            class="w-full h-full rounded-lg px-3 py-2 text-xs font-mono border border-gray-200 dark:border-gray-700 resize-none"
-            placeholder="<html>…</html>"
+            class="w-full flex-1 rounded-xl p-4 text-[12px] font-mono outline-none transition-colors border shadow-inner resize-none custom-scrollbar focus:border-blue-500 focus:ring-2 focus:ring-brand-500"
+            :style="{ backgroundColor: ui.isDark ? '#0A0A0A' : '#FFFFFF', color: ui.isDark ? '#34D399' : '#0F172A', borderColor: ui.isDark ? '#374151' : '#E5E7EB' }"
+            placeholder="<!DOCTYPE html>
+<html>..."
+            spellcheck="false"
           />
         </div>
 
-        <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-3 shrink-0">
-          <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50" @click="resetToDefault">
-            <component :is="ICONS.RestartCircle" :size="14" weight="Linear" />
-            {{ resetConfirm ? "Click again to confirm" : "Reset to Default" }}
-          </button>
-          <div class="flex items-center gap-2">
-            <button class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5" @click="close">Close</button>
-            <button :disabled="isSaving" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50" @click="applyAndSave">
+        <div class="p-6 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
+          <button class="px-5 py-2.5 rounded-lg font-bold text-sm transition-colors hover:bg-red-500/10" :style="{ color: DANGER }" @click="resetToDefault">Reset to Default</button>
+          <div class="flex gap-3">
+            <button class="px-5 py-2.5 rounded-lg font-medium text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-gray-400" @click="close">Close</button>
+            <button :disabled="isSaving" class="bg-[#0055FF] hover:bg-blue-600 px-8 py-2.5 rounded-xl font-bold text-sm text-white transition-colors shadow-md disabled:opacity-50" @click="applyAndSave">
               {{ isSaving ? "Saving…" : "Apply & Save" }}
             </button>
           </div>

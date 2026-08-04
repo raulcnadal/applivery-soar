@@ -155,7 +155,7 @@ async function runNow(rep: ScheduledReport) {
         class="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-brand-600 transition-all duration-200 hover:bg-brand-700"
         @click="openNewReport"
       >
-        <component :is="ICONS.AddCircle" :size="16" weight="Linear" /> Create Report
+        <component :is="ICONS.AddSquare" :size="16" weight="Linear" /> Create Report
       </button>
       <button v-if="store.scheduledReports.length > 0" class="text-sm hover:opacity-70 transition-opacity" :style="{ color: PRIMARY_BLUE }" @click="tab = 'scheduled'">
         View {{ store.scheduledReports.length }} scheduled report{{ store.scheduledReports.length !== 1 ? "s" : "" }}
@@ -172,48 +172,54 @@ async function runNow(rep: ScheduledReport) {
           <p class="text-sm font-medium text-gray-900 dark:text-white">No scheduled reports yet</p>
           <p class="text-xs mt-1 text-gray-400">Build a report and turn on Automation &amp; Scheduling to get here.</p>
         </div>
-        <button class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700" @click="openNewReport">Open Builder</button>
+        <button class="px-5 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity" style="background-color: #0055ff" @click="openNewReport">Open Builder</button>
       </div>
 
-      <div v-for="rep in store.scheduledReports" :key="rep.id" class="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div class="min-w-0">
-          <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ rep.name || "Untitled report" }}</p>
-          <div class="flex items-center gap-2 mt-1 flex-wrap">
-            <span class="text-[10px] font-medium px-2.5 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }">
+      <div v-for="rep in store.scheduledReports" :key="rep.id" class="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-start gap-4">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }">
+          <component :is="ICONS.Calendar" :size="18" weight="Linear" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 mb-1 flex-wrap">
+            <span class="font-semibold text-sm text-gray-900 dark:text-white">{{ rep.name || "Unnamed Report" }}</span>
+            <span class="text-[10px] font-light px-2.5 py-0.5 rounded-full border border-current/25 shrink-0" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }">
               {{ FREQUENCY_LABEL[rep.schedule.frequency] || "Weekly (Mon)" }}
             </span>
-            <span class="text-xs text-gray-400">at {{ rep.schedule.time || "09:00" }} ({{ rep.schedule.timezone || "UTC" }})</span>
-            <span class="text-xs text-gray-400">· {{ rep.sources.length }} source{{ rep.sources.length !== 1 ? "s" : "" }} · {{ rep.timeLapse }}</span>
           </div>
-          <p v-if="rep.delivery.email && rep.emailRecipients" class="text-xs mt-1 text-gray-400 truncate">
-            <component :is="ICONS.Letter" :size="11" weight="Linear" class="inline -mt-0.5" /> {{ rep.emailRecipients }}
-          </p>
+          <div class="text-xs space-y-0.5 text-gray-400">
+            <div>at {{ rep.schedule.time || "09:00" }} ({{ rep.schedule.timezone || "UTC" }})</div>
+            <div>{{ rep.sources.length }} data source{{ rep.sources.length !== 1 ? "s" : "" }} · {{ rep.timeLapse }}</div>
+            <div v-if="rep.delivery.email && rep.emailRecipients" class="truncate">
+              <component :is="ICONS.Letter" :size="11" weight="Linear" class="inline -mt-0.5" /> {{ rep.emailRecipients }}
+            </div>
+          </div>
         </div>
-        <div class="flex items-center gap-2 shrink-0 ml-3">
+        <div class="flex items-center gap-2 shrink-0">
           <button
             :disabled="runningId === rep.id"
             title="Run now"
-            class="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-50"
+            class="p-2 rounded-lg hover:opacity-70 transition-opacity disabled:opacity-30"
             :style="{ backgroundColor: `${SUCCESS}15`, color: SUCCESS }"
             @click="runNow(rep)"
           >
             <component :is="ICONS.Play" :size="15" weight="Linear" :class="runningId === rep.id ? 'animate-pulse' : ''" />
           </button>
-          <button title="Edit" class="w-8 h-8 rounded-lg flex items-center justify-center" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }" @click="openEditReport(rep)">
+          <button title="Edit" class="p-2 rounded-lg hover:opacity-70 transition-opacity" :style="{ backgroundColor: `${PRIMARY_BLUE}15`, color: PRIMARY_BLUE }" @click="openEditReport(rep)">
             <component :is="ICONS.Pen2" :size="15" weight="Linear" />
           </button>
-          <button title="Delete" class="w-8 h-8 rounded-lg flex items-center justify-center" :style="{ backgroundColor: `${DANGER}15`, color: DANGER }" @click="deleteSchedule(rep.id, rep.name)">
-            <component :is="ICONS.TrashBinTrash" :size="15" weight="Linear" />
+          <button title="Delete" class="p-2 rounded-lg hover:opacity-70 transition-opacity" :style="{ backgroundColor: `${DANGER}15`, color: DANGER }" @click="deleteSchedule(rep.id, rep.name)">
+            <component :is="ICONS.TrashBinMinimalistic" :size="15" weight="Linear" />
           </button>
         </div>
       </div>
 
       <button
         v-if="store.scheduledReports.length"
-        class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5"
+        class="w-full py-3 rounded-xl border font-medium text-sm flex items-center justify-center gap-2 hover:opacity-80 transition-opacity"
+        :style="{ borderColor: PRIMARY_BLUE, color: PRIMARY_BLUE }"
         @click="openNewReport"
       >
-        <component :is="ICONS.AddCircle" :size="14" weight="Linear" /> Add Another Schedule
+        <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Add Another Schedule
       </button>
     </div>
 
