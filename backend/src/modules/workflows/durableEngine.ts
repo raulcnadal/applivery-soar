@@ -4,6 +4,8 @@ import { resolveOrgBase } from "../auth/rbac.service";
 import { getAutomationBearer } from "../settings/automationCredential.service";
 import { invalidateDevicesCache } from "../devices/devices.service";
 import { loadAppListsContext } from "../appLists/appCatalog.service";
+import { loadGeofenceZonesById } from "../geofencing/geofence.service";
+import { loadDeviceLocations } from "../geofencing/locationsRefresh.service";
 import { readInstalledAppsFromStore } from "../appLists/installedApps.service";
 import { policyViolated } from "../compliance/complianceEvaluate";
 import { executeMdmAction, type WorkflowResumeRef } from "./mdmActionExecutor";
@@ -190,6 +192,10 @@ export async function runDeviceStepChain(
     ? await prisma.compliancePolicy.findFirst({ where: { workspaceSlug: slugKey, id: recoveryCfg.compliancePolicyId } })
     : null;
   const appLists = recoveryPolicy ? await loadAppListsContext(slugKey) : undefined;
+  const geoConditions = (recoveryPolicy?.conditions as any[]) ?? [];
+  const geo = geoConditions.some((c) => c?.field === "geofenceZoneId")
+    ? { zonesById: await loadGeofenceZonesById(slugKey), locationsByDeviceId: await loadDeviceLocations(slugKey, [deviceId]) }
+    : undefined;
 
   // A resumed chain (startStepId set) may run long after the launching
   // human's session token expired, so it switches to the automation
@@ -220,7 +226,7 @@ export async function runDeviceStepChain(
         if (conditions.some((c) => ["requiredAppList", "disallowedAppList"].includes(c?.field))) {
           (deviceFull as any).installedApps = await readInstalledAppsFromStore(slugKey, deviceId);
         }
-        const stillViolating = policyViolated(deviceFull as any, { conditions, conditionLogic: recoveryPolicy.conditionLogic }, appLists).length > 0;
+        const stillViolating = policyViolated(deviceFull as any, { conditions, conditionLogic: recoveryPolicy.conditionLogic }, appLists, geo).length > 0;
         if (!stillViolating) {
           const recoveryLog = await runRecoverySteps(headers, orgBase, credsAuthorization, slugKey, device, workflow as any, log, workspaceState as any);
           log.push(...recoveryLog);

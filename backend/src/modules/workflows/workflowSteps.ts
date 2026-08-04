@@ -7,6 +7,8 @@ import type { NormalizedDevice } from "../devices/deviceNormalize";
 import { loadAppListsContext } from "../appLists/appCatalog.service";
 import { readInstalledAppsFromStore } from "../appLists/installedApps.service";
 import { policyViolated } from "../compliance/complianceEvaluate";
+import { loadGeofenceZonesById } from "../geofencing/geofence.service";
+import { loadDeviceLocations } from "../geofencing/locationsRefresh.service";
 import { executeMdmAction, type MdmActionResult } from "./mdmActionExecutor";
 import { renderTemplate } from "./templateRender";
 import type { WorkflowDeviceRefPayload, WorkflowStepPayload } from "./workflows.schemas";
@@ -258,7 +260,12 @@ export async function executeMonitorStep(
     (deviceFull as any).installedApps = await readInstalledAppsFromStore(workspaceSlug, device.id);
   }
   const appLists = await loadAppListsContext(workspaceSlug);
-  const matched = policyViolated(deviceFull as any, { conditions: conditions as any, conditionLogic: policy.conditionLogic }, appLists);
+  // Single-device re-check, so the geofencing lookup is cheap even though
+  // it's not the fleet-wide batched pass compliance.service.ts does.
+  const geo = conditions.some((c) => c?.field === "geofenceZoneId")
+    ? { zonesById: await loadGeofenceZonesById(workspaceSlug), locationsByDeviceId: await loadDeviceLocations(workspaceSlug, [device.id]) }
+    : undefined;
+  const matched = policyViolated(deviceFull as any, { conditions: conditions as any, conditionLogic: policy.conditionLogic }, appLists, geo);
   if (matched.length) {
     return { ok: false, detail: `Still violating '${policy.name || "policy"}' — ${matched.length} condition(s) matched` };
   }

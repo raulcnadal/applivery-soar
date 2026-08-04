@@ -4,6 +4,7 @@
  * _evaluate_condition (10247), and _policy_violated (10533).
  */
 import type { NormalizedDevice } from "../devices/deviceNormalize";
+import { isPointInZone } from "../geofencing/geofence.service";
 
 /**
  * App Lists context for requiredAppList/disallowedAppList conditions —
@@ -16,6 +17,20 @@ import type { NormalizedDevice } from "../devices/deviceNormalize";
 export interface AppListsContext {
   catalogById: Map<string, { id: string; identifier: string }>;
   listById: Map<string, { id: string; appIds: string[] }>;
+}
+
+/**
+ * Geofencing context for geofenceZoneId/hasLocationData/locationAgeMinutes
+ * conditions -- pre-loaded ONCE by the caller (compliance.service.ts's
+ * evaluation pass), same reasoning as AppListsContext above: this function
+ * must stay synchronous, so the async Prisma reads happen before the loop,
+ * not per-condition inside it. `locationsByDeviceId` only contains entries
+ * for devices actually scoped by a geofence-using policy (see
+ * geofenceScopedDeviceIds) -- not the whole fleet.
+ */
+export interface GeoContext {
+  zonesById: Map<string, { shape: string; geometry: { center?: { lat: number; lng: number }; radiusMeters?: number; points?: Array<{ lat: number; lng: number }> } }>;
+  locationsByDeviceId: Map<string, { lat: number; lng: number; recordedAt: Date | null; fetchedAt: Date }>;
 }
 
 export function versionTuple(v: unknown): number[] {
@@ -86,9 +101,27 @@ export function evaluateCondition(
   device: NormalizedDevice & Record<string, any>,
   condition: EvalCondition,
   appLists?: AppListsContext,
+  geo?: GeoContext,
 ): boolean {
   const { field, operator, value } = condition;
   try {
+    if (field === "geofenceZoneId") {
+      const zone = geo?.zonesById.get(String(value ?? ""));
+      const loc = geo?.locationsByDeviceId.get(device.id);
+      if (!zone || !loc) return false; // no zone selected, or device has no known location -- doesn't match either way (see COMPLIANCE_FIELDS's doc comment on this field for why, and hasLocationData for composing fail-closed policies)
+      const inside = isPointInZone({ lat: loc.lat, lng: loc.lng }, zone);
+      return operator === "inside" ? inside : !inside;
+    }
+    if (field === "hasLocationData") {
+      return Boolean(geo?.locationsByDeviceId.has(device.id)) === Boolean(value);
+    }
+    if (field === "locationAgeMinutes") {
+      const loc = geo?.locationsByDeviceId.get(device.id);
+      if (!loc) return false;
+      const ageMinutes = (Date.now() - loc.fetchedAt.getTime()) / 60_000;
+      const target = Number(value ?? 0);
+      return operator === "greaterThan" ? ageMinutes > target : ageMinutes < target;
+    }
     if (["manufacturer", "model", "serialNumber", "imei"].includes(field)) {
       return compareScalar(device[field], operator, value);
     }
@@ -292,10 +325,11 @@ export function policyViolated(
   device: NormalizedDevice & Record<string, any>,
   policy: { conditions: EvalCondition[]; conditionLogic?: string },
   appLists?: AppListsContext,
+  geo?: GeoContext,
 ): EvalCondition[] {
   const conditions = policy.conditions ?? [];
   if (conditions.length === 0) return [];
-  const matched = conditions.filter((c) => evaluateCondition(device, c, appLists));
+  const matched = conditions.filter((c) => evaluateCondition(device, c, appLists, geo));
   const logic = policy.conditionLogic ?? "any";
   if (logic === "all") {
     return matched.length === conditions.length ? matched : [];

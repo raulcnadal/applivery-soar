@@ -84,6 +84,19 @@ export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   { key: "vulnServiceCriticalHighCount", label: "Critical/high CVEs (Vulnerability Service)", type: "number", operators: ["greaterThan", "lessThan"] },
   { key: "vulnServiceHasKev", label: "Known-exploited CVE present — CISA KEV (Vulnerability Service)", type: "boolean", operators: ["equals"] },
   { key: "vulnServiceChecked", label: "Checked against Vulnerability Service", type: "boolean", operators: ["equals"] },
+  // Geofencing — disclosed new feature (geofencing module), not a main.py
+  // port. `inside`/`outside` treat a device with no stored location the
+  // same way every other condition here treats missing data: it simply
+  // doesn't match (see complianceEvaluate.ts's geofenceZoneId branch) —
+  // it's neither "inside" nor "outside" from this condition's own point of
+  // view. hasLocationData/locationAgeMinutes exist as separate, composable
+  // fields specifically so an admin who wants fail-closed behavior (treat
+  // "we don't know where this device is" as itself a violation) can build
+  // that explicitly -- e.g. "outside Zone X" OR "no location data" -- rather
+  // than this app silently picking a security posture on their behalf.
+  { key: "geofenceZoneId", label: "Geofence zone", type: "geofence_zone", operators: ["inside", "outside"] },
+  { key: "hasLocationData", label: "Has a known location on record", type: "boolean", operators: ["equals"] },
+  { key: "locationAgeMinutes", label: "Minutes since location last confirmed", type: "number", operators: ["greaterThan", "lessThan"] },
 ];
 
 const COMPLIANCE_FIELD_MITRE_HINTS: Record<string, string[]> = {

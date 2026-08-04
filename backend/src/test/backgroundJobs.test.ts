@@ -2,15 +2,19 @@ import { describe, expect, it } from "vitest";
 import { JOBS } from "../jobs/backgroundJobs";
 import { runComplianceSchedulerTick } from "../modules/compliance/complianceJobs";
 import { runInstalledAppsRefresherTick } from "../modules/appLists/installedAppsJobs";
+import { runLocationRefresherTick } from "../modules/geofencing/locationJobs";
 
-// The full 17 loops from migration-plan.md §5 — this list is the sign-off
-// artifact itself, not just a test fixture: if a jobKey here doesn't appear
-// in JOBS, that loop either was never wired in or got silently dropped.
+// The full 17 loops from migration-plan.md §5, plus the geofencing location
+// refresher (locationJobs.ts — a disclosed post-migration addition, not in
+// the original §5 list) — this list is the sign-off artifact itself, not
+// just a test fixture: if a jobKey here doesn't appear in JOBS, that loop
+// either was never wired in or got silently dropped.
 const EXPECTED_JOB_KEYS = [
   "compliance_scheduler",
   "report_scheduler",
   "snapshot_scheduler",
   "installed_apps_refresher",
+  "location_refresher",
   "workflow_wait_resumer",
   "audit_log_rotation",
   "log_export_scheduler",
@@ -26,9 +30,9 @@ const EXPECTED_JOB_KEYS = [
   "system_health_monitor",
 ];
 
-describe("all 17 background jobs from migration-plan.md §5 are registered", () => {
-  it("JOBS has exactly 17 entries", () => {
-    expect(JOBS.length).toBe(17);
+describe("all 17 background jobs from migration-plan.md §5 (+1 disclosed addition) are registered", () => {
+  it("JOBS has exactly 18 entries", () => {
+    expect(JOBS.length).toBe(18);
   });
 
   it("every expected jobKey is present exactly once", () => {
@@ -58,5 +62,9 @@ describe("Phase 9 background jobs — no-op cleanly with no data", () => {
 
   it("runInstalledAppsRefresherTick resolves without throwing", async () => {
     await expect(runInstalledAppsRefresherTick()).resolves.toBeUndefined();
+  });
+
+  it("runLocationRefresherTick resolves without throwing", async () => {
+    await expect(runLocationRefresherTick()).resolves.toBeUndefined();
   });
 });

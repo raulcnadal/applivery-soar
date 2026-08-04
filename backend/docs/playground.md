@@ -31,6 +31,10 @@ Only devices with a real, resolved location are plotted on the map — unlike th
 
 Map tiles are the same OpenStreetMap data source used elsewhere in the app (e.g. the Devices drawer's embedded location map) — no separate API key or paid mapping service involved.
 
+### Geofence zones
+
+The Map View toolbar also has **Draw Circle**, **Draw Polygon**, and **Manage Zones** — draw a shape directly on the map, save it as a named zone, and reference it from a [Compliance Policy](compliance.md) condition ("device inside/outside zone"). See [Geofencing](geofencing.md) for the full guide, including how zone location data is kept fresh in the background for unattended policy evaluation.
+
 ## Controls
 
 **Globe:** standard drag-to-orbit and scroll/pinch-to-zoom. Auto-rotates slowly by default (toggle off with **Pause Rotation**); there's no "reset view" button — drag manually to reposition.
@@ -45,4 +49,5 @@ Map tiles are the same OpenStreetMap data source used elsewhere in the app (e.g.
 ## Related guides
 
 - [Devices](devices.md) — the fleet table and detail drawer this view shares its data and device-click behavior with.
-- [Compliance](compliance.md) — the policy filter's source list.
+- [Compliance](compliance.md) — the policy filter's source list, and where geofence zones become policy conditions.
+- [Geofencing](geofencing.md) — drawing and managing zones on the Map View.

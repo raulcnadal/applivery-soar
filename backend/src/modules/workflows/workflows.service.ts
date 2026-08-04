@@ -7,6 +7,8 @@ import { resolveOrgBase } from "../auth/rbac.service";
 import { invalidateDevicesCache } from "../devices/devices.service";
 import { MDM_ACTIONS } from "../devices/mdmActions";
 import { loadAppListsContext } from "../appLists/appCatalog.service";
+import { loadGeofenceZonesById } from "../geofencing/geofence.service";
+import { loadDeviceLocations } from "../geofencing/locationsRefresh.service";
 import { readInstalledAppsFromStore } from "../appLists/installedApps.service";
 import { policyViolated } from "../compliance/complianceEvaluate";
 import { executeMdmAction } from "./mdmActionExecutor";
@@ -455,6 +457,13 @@ async function executeWorkflowRun(
     ? await prisma.compliancePolicy.findFirst({ where: { workspaceSlug, id: recoveryCfg.compliancePolicyId } })
     : null;
   const appLists = recoveryPolicy ? await loadAppListsContext(workspaceSlug) : undefined;
+  // Same "resolved once per run, not per device" treatment as appLists —
+  // loads every device in this run's location in one pass rather than
+  // per-device inside runForDevice below.
+  const recoveryConditions = (recoveryPolicy?.conditions as any[]) ?? [];
+  const geo = recoveryConditions.some((c) => c?.field === "geofenceZoneId")
+    ? { zonesById: await loadGeofenceZonesById(workspaceSlug), locationsByDeviceId: await loadDeviceLocations(workspaceSlug, devices.map((d) => d.id)) }
+    : undefined;
 
   const headers = { Authorization: authorization, "Content-Type": "application/json" };
   const orgBase = await resolveOrgBase(headers, workspaceSlug);
@@ -482,7 +491,7 @@ async function executeWorkflowRun(
           if (conditions.some((c) => ["requiredAppList", "disallowedAppList"].includes(c?.field))) {
             (deviceFull as any).installedApps = await readInstalledAppsFromStore(workspaceSlug, device.id);
           }
-          const stillViolating = policyViolated(deviceFull as any, { conditions, conditionLogic: recoveryPolicy.conditionLogic }, appLists).length > 0;
+          const stillViolating = policyViolated(deviceFull as any, { conditions, conditionLogic: recoveryPolicy.conditionLogic }, appLists, geo).length > 0;
           if (!stillViolating) {
             const recoveryLog = await runRecoverySteps(headers, orgBase, authorization, workspaceSlug, device, workflow as any, log, workspaceState as any);
             log.push(...recoveryLog);

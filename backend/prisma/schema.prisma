@@ -74,6 +74,11 @@ model WorkspaceState {
   auditLogRetentionDays             Int?
   sessionTimeoutMinutes             Int?
   installedAppsRefreshBudgetPerHour Int?
+  // Same budget/rotation pattern as installedAppsRefreshBudgetPerHour, for
+  // the geofencing location refresher (locationsRefresh.service.ts) — see
+  // that file's doc comment for why location refresh needs its own,
+  // separately-tunable budget rather than sharing the installed-apps one.
+  locationRefreshBudgetPerHour       Int?
   updatedAt                         DateTime @updatedAt
 }
 
@@ -784,6 +789,58 @@ model LocationCache {
   key      String   @id
   payload  Json
   cachedAt DateTime @default(now())
+}
+
+// Geofencing — disclosed addition, no main.py precedent. A zone (circle or
+// polygon) drawn on the Playground map, saved as a reusable asset that a
+// Compliance Policy's geofenceZoneId condition (complianceFields.ts) can
+// reference. `geometry` shape depends on `shape`:
+//   circle:  { center: { lat, lng }, radiusMeters }
+//   polygon: { points: [{ lat, lng }, ...] }  (closed ring assumed)
+model GeofenceZone {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  name          String
+  description   String?
+  shape         String // "circle" | "polygon"
+  geometry      Json
+  color         String? // hex, purely cosmetic for the map overlay
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceSlug])
+}
+
+// Per-device latest known position, kept fresh by the budgeted background
+// refresher (locationsRefresh.service.ts/locationJobs.ts) — deliberately NOT
+// a history table. Applivery's own /mdm/locations/{type}/{id} endpoint
+// already retains full history and DeviceInsightModal.vue already fetches
+// it live, on-demand, per device when an admin opens one — duplicating that
+// history locally would be pure storage cost for a need this app doesn't
+// have. This table exists purely so geofence "inside"/"outside" conditions
+// have a fast, no-API-call point to evaluate against for every device on
+// every Compliance Policy evaluation pass, and so the refresher can rank
+// "which device is most overdue for a refresh" without re-deriving that
+// from `LocationCache`'s single-blob-for-the-whole-fleet shape (which has
+// no per-device staleness of its own). Separate from LocationCache
+// (Playground globe's data source, populated by the pre-existing manual
+// "Sync Locations" button) by design — different freshness needs, different
+// callers; see locationsRefresh.service.ts's doc comment for the full
+// rationale on why these two caches are intentionally not unified.
+model DeviceLocation {
+  id            String    @id @default(uuid())
+  workspaceSlug String
+  deviceId      String
+  lat           Float
+  lng           Float
+  source        String? // "agent" | "ip", straight from Applivery's own `origin`
+  recordedAt    DateTime? // the location fix's own timestamp, per Applivery
+  fetchedAt     DateTime // when THIS app last pulled it
+  error         String?
+
+  @@unique([workspaceSlug, deviceId])
+  @@index([workspaceSlug, fetchedAt])
 }
 
 model AnalyticsSnapshot {

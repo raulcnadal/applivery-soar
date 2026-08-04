@@ -60,6 +60,8 @@ Each condition is Field → Operator → Value. Choose **Match ANY condition** (
 | Days since last self-report / Has ever self-reported | |
 | **Missing a required app** (App List) | pick an existing App List — only matches devices on that list's platform |
 | **Has a disallowed app** (App List) | same, inverse |
+| **Geofence Zone** (Inside/Outside) | pick a zone drawn on [Playground → Map View](playground.md#map-view) — see [Geofencing](geofencing.md) for drawing zones, missing-location semantics, and how location data is kept fresh in the background |
+| Has location data / Location age (minutes) | supporting fields for geofence conditions — see [Geofencing](geofencing.md) |
 | Device Risk Score / Risk Tier | |
 | Pending Windows security updates / exploited-CVE pending | needs the OS Updates catalog to have run at least once |
 | Pending known CVEs (Apple/Android) / exploited-in-wild pending | Vulnerability Catalog, no Settings needed |
@@ -117,6 +119,7 @@ Each list shows its app count and which Compliance Policies currently reference 
 - **[Vulnerability Service](settings.md#vulnerability-service)** — opt-in, needs an API token configured before its conditions produce real data.
 - **[Device Data Webhook](settings.md#device-data-webhook)** — required for Self-Reported Attribute conditions (disk encryption, screen lock, antivirus on Windows/macOS).
 - **App List inventory** — populated either via the self-report script or the paced background Applivery-API refresher; a brand-new App List condition won't match anything until coverage catches up.
+- **Geofence Zone inventory** — populated by the paced background location refresher (see [Geofencing](geofencing.md)); a brand-new geofence condition won't match anything until coverage catches up.
 - **[Roles](settings.md#roles)** — `canBulkTriage` gates bulk approve/dismiss on the violations queue; `canDeletePolicyOrWorkflow` gates policy deletion.
 
 ## Related guides
@@ -124,3 +127,4 @@ Each list shows its app count and which Compliance Policies currently reference 
 - [Workflows](workflows.md) — build the workflows a policy links to, including the destructive-action rules that gate auto-run.
 - [Cases](cases.md) — how policy violations become Cases and inherit MITRE tags.
 - [Devices](devices.md) — the "Compliance Policies" signal shown on the fleet table and device drawer.
+- [Geofencing](geofencing.md) — drawing zones and the background location refresher behind the Geofence Zone condition.

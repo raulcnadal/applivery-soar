@@ -14,6 +14,7 @@ import { checkSystemHealthAndAlert } from "../modules/systemHealth/systemHealth.
 import { runReportSchedulerTick, runSnapshotSchedulerTick, REPORT_SCHEDULER_TICK_MS, SNAPSHOT_SCHEDULER_TICK_MS } from "../modules/analytics/analyticsJobs";
 import { runComplianceSchedulerTick, COMPLIANCE_SCHEDULER_TICK_MS } from "../modules/compliance/complianceJobs";
 import { runInstalledAppsRefresherTick, INSTALLED_APPS_REFRESH_TICK_MS } from "../modules/appLists/installedAppsJobs";
+import { runLocationRefresherTick, LOCATION_REFRESH_TICK_MS } from "../modules/geofencing/locationJobs";
 import { isQueueBackedJobsEnabled, registerRepeatableJobs, startBackgroundJobWorker, stopBackgroundJobQueue } from "../queue/backgroundQueue";
 
 /**
@@ -43,6 +44,14 @@ import { isQueueBackedJobsEnabled, registerRepeatableJobs, startBackgroundJobWor
  * installedAppsJobs.ts). Their manual/on-demand equivalents (using the
  * calling admin's live session) were already wired through their respective
  * controllers since Phase 3.
+ *
+ * Post-migration addition (18th job, not in the original §5 list): the
+ * geofencing location refresher (locationJobs.ts) — same budgeted,
+ * oldest-synced-first rotation shape as the Installed-apps refresher, added
+ * alongside the Geofencing feature (geofencing module) to keep device
+ * location fresh enough for geofenceZoneId Compliance conditions without
+ * exceeding Applivery's API budget at large fleet sizes. See
+ * locationsRefresh.service.ts's doc comment for the full design rationale.
  *
  * Post-migration scale review: with REDIS_URL configured, every job below
  * instead runs as a BullMQ repeatable job (queue/backgroundQueue.ts) so
@@ -87,6 +96,7 @@ export const JOBS: readonly CatalogJob[] = [
   { jobKey: "report_scheduler", tickMs: REPORT_SCHEDULER_TICK_MS, run: runReportSchedulerTick },
   { jobKey: "compliance_scheduler", tickMs: COMPLIANCE_SCHEDULER_TICK_MS, run: runComplianceSchedulerTick },
   { jobKey: "installed_apps_refresher", tickMs: INSTALLED_APPS_REFRESH_TICK_MS, run: runInstalledAppsRefresherTick },
+  { jobKey: "location_refresher", tickMs: LOCATION_REFRESH_TICK_MS, run: runLocationRefresherTick },
 ];
 
 // Stagger initial runs so five outbound HTTP calls don't fire in the same

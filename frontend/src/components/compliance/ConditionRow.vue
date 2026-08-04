@@ -9,6 +9,7 @@
 import { computed, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import type { AppList, ComplianceFieldDef, ConditionRule } from "../../stores/compliance";
+import type { GeofenceZone } from "../../stores/geofencing";
 import PolicyPickerModal from "../devices/PolicyPickerModal.vue";
 import AudiencePickerField from "./AudiencePickerField.vue";
 import TagConditionField from "./TagConditionField.vue";
@@ -19,6 +20,7 @@ const PLATFORMS = ["apple", "macos", "android", "windows"];
 const OPERATOR_LABEL: Record<string, string> = {
   equals: "is", notEquals: "is not", greaterThan: "is more than", lessThan: "is less than",
   includes: "has", excludes: "doesn't have", missing: "is missing", contains: "contains", exists: "exists",
+  inside: "is inside", outside: "is outside",
 };
 
 const props = defineProps<{
@@ -30,6 +32,7 @@ const props = defineProps<{
   deviceAudiences: Array<{ id: string; name: string }>;
   deviceTags: string[];
   segments: Array<{ id: string | number; name: string }>;
+  geofenceZones: GeofenceZone[];
 }>();
 
 const emit = defineEmits<{
@@ -249,6 +252,16 @@ function setPolicyPlatform(platform: string) {
           <option v-for="l in appLists" :key="l.id" :value="l.id">{{ l.name }} ({{ l.platform }})</option>
         </select>
         <p class="text-[10px] mt-1 text-gray-400">Only matches devices on the list's platform — pair with a "Platform" condition if this policy also covers other platforms.</p>
+      </div>
+
+      <div v-else-if="fieldDef?.type === 'geofence_zone'">
+        <select :value="condition.value || ''" class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" @change="setValue(($event.target as HTMLSelectElement).value)">
+          <option value="">{{ geofenceZones.length ? "Select a zone…" : "No geofence zones yet — draw one from Playground > Map View" }}</option>
+          <option v-for="z in geofenceZones" :key="z.id" :value="z.id">{{ z.name }}</option>
+        </select>
+        <p class="text-[10px] mt-1 text-gray-400">
+          Devices with no known location never match this condition (neither inside nor outside) — pair with "Has a known location on record" if you want a missing position itself to count as a violation.
+        </p>
       </div>
     </div>
   </div>

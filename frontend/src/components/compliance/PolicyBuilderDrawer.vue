@@ -19,6 +19,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useComplianceStore, type CompliancePolicy, type ConditionRule, type MatchedDevice, type MatchedDevicesDiagnostics } from "../../stores/compliance";
 import { useDevicesStore } from "../../stores/devices";
+import { useGeofencingStore } from "../../stores/geofencing";
 import { useSegmentsStore } from "../../stores/segments";
 import { useWorkflowsStore } from "../../stores/workflows";
 import AudiencePickerField from "./AudiencePickerField.vue";
@@ -82,6 +83,7 @@ const store = useComplianceStore();
 const devicesStore = useDevicesStore();
 const segmentsStore = useSegmentsStore();
 const workflowsStore = useWorkflowsStore();
+const geoStore = useGeofencingStore();
 
 const screen = ref<"details" | "rules">("details");
 // Distinguishes "hasn't picked a target yet" (block continuing) from
@@ -205,6 +207,7 @@ onMounted(async () => {
     devicesStore.deviceTags.length === 0 ? devicesStore.fetchPickers() : Promise.resolve(),
     workflowsStore.workflows.length === 0 ? workflowsStore.fetchWorkflows() : Promise.resolve(),
     workflowsStore.mdmActions.length === 0 ? workflowsStore.fetchMdmActions() : Promise.resolve(),
+    geoStore.zones.length === 0 ? geoStore.fetchZones() : Promise.resolve(),
   ]);
 });
 
@@ -626,6 +629,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         :device-audiences="devicesStore.deviceAudiences as any"
         :device-tags="devicesStore.deviceTags"
         :segments="devicesStore.segments as any"
+        :geofence-zones="geoStore.zones"
         @change="(updated) => updateCondition(i, updated)"
         @remove="removeCondition(i)"
         @audience-created="onAudienceCreated"

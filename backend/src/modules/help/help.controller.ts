@@ -28,6 +28,7 @@ const HELP_DOC_SLUGS: Record<string, string> = {
   settings: "settings.md",
   "audit-logs": "audit-logs.md",
   playground: "playground.md",
+  geofencing: "geofencing.md",
   readme: "README.md",
   architecture: "ARCHITECTURE.md",
 };

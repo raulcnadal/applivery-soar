@@ -4,9 +4,11 @@ import { recordAuditEvent } from "../../services/auditLog";
 import { appliveryClient } from "../../services/appliveryClient";
 import { resolveOrgBase } from "../auth/rbac.service";
 import { platformPathSegment, type NormalizedDevice } from "../devices/deviceNormalize";
-import { policyViolated, type AppListsContext } from "./complianceEvaluate";
+import { policyViolated, type AppListsContext, type GeoContext } from "./complianceEvaluate";
 import { loadAppListsContext } from "../appLists/appCatalog.service";
 import { appListScopedDeviceIds, readInstalledAppsFromStore } from "../appLists/installedApps.service";
+import { geofenceScopedDeviceIds, loadGeofenceZonesById } from "../geofencing/geofence.service";
+import { loadDeviceLocations } from "../geofencing/locationsRefresh.service";
 import { getWorkflowRun, launchWorkflowRun, workflowHasDestructiveStep } from "../workflows/workflows.service";
 import type { WorkflowDeviceRefPayload } from "../workflows/workflows.schemas";
 import type { CompliancePolicyPayload } from "./compliance.schemas";
@@ -344,6 +346,18 @@ export async function runComplianceEvaluation(
   }
 
   const appLists: AppListsContext = await loadAppListsContext(workspaceSlug);
+
+  // Geofencing context — pure reads, never a live Applivery call (keeping
+  // device location fresh is the location refresher's job, see
+  // locationsRefresh.service.ts). Only devices actually scoped by a
+  // geofenceZoneId-using policy get a lookup, mirroring the installed-apps
+  // attachment above.
+  const needsGeoDeviceIds = geofenceScopedDeviceIds(devices, policies as any);
+  const geo: GeoContext = {
+    zonesById: await loadGeofenceZonesById(workspaceSlug),
+    locationsByDeviceId: needsGeoDeviceIds.size ? await loadDeviceLocations(workspaceSlug, Array.from(needsGeoDeviceIds)) : new Map(),
+  };
+
   const workflows = await prisma.workflow.findMany({ where: { workspaceSlug } });
   const workflowsById = new Map(workflows.map((w) => [w.id, w]));
   const state = await loadComplianceState(workspaceSlug);
@@ -411,7 +425,7 @@ export async function runComplianceEvaluation(
 
     for (const device of scopedDevices) {
       const key = `${policy.id}:${device.id}`;
-      const matched = policyViolated(device, { conditions: (policy.conditions as any[]) ?? [], conditionLogic: policy.conditionLogic }, appLists);
+      const matched = policyViolated(device, { conditions: (policy.conditions as any[]) ?? [], conditionLogic: policy.conditionLogic }, appLists, geo);
 
       if (!matched.length) {
         const suppressed = state[key];
