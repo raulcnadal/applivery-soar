@@ -205,9 +205,21 @@ export const useCasesStore = defineStore("cases", () => {
   }
 
   async function fetchSlaSettings() {
-    const { api } = await import("../api/http");
-    const res = await api.get("/case-sla-settings");
-    slaSettings.value = res.data;
+    // Previously had no try/catch — a failed GET here left slaSettings.value
+    // untouched (null), and CaseSlaSettingsForm.vue's onMounted awaited this
+    // with no try/catch of its own either, so its `form` just silently kept
+    // its hardcoded defaults with no on-screen indication anything failed —
+    // indistinguishable from "my SLA settings got reset" even though
+    // nothing was actually lost server-side.
+    error.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/case-sla-settings");
+      slaSettings.value = res.data;
+    } catch (err: any) {
+      error.value = err?.response?.data?.detail || "Failed to load SLA settings.";
+      throw err;
+    }
   }
 
   async function updateSlaSettings(payload: CaseSlaSettings) {
@@ -217,9 +229,18 @@ export const useCasesStore = defineStore("cases", () => {
   }
 
   async function fetchAutoRunRules() {
-    const { api } = await import("../api/http");
-    const res = await api.get("/case-autorun-rules");
-    autoRunRules.value = res.data.items ?? [];
+    // Same missing-try/catch pattern as fetchSlaSettings above — an
+    // unhandled rejection here previously left autoRunRules.value at
+    // whatever it was (empty on first load), with no visible error.
+    error.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/case-autorun-rules");
+      autoRunRules.value = res.data.items ?? [];
+    } catch (err: any) {
+      error.value = err?.response?.data?.detail || "Failed to load auto-run rules.";
+      throw err;
+    }
   }
 
   async function createAutoRunRule(payload: Partial<CaseAutoRunRule>) {

@@ -129,9 +129,18 @@ onMounted(async () => {
 
 async function selectTab(tabId: string) {
   activeTab.value = tabId;
-  if (tabId === "threat-intel" && threatIntelStore.providers.length === 0) await threatIntelStore.fetchProviders();
-  if (tabId === "case-autorun" && casesStore.autoRunRules.length === 0) await casesStore.fetchAutoRunRules();
-  if (tabId === "triggers" && triggersStore.triggers.length === 0) await triggersStore.fetchTriggers();
+  try {
+    if (tabId === "threat-intel" && threatIntelStore.providers.length === 0) await threatIntelStore.fetchProviders();
+    // fetchAutoRunRules() now throws on a failed GET (previously silent) —
+    // caught here since this isn't awaited by its own caller (a plain
+    // @click handler); CaseAutoRunRulesTable.vue's own error display (if
+    // any) reads casesStore.error, which is already set before this throws.
+    if (tabId === "case-autorun" && casesStore.autoRunRules.length === 0) await casesStore.fetchAutoRunRules();
+    if (tabId === "triggers" && triggersStore.triggers.length === 0) await triggersStore.fetchTriggers();
+  } catch {
+    // Swallowed here — each store already records the failure in its own
+    // `error` ref for the relevant panel to display.
+  }
 }
 </script>
 

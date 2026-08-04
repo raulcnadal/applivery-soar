@@ -28,8 +28,16 @@ function loadFromStore() {
 }
 
 onMounted(async () => {
-  await store.fetchSlaSettings();
-  loadFromStore();
+  // fetchSlaSettings() now throws on a failed GET (it used to swallow the
+  // rejection silently) -- catch it here so `form` visibly stays at its
+  // hardcoded defaults with an error banner instead of quietly looking
+  // "reset" with no explanation.
+  try {
+    await store.fetchSlaSettings();
+    loadFromStore();
+  } catch {
+    // store.error is already set by fetchSlaSettings(); surfaced below.
+  }
 });
 watch(() => store.slaSettings, loadFromStore);
 
@@ -50,6 +58,7 @@ async function save() {
 
 <template>
   <div class="space-y-4 max-w-2xl">
+    <Alert v-if="store.error" type="danger">Couldn't load current settings: {{ store.error }}</Alert>
     <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
     <Alert v-if="saveMessage" type="info">{{ saveMessage }}</Alert>
 

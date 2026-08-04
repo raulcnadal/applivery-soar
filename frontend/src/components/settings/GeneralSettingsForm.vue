@@ -54,6 +54,12 @@ async function save() {
 
 <template>
   <div class="space-y-4 max-w-lg">
+    <!-- store.error surfaces a failed GET /api/state on mount -- without
+         this, a failed fetch left `form` silently sitting at its hardcoded
+         defaults with no indication anything was wrong, which looks
+         identical to "my setting got reset" even though nothing was ever
+         actually lost server-side. -->
+    <Alert v-if="store.error" type="danger">Couldn't load current settings: {{ store.error }}</Alert>
     <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
     <Alert v-if="saved" type="success">Saved.</Alert>
 
