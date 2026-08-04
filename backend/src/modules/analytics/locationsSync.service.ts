@@ -38,7 +38,11 @@ export async function syncDeviceLocations(authorization: string, workspaceSlug: 
 
   let devices: any[];
   try {
-    devices = await fetchAllPages(headers, `${orgBase}/mdm/devices/`);
+    // subType: "device" — exclude pending enrollment-token records (see
+    // devices.service.ts's getDevicesFull doc comment). Firing a per-device
+    // location request against an enrollment token that was never redeemed
+    // would just be a wasted API call against something with no location.
+    devices = await fetchAllPages(headers, `${orgBase}/mdm/devices/`, { subType: "device" });
   } catch (e) {
     if (e instanceof HttpError) throw e;
     throw new HttpError(500, `Connection error to Applivery: ${e}`);

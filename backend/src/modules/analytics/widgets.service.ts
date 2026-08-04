@@ -718,8 +718,12 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
   // 4d. Device engine (live MDM devices, paginated, with GPS cache attach)
   const deviceSources = ["mdm_devices", "stats_devices_os", "stats_devices_status", "stats_compliance", "stats_battery", "stats_models"];
   if (deviceSources.includes(source)) {
-    const reqParams: Record<string, unknown> = { ...baseParams };
-    const reqParamsComp: Record<string, unknown> = { isCompliance: "true", ...baseParams };
+    // subType: "device" excludes pending enrollment-token records (see
+    // devices.service.ts's getDevicesFull doc comment) — otherwise a
+    // widget's device count/list would silently include enrollment tokens
+    // nobody has redeemed yet.
+    const reqParams: Record<string, unknown> = { ...baseParams, subType: "device" };
+    const reqParamsComp: Record<string, unknown> = { ...baseParams, isCompliance: "true", subType: "device" };
     if (filters.type && filters.type !== "all") {
       const osMap: Record<string, string> = { apple: "ios", macos: "macos", android: "android", windows: "windows" };
       reqParams.os = osMap[filters.type] ?? filters.type;
@@ -813,7 +817,8 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
 
   // 3. Line charts
   if (source === "stats_devices_trend") {
-    const itemsAll = await fetchAllPages(headers, `${base}/mdm/devices/`, baseParams);
+    // subType: "device" — see the deviceSources block above for why.
+    const itemsAll = await fetchAllPages(headers, `${base}/mdm/devices/`, { ...baseParams, subType: "device" });
     const dateMap: Record<string, { apple: number; android: number; windows: number; total: number }> = {};
     const today = new Date();
     if (dateIni && dateEnd) {

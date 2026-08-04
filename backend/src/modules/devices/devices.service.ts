@@ -209,8 +209,14 @@ export async function getDevicesFull(
   const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };
   const orgBase = await resolveOrgBase(headers, workspaceSlug);
 
-  const itemsAll = await fetchAllPages(headers, `${orgBase}/mdm/devices/`);
-  const itemsComp = await fetchAllPages(headers, `${orgBase}/mdm/devices/`, { isCompliance: "true" });
+  // subType: "device" excludes enrollment records — Applivery's unified
+  // devices endpoint mixes in pending/unclaimed enrollment tokens
+  // (subType: "enrollment") alongside actually-registered endpoints
+  // (subType: "device") unless filtered out explicitly. Without this, every
+  // count/list/evaluation in the app would silently include admin-created
+  // enrollment tokens nobody has redeemed yet as if they were real devices.
+  const itemsAll = await fetchAllPages(headers, `${orgBase}/mdm/devices/`, { subType: "device" });
+  const itemsComp = await fetchAllPages(headers, `${orgBase}/mdm/devices/`, { subType: "device", isCompliance: "true" });
   const compIds = new Set(itemsComp.map((i) => String(i.id ?? i._id ?? "")));
   const audienceMap = await fetchDeviceAudienceMembershipMap(headers, orgBase, itemsAll);
 
