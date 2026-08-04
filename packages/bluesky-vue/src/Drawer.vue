@@ -51,7 +51,12 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="fixed inset-0 z-[200]">
+    <!-- z-[310] — same reasoning as Modal.vue: teleported to <body>, so it
+         needs to be able to render above SettingsModal.vue/HelpModal.vue
+         (both z-[300]) when opened from within them, and this is a plain
+         numeric comparison between fixed-position siblings under <body>,
+         not a nesting issue. -->
+    <div v-if="open" class="fixed inset-0 z-[310]">
       <!-- Backdrop -->
       <div class="fixed inset-0 z-40 bg-black/40" @click="emit('close')" />
 

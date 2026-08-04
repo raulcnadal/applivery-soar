@@ -151,15 +151,24 @@ async function selectTab(tabId: string) {
         </button>
       </div>
 
-      <!-- BODY: left-nav categories + single content pane -->
+      <!-- BODY: left-nav categories + single content pane. Both panel
+           backgrounds are a translucent darkening overlay on top of the
+           modal shell (bg-white dark:bg-gray-800 above) — matches the
+           original's rgba(0,0,0,alpha) overlay pattern (App.jsx's Settings
+           modal, ~5817/5836: rgba(0,0,0,0.03) light / rgba(0,0,0,0.25)
+           dark), which was previously ported as a light-only Tailwind
+           bg-gray-50/NN with no dark: variant — in dark mode that stayed a
+           light gray sitting on the dark card, with the already-correct
+           dark:text-gray-400 nav-item text rendering unreadable gray-on-
+           light-gray. -->
       <div class="flex flex-1 overflow-hidden">
-        <div class="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-1 bg-gray-50/60">
+        <div class="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-1 bg-gray-50/60 dark:bg-black/20">
           <button
             v-for="tab in visibleTabs"
             :key="tab.id"
             type="button"
             class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-[13px] transition-colors"
-            :class="activeTab === tab.id ? 'bg-brand-50 text-brand-600 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium hover:bg-gray-100 dark:hover:bg-white/10'"
+            :class="activeTab === tab.id ? 'bg-brand-50 dark:bg-brand-500/15 text-brand-600 dark:text-brand-400 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium hover:bg-gray-100 dark:hover:bg-white/10'"
             @click="selectTab(tab.id)"
           >
             <component :is="tab.icon" :size="15" weight="Linear" class="shrink-0" />
@@ -167,7 +176,7 @@ async function selectTab(tabId: string) {
           </button>
         </div>
 
-        <div class="flex-1 min-w-0 overflow-y-auto p-8 bg-gray-50/30">
+        <div class="flex-1 min-w-0 overflow-y-auto p-8 bg-gray-50/30 dark:bg-black/10">
           <template v-if="activeTab === 'integrations'">
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-sm font-bold text-gray-900 dark:text-white">Ticketing &amp; Chat</h3>

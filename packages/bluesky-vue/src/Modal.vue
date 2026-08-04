@@ -51,7 +51,16 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <!-- z-[310] — deliberately above every bespoke full-screen overlay in
+         the app (SettingsModal.vue/HelpModal.vue both z-[300], the highest
+         found elsewhere) since Modal is teleported to <body> and can be
+         opened from ANY context, including from inside those two — e.g.
+         "New SOAR Role" from Settings. Both overlays end up as fixed-
+         position siblings under <body> once teleported, so this is a
+         plain numeric z-index comparison, not a stacking-context/nesting
+         issue: whichever number is higher wins regardless of which one
+         opened first or which is "inside" the other in the component tree. -->
+    <div v-if="open" class="fixed inset-0 z-[310] flex items-center justify-center p-4">
       <!-- Backdrop -->
       <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="emit('close')" />
 

@@ -134,12 +134,34 @@ function removeWidget(id: string) {
 // as two entries here too, for visual/behavioral parity, not because they
 // differ. Move is a genuine no-op in the original as well (dragging the
 // card body is how you actually move it); kept as a no-op here too.
+//
+// The dropdown itself is teleported to <body> and positioned via JS
+// (menuPosition, computed from the trigger button's own bounding rect at
+// click time) rather than living inline as `absolute` inside the widget
+// card — grid-layout-plus's `:use-css-transforms` puts a CSS `transform`
+// on every `.vgl-item`, and per spec any transformed ancestor creates a
+// new stacking context (and containing block for `position: fixed`
+// descendants too), so a same-DOM-subtree `z-[200]` dropdown could only
+// ever win against siblings *inside that one widget's* card — a
+// later-in-DOM neighboring widget (itself `z-index: auto`, same stacking
+// order fallback) would still paint over it. Same underlying mechanism as
+// Modal.vue/Drawer.vue's own <Teleport to="body">, applied here by hand
+// since this dropdown isn't built from those shared components.
 const openMenuFor = ref<string | null>(null);
-function toggleMenu(id: string) {
-  openMenuFor.value = openMenuFor.value === id ? null : id;
+const menuPosition = ref<{ top: number; right: number } | null>(null);
+function toggleMenu(id: string, event: MouseEvent) {
+  if (openMenuFor.value === id) {
+    openMenuFor.value = null;
+    menuPosition.value = null;
+    return;
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  menuPosition.value = { top: rect.bottom + 4, right: window.innerWidth - rect.right };
+  openMenuFor.value = id;
 }
 function closeMenu() {
   openMenuFor.value = null;
+  menuPosition.value = null;
 }
 function toggleWidgetLock(id: string) {
   const item = layout.value.find((l) => l.i === id);
@@ -287,34 +309,10 @@ async function saveWidgetForm(w: DashboardWidget) {
                   type="button"
                   class="w-6 h-6 flex items-center justify-center rounded-md transition-colors"
                   :style="{ color: '#6B7280', backgroundColor: openMenuFor === item.i ? PRIMARY_BLUE + '12' : 'transparent' }"
-                  @click="toggleMenu(item.i)"
+                  @click="toggleMenu(item.i, $event)"
                 >
                   <component :is="ICONS.MenuDots" :size="14" weight="Linear" />
                 </button>
-                <div v-if="openMenuFor === item.i" class="fixed inset-0 z-[199]" @click="closeMenu" />
-                <div v-if="openMenuFor === item.i" class="absolute right-0 top-full mt-1 rounded-xl z-[200] min-w-[168px] flex flex-col py-1.5 overflow-hidden bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 shadow-xl">
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="removeWidget(item.i)">
-                    <component :is="ICONS.EyeClosed" :size="13" weight="Linear" class="text-gray-400" />
-                    <span class="text-[13px] font-normal">Hide widget</span>
-                  </button>
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="closeMenu">
-                    <component :is="ICONS.TransferHorizontal" :size="13" weight="Linear" class="text-gray-400" />
-                    <span class="text-[13px] font-normal">Move widget</span>
-                  </button>
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="openBuilder(widgets.find((w) => w.id === item.i)!)">
-                    <component :is="ICONS.Pen" :size="13" weight="Linear" class="text-gray-400" />
-                    <span class="text-[13px] font-normal">Edit widget</span>
-                  </button>
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="toggleWidgetLock(item.i)">
-                    <component :is="isWidgetLocked(item.i) ? ICONS.LockUnlocked : ICONS.Lock" :size="13" weight="Linear" class="text-gray-400" />
-                    <span class="text-[13px] font-normal">{{ isWidgetLocked(item.i) ? "Unlock position" : "Lock position" }}</span>
-                  </button>
-                  <div class="h-px mx-3 my-1 bg-gray-100 dark:bg-gray-700" />
-                  <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80" style="color: #ef4444" @click="removeWidget(item.i)">
-                    <component :is="ICONS.TrashBinTrash" :size="13" weight="Linear" style="color: #ef4444" />
-                    <span class="text-[13px] font-normal">Remove widget</span>
-                  </button>
-                </div>
               </div>
             </div>
           </div>
@@ -330,6 +328,40 @@ async function saveWidgetForm(w: DashboardWidget) {
         </div>
       </GridItem>
     </GridLayout>
+
+    <!-- Teleported to <body> — see the comment above toggleMenu() in
+         <script setup> for why this can't stay inline as `absolute` inside
+         the widget card. -->
+    <Teleport to="body">
+      <div v-if="openMenuFor" class="fixed inset-0 z-[199]" @click="closeMenu" />
+      <div
+        v-if="openMenuFor && menuPosition"
+        class="fixed rounded-xl z-[200] min-w-[168px] flex flex-col py-1.5 overflow-hidden bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 shadow-xl"
+        :style="{ top: `${menuPosition.top}px`, right: `${menuPosition.right}px` }"
+      >
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="removeWidget(openMenuFor)">
+          <component :is="ICONS.EyeClosed" :size="13" weight="Linear" class="text-gray-400" />
+          <span class="text-[13px] font-normal">Hide widget</span>
+        </button>
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="closeMenu">
+          <component :is="ICONS.TransferHorizontal" :size="13" weight="Linear" class="text-gray-400" />
+          <span class="text-[13px] font-normal">Move widget</span>
+        </button>
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="openBuilder(widgets.find((w) => w.id === openMenuFor)!)">
+          <component :is="ICONS.Pen" :size="13" weight="Linear" class="text-gray-400" />
+          <span class="text-[13px] font-normal">Edit widget</span>
+        </button>
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="toggleWidgetLock(openMenuFor)">
+          <component :is="isWidgetLocked(openMenuFor) ? ICONS.LockUnlocked : ICONS.Lock" :size="13" weight="Linear" class="text-gray-400" />
+          <span class="text-[13px] font-normal">{{ isWidgetLocked(openMenuFor) ? "Unlock position" : "Lock position" }}</span>
+        </button>
+        <div class="h-px mx-3 my-1 bg-gray-100 dark:bg-gray-700" />
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80" style="color: #ef4444" @click="removeWidget(openMenuFor)">
+          <component :is="ICONS.TrashBinTrash" :size="13" weight="Linear" style="color: #ef4444" />
+          <span class="text-[13px] font-normal">Remove widget</span>
+        </button>
+      </div>
+    </Teleport>
 
     <WidgetBuilderPanel :open="isBuilderOpen" :widget="editingWidget" @close="closeBuilder" @save="saveWidgetForm" />
     <WidgetInfoModal
