@@ -83,7 +83,7 @@ const app = computed(() => props.insight ?? {});
 const appCounts = computed(() => app.value.counts || {});
 
 function osColor(os: string) {
-  return colorFor("", os, 0);
+  return colorFor("", os, 0, uiStore.isDark);
 }
 function onOverlayClick(e: MouseEvent) {
   if (e.target === e.currentTarget) emit("close");

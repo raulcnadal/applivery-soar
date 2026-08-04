@@ -1,9 +1,7 @@
 // Shared chart color/label helpers for the WidgetInfoModal (App.jsx's
 // `_colorFor`/`_humanLabel`, ~lines 3757-3799) — kept in its own module so
 // both the modal and any future chart consumer can share them, rather than
-// re-deriving colors ad hoc. Light-theme only for now: dark mode itself
-// isn't ported yet (roadmap Phase 11), so this uses the original's
-// light-theme chartPalette/getAppleColor(false) branch verbatim.
+// re-deriving colors ad hoc.
 const CHART_PALETTE = ["#8B5CF6", "#3B82F6", "#06B6D4", "#22C55E", "#F59E0B", "#EF4444", "#EC4899", "#14B8A6"];
 
 const SUCCESS = "#22C55E";
@@ -11,15 +9,23 @@ const WARNING = "#F59E0B";
 const DANGER = "#EF4444";
 const PRIMARY_BLUE = "#0241E3";
 
-const APPLE_COLOR = "#1D1D1F"; // getAppleColor(false) — light theme
-const OFFICIAL_OS_COLORS = { apple: APPLE_COLOR, android: "#3DDC84", windows: "#0241E2" };
+// Port of App.jsx's `getAppleColor(isDarkMode)` (~line 206): '#1D1D1F' in
+// light mode, '#E5E7EB' in dark mode (a near-black "Apple black" reads as
+// near-invisible on a dark card, so the original swaps it for a light grey).
+function getAppleColor(isDark: boolean): string {
+  return isDark ? "#E5E7EB" : "#1D1D1F";
+}
+const OFFICIAL_OS_COLORS = { android: "#3DDC84", windows: "#0241E2" };
 
 /** Port of App.jsx's `_colorFor(stat, key, i)` (~3757-3785). `stat` is
  * unused by every current branch (same as the original, whose own
  * `stat === 'stats_os_updates_all'` check resolves to the identical
  * fallback either way) — kept in the signature for call-site parity with
- * the original and any future stat-specific branch. */
-export function colorFor(_stat: string, key: string, i: number): string {
+ * the original and any future stat-specific branch. `isDark` defaults to
+ * `false` for call sites that don't (yet) thread the theme through, but
+ * every live consumer should pass `useUiStore().isDark.value` — the Apple/
+ * iOS/macOS branch below is the only one that's actually theme-dependent. */
+export function colorFor(_stat: string, key: string, i: number, isDark = false): string {
   const k = String(key).toUpperCase();
   // Battery levels
   if (k.includes("MORE THAN 70")) return "#22C55E";
@@ -36,7 +42,7 @@ export function colorFor(_stat: string, key: string, i: number): string {
   if (k === "BLOCKED") return "#EF4444";
   if (k.includes("MEDIUM")) return WARNING;
   // OS colours
-  if (k.includes("APPLE") || k.includes("IOS") || k.includes("MAC")) return OFFICIAL_OS_COLORS.apple;
+  if (k.includes("APPLE") || k.includes("IOS") || k.includes("MAC")) return getAppleColor(isDark);
   if (k.includes("ANDROID")) return OFFICIAL_OS_COLORS.android;
   if (k.includes("WINDOWS") || k.includes("WIN")) return OFFICIAL_OS_COLORS.windows;
   // Collaborator roles

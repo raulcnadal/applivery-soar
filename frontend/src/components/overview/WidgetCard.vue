@@ -17,7 +17,7 @@ import { useUiStore } from "../../stores/ui";
 // _colorFor/_humanLabel port, so a widget's colors/labels would visibly
 // change between the live card and its zoomed-in modal. Ported from
 // App.jsx:3757-3799 — see lib/widgetVisuals.ts.
-import { colorFor, humanLabel, brighten } from "../../lib/widgetVisuals";
+import { colorFor, humanLabel, brighten, PRIMARY_BLUE } from "../../lib/widgetVisuals";
 import { ICONS } from "../../lib/solarIcons";
 
 const props = defineProps<{
@@ -73,7 +73,27 @@ const total = computed(() => chartData.value.reduce((a, c) => a + (c.value || 0)
 // legend in the original either — BarWidget/line/radar/gauge rely on
 // ECharts' own axis labels or, for gauge, WidgetInfoModal's zoom view).
 const isDonutPie = computed(() => chartType.value === "donut" || chartType.value === "pie");
-const isChart = computed(() => ["bar", "line", "radar", "gauge"].includes(chartType.value));
+// "line" is split out into its own branch below (chart + OS-totals footer),
+// so it's excluded here — this only covers the chart-types that just fill
+// the card with no extra chrome.
+const isChart = computed(() => ["bar", "radar", "gauge"].includes(chartType.value));
+
+// Line widgets get an OS-totals footer row below the chart — 1:1 port of
+// App.jsx's line-type branch in renderWidgetContent (~3899-3906): TOTAL /
+// iOS / Android / Windows counts, only the ones with a value shown (same
+// `.filter(Boolean)` the original applies). Bar/radar/gauge have no
+// equivalent footer in the original either.
+const isLine = computed(() => chartType.value === "line");
+const osTotals = computed(() => trendData.value?.os_totals ?? {});
+const lineTotalSum = computed(() => (osTotals.value.apple || 0) + (osTotals.value.android || 0) + (osTotals.value.windows || 0) || props.data?.scorecardValue || 0);
+const lineFooterItems = computed(() => {
+  const t = osTotals.value;
+  const items: { key: string; val: number; color: string }[] = [{ key: "TOTAL", val: lineTotalSum.value, color: theme.value.text }];
+  if (t.apple !== undefined) items.push({ key: "iOS", val: t.apple, color: uiStore.isDark ? "#E5E7EB" : "#1D1D1F" });
+  if (t.android !== undefined) items.push({ key: "Android", val: t.android, color: "#3DDC84" });
+  if (t.windows > 0) items.push({ key: "Windows", val: t.windows, color: "#0241E2" });
+  return items;
+});
 
 // Donut/pie hover state — 1:1 port of DonutPieWidget's `hovIdx` React state
 // (App.jsx:1050) driving a ghost (grows on hover, `emphasis.scaleSize: 10`)
@@ -94,11 +114,15 @@ const chartOption = computed(() => {
   const t = chartType.value;
   const th = theme.value;
   const tooltipBase = { backgroundColor: th.card, borderColor: th.border, textStyle: { color: th.text } };
-  const axisLabelStyle = { fontSize: 10, color: th.textMuted };
+  // fontSize 11 — matches App.jsx's line-widget axisLabel spec (~3899:
+  // `{ color: activeTheme.textMuted, fontSize: 11 }`); bar has its own
+  // barAxisLabel below (also 11, plus fontFamily) since BarWidget's spec
+  // additionally sets Outfit as the font.
+  const axisLabelStyle = { fontSize: 11, color: th.textMuted };
   if (t === "donut" || t === "pie") {
     const innerR = t === "donut" ? "59%" : "0%";
     const outerR = "78%";
-    const slices = chartData.value.map((d, i) => ({ name: humanLabel(d.name), value: d.value, color: colorFor(props.widget.stat, d.name, i) }));
+    const slices = chartData.value.map((d, i) => ({ name: humanLabel(d.name), value: d.value, color: colorFor(props.widget.stat, d.name, i, uiStore.isDark) }));
     const h = hovIdx.value;
     return {
       tooltip: { trigger: "item", ...tooltipBase },
@@ -153,11 +177,16 @@ const chartOption = computed(() => {
     };
   }
   if (t === "bar") {
+    // 1:1 port of App.jsx's BarWidget (~977-1041): grid {16,36,44,12}, both
+    // axes' own axisLine/axisTick hidden (no border line under the bars —
+    // the migrated version previously drew one via `axisLine.lineStyle`),
+    // fontSize 11 + Outfit font (was 10, no font family).
+    const barAxisLabel = { color: th.textMuted, fontSize: 11, fontFamily: "Outfit, sans-serif" };
     return {
       tooltip: { trigger: "item", ...tooltipBase },
-      grid: { top: 16, bottom: 32, left: 40, right: 16 },
-      xAxis: { type: "category", data: chartData.value.map((d) => humanLabel(d.name)), axisLabel: { ...axisLabelStyle, rotate: chartData.value.length > 5 ? 30 : 0 }, axisLine: { lineStyle: { color: th.border } } },
-      yAxis: { type: "value", axisLabel: axisLabelStyle, splitLine: { lineStyle: { color: th.gridLine } } },
+      grid: { top: 16, bottom: 36, left: 44, right: 12 },
+      xAxis: { type: "category", data: chartData.value.map((d) => humanLabel(d.name)), axisLabel: { ...barAxisLabel, rotate: chartData.value.length > 5 ? 30 : 0 }, axisLine: { show: false }, axisTick: { show: false } },
+      yAxis: { type: "value", axisLabel: barAxisLabel, splitLine: { lineStyle: { color: th.gridLine } }, axisLine: { show: false }, axisTick: { show: false } },
       series: [
         {
           type: "bar",
@@ -168,7 +197,7 @@ const chartOption = computed(() => {
           emphasis: { focus: "self", blurScope: "global", scale: false },
           blur: { itemStyle: { opacity: 0.25 } },
           data: chartData.value.map((d, i) => {
-            const color = colorFor(props.widget.stat, d.name, i);
+            const color = colorFor(props.widget.stat, d.name, i, uiStore.isDark);
             return {
               value: d.value,
               itemStyle: { color, borderRadius: [4, 4, 0, 0], borderWidth: 0 },
@@ -181,30 +210,72 @@ const chartOption = computed(() => {
     };
   }
   if (t === "line") {
+    // 1:1 port of App.jsx's line-type branch (~3899-3906): grid {8,28,32,12},
+    // PRIMARY_BLUE line/points with a top-to-bottom fading linear-gradient
+    // fill (was a flat, differently-colored "#0E4FF5" hex — not even the
+    // brand blue — with no gradient at all).
     return {
       tooltip: { trigger: "axis", ...tooltipBase },
-      grid: { top: 16, bottom: 32, left: 40, right: 16 },
+      grid: { top: 8, bottom: 28, left: 32, right: 12 },
       xAxis: { type: "category", data: trendData.value?.labels ?? [], axisLabel: axisLabelStyle, axisLine: { lineStyle: { color: th.border } } },
       yAxis: { type: "value", axisLabel: axisLabelStyle, splitLine: { lineStyle: { color: th.gridLine } } },
-      series: [{ type: "line", smooth: true, data: trendData.value?.series ?? [], areaStyle: { color: "#0E4FF518" }, itemStyle: { color: "#0E4FF5" }, symbol: "circle", symbolSize: 5 }],
+      series: [
+        {
+          type: "line",
+          smooth: true,
+          data: trendData.value?.series ?? [],
+          symbolSize: 5,
+          itemStyle: { color: PRIMARY_BLUE },
+          lineStyle: { width: 2.5, color: PRIMARY_BLUE },
+          areaStyle: {
+            color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: `${PRIMARY_BLUE}33` }, { offset: 1, color: `${PRIMARY_BLUE}00` }] },
+            opacity: 1,
+          },
+        },
+      ],
     };
   }
   if (t === "radar") {
+    // 1:1 port of App.jsx's radar branch (~3943-3949): axis max is the
+    // largest single value * 1.2 (falls back to 10 when everything's 0),
+    // NOT the sum of all values — the migrated version's `total.value` fed
+    // every axis the SUM as its max, which squashes/misrepresents the
+    // shape whenever there's more than one non-zero slice. radius 65%,
+    // PRIMARY_BLUE styling with the exact border-width hover states, and
+    // fontSize 11 (was 10) to match.
+    const maxVal = Math.max(...chartData.value.map((d) => d.value), 0) * 1.2 || 10;
     return {
-      tooltip: { ...tooltipBase },
+      tooltip: { trigger: "item", ...tooltipBase },
       radar: {
-        indicator: chartData.value.map((d) => ({ name: humanLabel(d.name), max: Math.max(total.value, 1) })),
-        axisName: { color: th.textMuted, fontSize: 10 },
+        indicator: chartData.value.map((d) => ({ name: humanLabel(d.name), max: maxVal })),
+        radius: "65%",
+        axisName: { color: th.textMuted, fontSize: 11 },
         splitLine: { lineStyle: { color: th.gridLine } },
+        splitArea: { show: false },
         axisLine: { lineStyle: { color: th.border } },
       },
-      series: [{ type: "radar", data: [{ value: chartData.value.map((d) => d.value), areaStyle: { color: "#0E4FF530" }, itemStyle: { color: "#0E4FF5" } }] }],
+      series: [
+        {
+          type: "radar",
+          data: [
+            {
+              value: chartData.value.map((d) => d.value),
+              name: props.widget.title,
+              areaStyle: { color: `${PRIMARY_BLUE}40` },
+              lineStyle: { color: PRIMARY_BLUE, width: 2 },
+              itemStyle: { color: PRIMARY_BLUE, borderColor: `${PRIMARY_BLUE}40`, borderWidth: 5 },
+              emphasis: { itemStyle: { color: PRIMARY_BLUE, borderColor: `${PRIMARY_BLUE}40`, borderWidth: 8 }, lineStyle: { width: 3 } },
+            },
+          ],
+        },
+      ],
     };
   }
   if (t === "gauge") {
     const primary = chartData.value[0];
     const val = primary && total.value > 0 ? Math.round((primary.value / total.value) * 100) : 0;
     return {
+      tooltip: { trigger: "item", ...tooltipBase },
       series: [
         {
           type: "gauge",
@@ -212,9 +283,11 @@ const chartOption = computed(() => {
           endAngle: 0,
           min: 0,
           max: 100,
-          progress: { show: true, roundCap: true, itemStyle: { color: colorFor(props.widget.stat, primary?.name ?? "", 0) } },
+          // overlap/clip: false — 1:1 port of App.jsx's gauge progress spec
+          // (~3934); width 18 (was 12) to match the original's thicker arc.
+          progress: { show: true, overlap: false, roundCap: true, clip: false, itemStyle: { color: colorFor(props.widget.stat, primary?.name ?? "", 0, uiStore.isDark) } },
           pointer: { show: false },
-          axisLine: { lineStyle: { width: 12, color: [[1, th.border]] } },
+          axisLine: { lineStyle: { width: 18, color: [[1, th.border]] } },
           axisTick: { show: false },
           splitLine: { show: false },
           axisLabel: { show: false },
@@ -291,7 +364,7 @@ const chartOption = computed(() => {
             @click="onChartClick(humanLabel(row.name))"
           >
             <div class="flex items-center gap-1.5 min-w-0 overflow-hidden">
-              <div class="w-2.5 h-2.5 rounded-[3px] shrink-0" :style="{ backgroundColor: colorFor(widget.stat, row.name, i) }" />
+              <div class="w-2.5 h-2.5 rounded-[3px] shrink-0" :style="{ backgroundColor: colorFor(widget.stat, row.name, i, uiStore.isDark) }" />
               <span class="text-[13px] font-normal truncate text-gray-500 dark:text-gray-400">{{ humanLabel(row.name) }}</span>
             </div>
             <span class="text-[13px] font-semibold tabular-nums shrink-0 text-gray-900 dark:text-white">{{ row.value.toLocaleString() }}</span>
@@ -300,12 +373,27 @@ const chartOption = computed(() => {
         </div>
       </div>
 
+      <!-- 1:1 port of App.jsx's line-type branch (~3878-3906): chart on top,
+           a TOTAL/iOS/Android/Windows footer row below it (only the OS
+           entries that actually have a value are shown). -->
+      <div v-else-if="isLine" class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 w-full" style="min-height: 100px" :style="{ cursor: isClickable ? 'pointer' : 'default' }">
+          <VChart :option="chartOption" :init-options="{ renderer: 'svg' }" autoresize class="h-full w-full" @click="onChartClick(null)" />
+        </div>
+        <div class="flex items-center justify-around border-t pt-2.5 pb-1 px-2 shrink-0 border-gray-100 dark:border-gray-700">
+          <div v-for="row in lineFooterItems" :key="row.key" class="flex flex-col items-center gap-0.5">
+            <span class="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ row.key }}</span>
+            <span class="text-[14px] font-bold tabular-nums" :style="{ color: row.color }">{{ row.val }}</span>
+          </div>
+        </div>
+      </div>
+
       <div v-else-if="isChart" class="flex-1 min-h-0" :style="{ cursor: isClickable ? 'pointer' : 'default' }">
-        <!-- Bar/gauge fire per-slice clicks (e.name); line/radar have no
-             sliced data, so any click drills into the widget's full item
-             set with no slice filter — 1:1 port of App.jsx's BarWidget
-             (~1040, no sliceName), gauge (~3931, primaryItem.name), and
-             line/radar (~3889/3947, no sliceName). -->
+        <!-- Bar/gauge fire per-slice clicks (e.name); radar has no sliced
+             data, so any click drills into the widget's full item set with
+             no slice filter — 1:1 port of App.jsx's BarWidget (~1040, no
+             sliceName), gauge (~3931, primaryItem.name), and radar (~3947,
+             no sliceName). -->
         <VChart :option="chartOption" :init-options="{ renderer: 'svg' }" autoresize class="h-full w-full" @click="onChartClick(chartType === 'gauge' ? (chartData[0]?.name ?? null) : null)" />
       </div>
 

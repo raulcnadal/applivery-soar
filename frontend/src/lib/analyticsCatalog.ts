@@ -193,6 +193,14 @@ export function defaultChartTypeForSource(stat: string, currentType?: ChartType)
   return preferList ? "list" : available[0];
 }
 
+// 1:1 port of App.jsx's `isTrend` check (~4602): `['stats_downloads_trend',
+// 'stats_builds_trend', 'stats_devices_trend', 'compliance_violations_trend']
+// .includes(w.stat)`. These are the only stats whose widget renders as a
+// line/trend chart with a "last 30 days" header label and an OS-totals
+// (iOS/Android/Windows) row in both the header badges and (for line-type
+// widgets specifically) the card content footer.
+export const TREND_STATS: string[] = ["stats_downloads_trend", "stats_builds_trend", "stats_devices_trend", "compliance_violations_trend"];
+
 // 1:1 port of the per-source icon/color badge map used by WidgetHeader
 // (App.jsx:4610-4669). Icon names reference @solar-icons/vue exports (the
 // migrated stack's icon set — original used lucide-react, which isn't
@@ -217,6 +225,11 @@ export const WIDGET_ICON_MAP: Record<string, WidgetIconDef> = {
   stats_devices_trend: { icon: "GraphUp", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
   stats_compliance: { icon: "ShieldWarning", color: SUCCESS, bg: `${SUCCESS}15` },
   stats_battery: { icon: "BatteryCharge", color: WARNING, bg: `${WARNING}15` },
+  // color/bg here are the light-theme fallback only — App.jsx's iconMap
+  // (~4610) uses `activeTheme.textMuted` for this one entry (every other
+  // entry is a fixed brand/semantic hex), so OverviewView.vue's iconFor()
+  // overrides these two fields with the live theme's textMuted at render
+  // time. Kept here as the static default for any other/future consumer.
   stats_models: { icon: "Smartphone", color: "#6B7280", bg: "#6B728015" },
   stats_os_updates_all: { icon: "Refresh", color: WARNING, bg: `${WARNING}15` },
   stats_os_versions: { icon: "Widget2", color: "#06B6D4", bg: "#06B6D415" },

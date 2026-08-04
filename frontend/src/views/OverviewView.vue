@@ -17,9 +17,11 @@ import WidgetResultsModal from "../components/overview/WidgetResultsModal.vue";
 import InsightDetailModal from "../components/overview/InsightDetailModal.vue";
 import DeviceInsightModal from "../components/playground/DeviceInsightModal.vue";
 import DateRangePicker, { type DateRangeValue } from "../components/overview/DateRangePicker.vue";
+import OsIcon from "../components/shared/OsIcon.vue";
 import { useDashboardStateStore } from "../stores/dashboardState";
 import { useSegmentsStore } from "../stores/segments";
-import { WIDGET_ICON_MAP, DEFAULT_WIDGET_ICON, WIDGET_SIZES, type DashboardWidget, type GridLayoutItem } from "../lib/analyticsCatalog";
+import { useUiStore } from "../stores/ui";
+import { WIDGET_ICON_MAP, DEFAULT_WIDGET_ICON, WIDGET_SIZES, TREND_STATS, type DashboardWidget, type GridLayoutItem } from "../lib/analyticsCatalog";
 import { fetchWidgetData, type WidgetResponse } from "../lib/widgetData";
 import { filterWidgetItemsForClick, insightKind } from "../lib/widgetVisuals";
 
@@ -29,6 +31,7 @@ const PRIMARY_BLUE = "#0241E3";
 
 const store = useDashboardStateStore();
 const segmentsStore = useSegmentsStore();
+const uiStore = useUiStore();
 
 const widgets = ref<DashboardWidget[]>([]);
 const layout = ref<GridLayoutItem[]>([]);
@@ -211,7 +214,28 @@ function isWidgetLocked(id: string): boolean {
 }
 function iconFor(stat: string) {
   const def = WIDGET_ICON_MAP[stat] ?? DEFAULT_WIDGET_ICON;
+  // stats_models is the one icon-badge entry whose color is theme-dependent
+  // in the original (App.jsx ~4610: `color: activeTheme.textMuted`) rather
+  // than a fixed hex — every other entry uses a fixed brand/semantic color
+  // that doesn't change between light/dark.
+  if (stat === "stats_models") {
+    const muted = uiStore.activeTheme.textMuted;
+    return { component: resolveIcon(def.icon), color: muted, bg: `${muted}15` };
+  }
   return { component: resolveIcon(def.icon), color: def.color, bg: def.bg };
+}
+
+// 1:1 port of App.jsx's `isTrend`/`osTotals` header wiring (~4602-4603,
+// 4622): a small "last 30 days" label plus iOS/Android/Windows count
+// badges shown next to the title for the 4 TREND_STATS widgets, sourced
+// from that widget's own `trendData.os_totals`.
+function isTrendWidget(stat: string): boolean {
+  return TREND_STATS.includes(stat);
+}
+function osTotalsFor(id: string): Record<string, number> | null {
+  const stat = widgets.value.find((w) => w.id === id)?.stat ?? "";
+  if (!isTrendWidget(stat)) return null;
+  return widgetSlots[id]?.data?.trendData?.os_totals ?? null;
 }
 
 // ── Widget info modal — 1:1 port of App.jsx's WidgetInfoModal trigger
@@ -349,10 +373,10 @@ async function saveWidgetForm(w: DashboardWidget) {
       v-else
       v-model:layout="layout"
       :col-num="12"
-      :row-height="60"
+      :row-height="120"
       :is-draggable="true"
       :is-resizable="true"
-      :margin="[16, 16]"
+      :margin="[10, 10]"
       :vertical-compact="true"
       :use-css-transforms="true"
       @layout-updated="onLayoutUpdated"
@@ -364,13 +388,30 @@ async function saveWidgetForm(w: DashboardWidget) {
              (App.jsx's draggableHandle=".drag-handle" on the content div),
              not the header — so header buttons stay clickable while
              dragging is active. -->
-        <div class="h-full w-full rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800 flex flex-col overflow-visible relative">
+        <div class="h-full w-full rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800 flex flex-col overflow-hidden relative">
           <div class="px-5 pt-4 pb-3 flex justify-between items-center shrink-0 border-b" style="border-color: #e9eaec4d">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').bg, color: iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').color }">
                 <component :is="iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').component" :size="15" weight="Linear" />
               </div>
-              <span class="text-[13px] font-medium text-gray-900 dark:text-white truncate">{{ widgets.find((w) => w.id === item.i)?.title }}</span>
+              <div class="flex items-baseline gap-1.5 min-w-0">
+                <span class="text-[13px] font-medium text-gray-900 dark:text-white truncate">{{ widgets.find((w) => w.id === item.i)?.title }}</span>
+                <span v-if="isTrendWidget(widgets.find((w) => w.id === item.i)?.stat ?? '')" class="text-[10px] shrink-0 text-gray-500 dark:text-gray-400">last 30 days</span>
+              </div>
+              <!-- OS totals badges — 1:1 port of WidgetHeader's osTotals row
+                   (App.jsx ~493-501), shown next to the title for the 4
+                   TREND_STATS widgets only. -->
+              <div v-if="osTotalsFor(item.i)" class="flex items-center gap-2.5 ml-1">
+                <div v-if="(osTotalsFor(item.i)?.apple ?? 0) > 0" class="flex items-center gap-1 text-[11px] font-semibold" :style="{ color: uiStore.isDark ? '#E5E7EB' : '#1D1D1F' }">
+                  <OsIcon platform="apple" :size="13" :is-dark-mode="uiStore.isDark" /> {{ osTotalsFor(item.i)?.apple }}
+                </div>
+                <div v-if="(osTotalsFor(item.i)?.android ?? 0) > 0" class="flex items-center gap-1 text-[11px] font-semibold" style="color: #3ddc84">
+                  <OsIcon platform="android" :size="13" /> {{ osTotalsFor(item.i)?.android }}
+                </div>
+                <div v-if="(osTotalsFor(item.i)?.windows ?? 0) > 0" class="flex items-center gap-1 text-[11px] font-semibold" style="color: #0241e2">
+                  <OsIcon platform="windows" :size="13" /> {{ osTotalsFor(item.i)?.windows }}
+                </div>
+              </div>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
               <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-500 dark:text-gray-400" @click="openWidgetInfo(item.i)">

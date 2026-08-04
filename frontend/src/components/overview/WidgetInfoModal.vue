@@ -78,7 +78,7 @@ function axisLabelStyle() {
 function buildDonutOption() {
   const outerR = "72%";
   const innerR = isDonut.value ? "54%" : "0%";
-  const slices = chartData.value.map((d, i) => ({ name: humanLabel(d.name), value: d.value, color: colorFor(props.widget.stat, d.name, i) }));
+  const slices = chartData.value.map((d, i) => ({ name: humanLabel(d.name), value: d.value, color: colorFor(props.widget.stat, d.name, i, uiStore.isDark) }));
   return {
     backgroundColor: "transparent",
     tooltip: { trigger: "item", formatter: "{b}: <b>{c}</b> ({d}%)", ...tooltipBase() },
@@ -137,7 +137,7 @@ function buildBarOption() {
         emphasis: { focus: "self", blurScope: "global", scale: false },
         blur: { itemStyle: { opacity: 0.25 } },
         data: chartData.value.map((d, i) => {
-          const color = colorFor(props.widget.stat, d.name, i);
+          const color = colorFor(props.widget.stat, d.name, i, uiStore.isDark);
           return {
             value: d.value,
             itemStyle: { color, borderRadius: [4, 4, 0, 0], borderWidth: 0 },
@@ -179,7 +179,7 @@ function buildLineOption() {
 function buildGaugeOption() {
   const primaryItem = chartData.value[0];
   const val = primaryItem && total.value > 0 ? Math.round((primaryItem.value / total.value) * 100) : 0;
-  const color = primaryItem ? colorFor(props.widget.stat, primaryItem.name, 0) : PRIMARY_BLUE;
+  const color = primaryItem ? colorFor(props.widget.stat, primaryItem.name, 0, uiStore.isDark) : PRIMARY_BLUE;
   return {
     backgroundColor: "transparent",
     series: [
@@ -259,7 +259,7 @@ function buildListOption() {
         label: { show: true, position: "right", color: TEXT_MUTED.value, fontSize: 11, fontFamily: "Outfit,sans-serif", formatter: "{c}" },
         data: chartData.value
           .map((d, i) => {
-            const color = colorFor(props.widget.stat, d.name, i);
+            const color = colorFor(props.widget.stat, d.name, i, uiStore.isDark);
             return {
               value: d.value,
               itemStyle: { color, borderRadius: [0, 4, 4, 0], borderWidth: 0 },
@@ -322,7 +322,7 @@ function onDonutOut(p: any) {
               class="flex items-center gap-1.5 transition-opacity"
               :style="{ opacity: hovIdx === -1 ? 1 : hovIdx === i ? 1 : 0.35 }"
             >
-              <div class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ backgroundColor: colorFor(widget.stat, d.name, i) }" />
+              <div class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ backgroundColor: colorFor(widget.stat, d.name, i, uiStore.isDark) }" />
               <span class="text-sm" :style="{ color: TEXT_MUTED }">{{ humanLabel(d.name) }}</span>
               <span class="text-sm font-semibold tabular-nums" :style="{ color: TEXT }">{{ d.value.toLocaleString() }}</span>
             </div>
@@ -352,7 +352,7 @@ function onDonutOut(p: any) {
           </div>
           <div class="flex items-center justify-center gap-5 flex-wrap mt-1">
             <div v-for="(d, i) in chartData" :key="i" class="flex items-center gap-1.5">
-              <div class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ backgroundColor: colorFor(widget.stat, d.name, i) }" />
+              <div class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ backgroundColor: colorFor(widget.stat, d.name, i, uiStore.isDark) }" />
               <span class="text-sm" :style="{ color: TEXT_MUTED }">{{ humanLabel(d.name) }}</span>
               <span class="text-sm font-semibold tabular-nums" :style="{ color: TEXT }">{{ d.value.toLocaleString() }}</span>
             </div>

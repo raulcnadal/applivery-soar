@@ -21,7 +21,7 @@ const props = defineProps<Props>()
           </span>
         </div>
         <div class="flex items-center gap-2">
-          <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">{{ title }}</h1>
+          <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white">{{ title }}</h1>
           <slot name="title-suffix" />
         </div>
         <p v-if="description" class="mt-2 text-gray-500 dark:text-gray-400 text-sm">{{ description }}</p>
