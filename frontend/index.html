@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 1:1 port of the original (wow-dashboard/index.html:5) — the favicon
+         is fetched from Applivery's own hosted asset, NOT a local file. The
+         local /favicon.svg (a different, unused purple-bolt icon) stays in
+         public/ only because the original repo also carries an unused copy
+         there; the actual rendered tab icon has always been this remote
+         navy-square "A" mark. -->
+    <link rel="icon" type="image/svg+xml" href="https://dashboard.applivery.io/p/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Original app's typeface (wow-dashboard/index.html) — bluesky-tokens.css
          already sets --font-sans: "Outfit", but without this link the font
