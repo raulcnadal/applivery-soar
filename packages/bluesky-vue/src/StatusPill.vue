@@ -18,13 +18,13 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const colorClasses: Record<PillColor, string> = {
-  green:  'bg-green-100 text-green-700',
-  yellow: 'bg-yellow-100 text-yellow-700',
-  red:    'bg-red-100 text-red-700',
-  brand:  'bg-brand-100 text-brand-700',
-  purple: 'bg-purple-100 text-purple-700',
-  gray:   'bg-gray-100 text-gray-600',
-  orange: 'bg-orange-100 text-orange-700',
+  green:  'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-400',
+  yellow: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-400',
+  red:    'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400',
+  brand:  'bg-brand-100 dark:bg-brand-500/15 text-brand-700 dark:text-brand-300',
+  purple: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-400',
+  gray:   'bg-gray-100 dark:bg-gray-500/15 text-gray-600 dark:text-gray-400',
+  orange: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-400',
 }
 
 const pillClass = computed(() =>

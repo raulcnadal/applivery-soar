@@ -29,14 +29,14 @@ const emit = defineEmits<{
   <!-- Pill variant -->
   <div
     v-if="variant === 'pill'"
-    :class="cn('inline-flex gap-1 bg-gray-100 rounded-xl p-1', props.class)"
+    :class="cn('inline-flex gap-1 bg-gray-100 dark:bg-gray-900/50 rounded-xl p-1', props.class)"
   >
     <button
       v-for="tab in tabs"
       :key="tab.id"
       :class="cn(
         'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all',
-        modelValue === tab.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900',
+        modelValue === tab.id ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white',
       )"
       @click="emit('update:modelValue', tab.id)"
     >
@@ -46,7 +46,7 @@ const emit = defineEmits<{
         v-if="tab.badge !== undefined"
         :class="cn(
           'inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-medium',
-          modelValue === tab.id ? 'bg-brand-100 text-brand-700' : 'bg-gray-200 text-gray-500',
+          modelValue === tab.id ? 'bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400',
         )"
       >
         {{ tab.badge }}
@@ -57,7 +57,7 @@ const emit = defineEmits<{
   <!-- Underline variant -->
   <div
     v-else
-    :class="cn('border-b border-gray-200 w-full', props.class)"
+    :class="cn('border-b border-gray-200 dark:border-gray-700 w-full', props.class)"
   >
     <div class="flex">
       <button
@@ -65,7 +65,7 @@ const emit = defineEmits<{
         :key="tab.id"
         :class="cn(
           'relative flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-normal transition-colors',
-          modelValue === tab.id ? 'text-brand-600' : 'text-gray-500 hover:text-gray-900',
+          modelValue === tab.id ? 'text-brand-600 dark:text-brand-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white',
         )"
         @click="emit('update:modelValue', tab.id)"
       >
@@ -75,7 +75,7 @@ const emit = defineEmits<{
           v-if="tab.badge !== undefined"
           :class="cn(
             'inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-medium',
-            modelValue === tab.id ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500',
+            modelValue === tab.id ? 'bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400',
           )"
         >
           {{ tab.badge }}

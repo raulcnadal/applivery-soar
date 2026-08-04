@@ -28,8 +28,8 @@ const emit = defineEmits<{
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:   'bg-brand-600 text-white hover:bg-brand-700 focus:ring-brand-500',
-  secondary: 'bg-white text-brand-700 border border-brand-700 hover:bg-gray-50 focus:ring-brand-500',
-  ghost:     'bg-transparent text-brand-600 hover:bg-brand-600/10 focus:ring-brand-500',
+  secondary: 'bg-white dark:bg-gray-800 text-brand-700 dark:text-brand-300 border border-brand-700 dark:border-brand-400 hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-brand-500',
+  ghost:     'bg-transparent text-brand-600 dark:text-brand-400 hover:bg-brand-600/10 focus:ring-brand-500',
   danger:    'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
   tertiary:  'bg-brand-900 text-white hover:bg-brand-800 focus:ring-brand-500',
 }

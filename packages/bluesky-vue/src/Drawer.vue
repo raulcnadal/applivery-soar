@@ -58,17 +58,17 @@ onUnmounted(() => {
       <!-- Panel -->
       <div
         :class="cn(
-          'fixed inset-y-0 z-50 bg-white flex flex-col',
+          'fixed inset-y-0 z-50 bg-white dark:bg-gray-800 flex flex-col',
           width,
           side === 'right' ? 'right-0 rounded-l-2xl shadow-2xl' : 'left-0 rounded-r-2xl shadow-2xl',
           props.class,
         )"
       >
         <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
-          <h3 class="text-base font-semibold text-gray-900">{{ title ?? '' }}</h3>
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ title ?? '' }}</h3>
           <button
-            class="p-2 rounded-lg hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
+            class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
             aria-label="Close"
             @click="emit('close')"
           >
@@ -82,11 +82,11 @@ onUnmounted(() => {
         </div>
 
         <!-- Footer -->
-        <div v-if="$slots.footer || actions" class="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
+        <div v-if="$slots.footer || actions" class="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex gap-3 justify-end">
           <slot name="footer">
             <button
               v-if="actions?.cancel"
-              class="inline-flex items-center gap-2 px-4 py-2 bg-white text-brand-700 text-sm font-normal rounded-lg border border-brand-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 transition-all duration-200"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 text-brand-700 dark:text-brand-300 text-sm font-normal rounded-lg border border-brand-700 dark:border-brand-400 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 transition-all duration-200"
               @click="actions.cancel.onClick()"
             >
               {{ actions.cancel.label ?? 'Cancel' }}

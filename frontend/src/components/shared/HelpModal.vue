@@ -98,6 +98,15 @@ watch(slug, load, { immediate: true });
 </template>
 
 <style scoped>
+/* This is the one text sink in the app that renders via v-html into a
+   scoped <style> block instead of Tailwind dark: classes or
+   useUiStore().activeTheme, so it fully bypassed the Phase 11 dark-mode
+   sweep — every rule below hardcoded a light-only hex. HelpIcon.vue opens
+   this modal from nearly every view's "?" icon, so with the modal card
+   itself already dark:bg-gray-800 (#1F2937), this rendered near-black
+   headings/body text directly on a dark card. Paired :global(.dark)
+   overrides added below, same color tokens (white/gray-300/gray-400/
+   gray-700/gray-900) every other dark-mode surface in this app uses. */
 .help-doc-body :deep(h1) { font-size: 1.125rem; font-weight: 600; margin: 1.5rem 0 0.75rem; color: #111827; }
 .help-doc-body :deep(h1:first-child) { margin-top: 0; }
 .help-doc-body :deep(h2) { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 0.5rem; padding-top: 1rem; border-top: 1px solid #f3f4f6; color: #111827; }
@@ -118,4 +127,22 @@ watch(slug, load, { immediate: true });
 .help-doc-body :deep(table) { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.875rem; }
 .help-doc-body :deep(th) { text-align: left; font-weight: 600; padding: 0.5rem 0.75rem; font-size: 0.75rem; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
 .help-doc-body :deep(td) { padding: 0.5rem 0.75rem; vertical-align: top; border-top: 1px solid #f3f4f6; color: #374151; }
+
+:global(.dark) .help-doc-body :deep(h1),
+:global(.dark) .help-doc-body :deep(h2),
+:global(.dark) .help-doc-body :deep(h3),
+:global(.dark) .help-doc-body :deep(h4),
+:global(.dark) .help-doc-body :deep(strong) { color: #ffffff; }
+:global(.dark) .help-doc-body :deep(h2) { border-top-color: #374151; }
+:global(.dark) .help-doc-body :deep(p),
+:global(.dark) .help-doc-body :deep(ul),
+:global(.dark) .help-doc-body :deep(ol),
+:global(.dark) .help-doc-body :deep(td) { color: #d1d5db; }
+:global(.dark) .help-doc-body :deep(a) { color: #7aaaff; }
+:global(.dark) .help-doc-body :deep(code) { background: rgba(255, 255, 255, 0.06); color: #d1d5db; }
+:global(.dark) .help-doc-body :deep(pre code) { border-color: #374151; }
+:global(.dark) .help-doc-body :deep(blockquote) { border-left-color: #374151; color: #9ca3af; }
+:global(.dark) .help-doc-body :deep(hr) { border-color: #374151; }
+:global(.dark) .help-doc-body :deep(th) { color: #9ca3af; border-bottom-color: #374151; }
+:global(.dark) .help-doc-body :deep(td) { border-top-color: #374151; }
 </style>

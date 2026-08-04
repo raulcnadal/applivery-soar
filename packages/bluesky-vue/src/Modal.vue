@@ -56,12 +56,12 @@ onUnmounted(() => {
       <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="emit('close')" />
 
       <!-- Panel -->
-      <div :class="cn('relative bg-white rounded-2xl shadow-xl w-full z-10', sizeClass[size], props.class)">
+      <div :class="cn('relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full z-10', sizeClass[size], props.class)">
         <!-- Header -->
-        <div v-if="title" class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
-          <h3 class="text-base font-medium text-gray-900">{{ title }}</h3>
+        <div v-if="title" class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+          <h3 class="text-base font-medium text-gray-900 dark:text-white">{{ title }}</h3>
           <button
-            class="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
             aria-label="Close"
             @click="emit('close')"
           >
@@ -79,7 +79,7 @@ onUnmounted(() => {
           <slot name="footer">
             <button
               v-if="actions?.cancel"
-              class="inline-flex items-center gap-2 px-4 py-2 bg-white text-brand-700 text-sm font-normal rounded-lg border border-brand-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 transition-all duration-200"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 text-brand-700 dark:text-brand-300 text-sm font-normal rounded-lg border border-brand-700 dark:border-brand-400 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 transition-all duration-200"
               @click="actions.cancel.onClick()"
             >
               {{ actions.cancel.label ?? 'Cancel' }}

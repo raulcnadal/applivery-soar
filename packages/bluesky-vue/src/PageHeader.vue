@@ -12,19 +12,19 @@ const props = defineProps<Props>()
 </script>
 
 <template>
-  <div :class="cn('border-b border-gray-100 pb-6 mb-8', props.class)">
+  <div :class="cn('border-b border-gray-100 dark:border-gray-800 pb-6 mb-8', props.class)">
     <div class="flex items-start justify-between gap-4">
       <div class="flex-1 min-w-0">
         <div v-if="badge" class="flex items-center gap-2 mb-3">
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light bg-brand-100 text-brand-700">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300">
             {{ badge }}
           </span>
         </div>
         <div class="flex items-center gap-2">
-          <h1 class="text-3xl font-semibold text-gray-900">{{ title }}</h1>
+          <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">{{ title }}</h1>
           <slot name="title-suffix" />
         </div>
-        <p v-if="description" class="mt-2 text-gray-500 text-sm">{{ description }}</p>
+        <p v-if="description" class="mt-2 text-gray-500 dark:text-gray-400 text-sm">{{ description }}</p>
       </div>
       <div v-if="$slots.action" class="shrink-0">
         <slot name="action" />

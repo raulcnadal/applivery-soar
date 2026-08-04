@@ -17,31 +17,31 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const BLOCK_STYLES: Record<AlertType, string> = {
-  info:    'flex items-start gap-3 px-4 py-3 rounded-xl border bg-brand-50 border-brand-200 text-brand-800',
-  success: 'flex items-start gap-3 px-4 py-3 rounded-xl border bg-green-50 border-green-200 text-green-800',
-  warning: 'flex items-start gap-3 px-4 py-3 rounded-xl border bg-amber-50 border-amber-200 text-amber-800',
-  danger:  'flex items-start gap-3 px-4 py-3 rounded-xl border bg-red-50 border-red-200 text-red-800',
+  info:    'flex items-start gap-3 px-4 py-3 rounded-xl border bg-brand-50 dark:bg-brand-500/10 border-brand-200 dark:border-brand-500/30 text-brand-800 dark:text-brand-300',
+  success: 'flex items-start gap-3 px-4 py-3 rounded-xl border bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30 text-green-800 dark:text-green-400',
+  warning: 'flex items-start gap-3 px-4 py-3 rounded-xl border bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-400',
+  danger:  'flex items-start gap-3 px-4 py-3 rounded-xl border bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30 text-red-800 dark:text-red-400',
 }
 
 const INLINE_STYLES: Record<AlertType, string> = {
-  info:    'inline-flex items-center gap-1.5 text-sm text-brand-600',
-  success: 'inline-flex items-center gap-1.5 text-sm text-green-600',
-  warning: 'inline-flex items-center gap-1.5 text-sm text-amber-600',
-  danger:  'inline-flex items-center gap-1.5 text-sm text-red-600',
+  info:    'inline-flex items-center gap-1.5 text-sm text-brand-600 dark:text-brand-400',
+  success: 'inline-flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400',
+  warning: 'inline-flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-400',
+  danger:  'inline-flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400',
 }
 
 const BLOCK_ICON_STYLES: Record<AlertType, string> = {
-  info:    'text-brand-600 shrink-0 mt-0.5',
-  success: 'text-green-500 shrink-0 mt-0.5',
-  warning: 'text-amber-500 shrink-0 mt-0.5',
-  danger:  'text-red-500 shrink-0 mt-0.5',
+  info:    'text-brand-600 dark:text-brand-400 shrink-0 mt-0.5',
+  success: 'text-green-500 dark:text-green-400 shrink-0 mt-0.5',
+  warning: 'text-amber-500 dark:text-amber-400 shrink-0 mt-0.5',
+  danger:  'text-red-500 dark:text-red-400 shrink-0 mt-0.5',
 }
 
 const INLINE_ICON_STYLES: Record<AlertType, string> = {
-  info:    'text-brand-600 shrink-0',
-  success: 'text-green-600 shrink-0',
-  warning: 'text-amber-600 shrink-0',
-  danger:  'text-red-600 shrink-0',
+  info:    'text-brand-600 dark:text-brand-400 shrink-0',
+  success: 'text-green-600 dark:text-green-400 shrink-0',
+  warning: 'text-amber-600 dark:text-amber-400 shrink-0',
+  danger:  'text-red-600 dark:text-red-400 shrink-0',
 }
 
 // SVG paths for icons (InfoCircle, CheckCircle, DangerTriangle, DangerCircle)
