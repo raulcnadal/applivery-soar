@@ -68,6 +68,12 @@ const props = defineProps<{
   prefillControlRef?: string | null;
   prefillSeverity?: string | null;
   prefillConditionLogic?: "any" | "all" | null;
+  // Carries a template's own targetPlatform/targetDeploymentModel through to
+  // the builder -- without this, applying an OS-specific template (e.g. an
+  // ENS mp.eq.3 Android template) would silently land as "Common" instead
+  // of pre-selecting the platform the template was actually authored for.
+  prefillTargetPlatform?: string | null;
+  prefillTargetDeploymentModel?: string | null;
 }>();
 
 const emit = defineEmits<{ close: []; saved: [] }>();
@@ -151,8 +157,8 @@ function resetForm() {
   form.autoRun = p?.autoRun ?? false;
   form.conditionLogic = (p?.conditionLogic ?? props.prefillConditionLogic ?? "any") as "any" | "all";
   form.conditions = JSON.parse(JSON.stringify((p?.conditions ?? props.prefillConditions ?? []).map((c) => ({ ...c, id: (c as any).id ?? newConditionId() }))));
-  form.targetPlatform = p?.targetPlatform ?? "";
-  form.targetDeploymentModel = p?.targetDeploymentModel ?? "";
+  form.targetPlatform = p?.targetPlatform ?? props.prefillTargetPlatform ?? "";
+  form.targetDeploymentModel = p?.targetDeploymentModel ?? props.prefillTargetDeploymentModel ?? "";
   form.workflowId = p?.workflowId ?? "";
   form.autoRunBatchCap = p ? p.autoRunBatchCap ?? null : 15;
   form.noBatchCap = p ? p.autoRunBatchCap === null : false;

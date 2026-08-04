@@ -38,7 +38,17 @@ const subView = ref<"policies" | "app-lists">("policies");
 
 const drawerOpen = ref(false);
 const editingPolicy = ref<CompliancePolicy | null>(null);
-const prefill = ref<{ name: string; description: string; conditions: any[]; conditionLogic: "any" | "all"; framework: string; controlRef: string; severity: string } | null>(null);
+const prefill = ref<{
+  name: string;
+  description: string;
+  conditions: any[];
+  conditionLogic: "any" | "all";
+  framework: string;
+  controlRef: string;
+  severity: string;
+  targetPlatform: string | null;
+  targetDeploymentModel: string | null;
+} | null>(null);
 
 const isTemplateGalleryOpen = ref(false);
 const evaluateScopePolicyId = ref("");
@@ -68,6 +78,8 @@ function useTemplate(template: ComplianceTemplate, frameworkLabel: string) {
     framework: template.framework,
     controlRef: template.controlRef,
     severity: template.severity,
+    targetPlatform: template.targetPlatform ?? null,
+    targetDeploymentModel: template.targetDeploymentModel ?? null,
   };
   subView.value = "policies";
   drawerOpen.value = true;
@@ -207,6 +219,8 @@ onMounted(async () => {
       :prefill-control-ref="prefill?.controlRef ?? null"
       :prefill-severity="prefill?.severity ?? null"
       :prefill-condition-logic="prefill?.conditionLogic ?? null"
+      :prefill-target-platform="prefill?.targetPlatform ?? null"
+      :prefill-target-deployment-model="prefill?.targetDeploymentModel ?? null"
       @close="closeDrawer"
       @saved="handleSaved"
     />

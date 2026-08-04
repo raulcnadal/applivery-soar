@@ -119,6 +119,10 @@ export interface ComplianceTemplate {
   conditionLogic: "any" | "all";
   description: string;
   conditions: ConditionRule[];
+  // Which platform this template was authored for -- null/undefined means
+  // "Common (all platforms)", same convention as CompliancePolicy.targetPlatform.
+  targetPlatform?: string | null;
+  targetDeploymentModel?: string | null;
 }
 
 export interface AppCatalogEntry {

@@ -11,12 +11,26 @@ import { useComplianceStore, type ComplianceTemplate } from "../../stores/compli
 
 const PRIMARY_BLUE = "#0241E3";
 const SEVERITY_COLORS: Record<string, string> = { low: "#64748B", medium: "#F59E0B", high: "#EF4444", critical: "#B91C1C" };
+const PLATFORM_LABELS: Record<string, string> = { apple: "iOS", macos: "macOS", android: "Android", windows: "Windows" };
+const PLATFORM_FILTERS = [
+  { value: "all", label: "All platforms" },
+  { value: "common", label: "Common" },
+  { value: "windows", label: "Windows" },
+  { value: "macos", label: "macOS" },
+  { value: "apple", label: "iOS" },
+  { value: "android", label: "Android" },
+];
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: []; use: [template: ComplianceTemplate, frameworkLabel: string] }>();
 
 const store = useComplianceStore();
 const activeFramework = ref("all");
+// Now that every template targets one specific OS (or is explicitly
+// "Common"), the framework filter alone leaves 15-20+ cards visible at
+// once -- this second dimension lets an admin jump straight to "just the
+// Windows ones" the same way the Policy Builder itself is OS-first.
+const activePlatform = ref("all");
 const isLoading = ref(true);
 const error = ref<string | null>(null);
 
@@ -33,7 +47,14 @@ onMounted(async () => {
 });
 
 const frameworksByKey = computed(() => Object.fromEntries(store.frameworks.map((f: any) => [f.key, f])));
-const visibleTemplates = computed(() => (activeFramework.value === "all" ? store.templates : store.templates.filter((t) => t.framework === activeFramework.value)));
+const visibleTemplates = computed(() =>
+  store.templates.filter((t) => {
+    if (activeFramework.value !== "all" && t.framework !== activeFramework.value) return false;
+    if (activePlatform.value === "all") return true;
+    if (activePlatform.value === "common") return !t.targetPlatform;
+    return t.targetPlatform === activePlatform.value;
+  }),
+);
 
 // Port of templateToPolicyDraft (TemplateGallery.jsx:16-26) — deliberately
 // id-less so PolicyBuilderDrawer's existing create path (no policy.id)
@@ -77,6 +98,19 @@ function useTemplate(t: ComplianceTemplate) {
       </button>
     </div>
 
+    <div class="flex items-center gap-2 pb-3 mb-3 overflow-x-auto border-b border-gray-200 dark:border-gray-700">
+      <button
+        v-for="p in PLATFORM_FILTERS"
+        :key="p.value"
+        class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors"
+        :class="activePlatform !== p.value ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
+        :style="activePlatform === p.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
+        @click="activePlatform = p.value"
+      >
+        {{ p.label }}
+      </button>
+    </div>
+
     <div class="max-h-[60vh] overflow-y-auto">
       <div v-if="error" class="mb-4 px-3 py-2 rounded-lg text-xs font-medium flex items-start gap-2" style="background-color: #ef444412; color: #ef4444; border: 1px solid #ef444430">
         <component :is="ICONS.DangerTriangle" :size="14" weight="Linear" class="shrink-0 mt-0.5" /> {{ error }}
@@ -99,6 +133,9 @@ function useTemplate(t: ComplianceTemplate) {
                 <span class="text-[10px] font-medium text-gray-400">{{ t.controlRef }}</span>
                 <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full uppercase" :style="{ backgroundColor: `${SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.medium}15`, color: SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.medium }">
                   {{ t.severity }}
+                </span>
+                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" :style="{ backgroundColor: t.targetPlatform ? '#0241E312' : '#9CA3AF15', color: t.targetPlatform ? PRIMARY_BLUE : '#9CA3AF' }">
+                  {{ t.targetPlatform ? PLATFORM_LABELS[t.targetPlatform] ?? t.targetPlatform : "Common" }}
                 </span>
               </div>
               <p class="text-sm font-medium mt-1.5 text-gray-900 dark:text-white">{{ t.title }}</p>

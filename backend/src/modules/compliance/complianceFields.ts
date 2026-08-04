@@ -2,7 +2,25 @@
  * Static registries for the Compliance Policy Builder — ported verbatim
  * from main.py: COMPLIANCE_FIELDS (main.py:9815), COMPLIANCE_FIELD_MITRE_HINTS
  * (main.py:9896), MITRE_TACTICS/MITRE_TECHNIQUES (main.py:11612-11672),
- * COMPLIANCE_FRAMEWORKS/COMPLIANCE_POLICY_TEMPLATES (main.py:9999-10150).
+ * COMPLIANCE_FRAMEWORKS (main.py:9999-10150).
+ *
+ * COMPLIANCE_POLICY_TEMPLATES below is NOT a port — main.py's
+ * CompliancePolicyPayload has no platform concept at all, so its templates
+ * (when this app still had them 1:1) were OS-blended (one template mixing a
+ * Windows/macOS self-reported-attribute check with an Android customField
+ * check via "any" logic). Now that CompliancePolicy carries targetPlatform
+ * (see schema.prisma, mirroring Workflow's own field), this registry was
+ * rewritten so each template targets exactly one platform (or explicitly
+ * "Common" via targetPlatform: null) and uses the condition that's actually
+ * realistic for that OS's telemetry -- e.g. Windows/macOS get
+ * selfReportedAttribute checks (the agent-reported vocabulary in
+ * WINDOWS_ATTR_ALIASES/MACOS_ATTR_ALIASES), Android gets customField checks
+ * against its live Android Management API nativeSecurity block
+ * (deviceNormalize.ts), and iOS -- which has neither a self-report agent nor
+ * a nativeSecurity block anywhere in this app -- only gets templates built
+ * from what's actually observable for it (OS/vulnerability currency, App
+ * Store app currency, check-in recency), never a fabricated encryption or
+ * screen-lock signal.
  */
 
 export interface ComplianceFieldDef {
@@ -199,106 +217,505 @@ export const COMPLIANCE_FRAMEWORKS = [
 ];
 const COMPLIANCE_FRAMEWORKS_BY_KEY = new Map(COMPLIANCE_FRAMEWORKS.map((f) => [f.key, f]));
 
-function diskEncryptionConditions() {
-  return [
-    { field: "selfReportedAttribute", operator: "equals", value: { name: "diskEncryptionEnabled", compareValue: "false" } },
-    { field: "customField", operator: "equals", value: { path: "nativeSecurity.isEncrypted", compareValue: "false" } },
-  ];
-}
-function screenLockConditions() {
-  return [
-    { field: "selfReportedAttribute", operator: "equals", value: { name: "screenLockEnabled", compareValue: "false" } },
-    { field: "customField", operator: "equals", value: { path: "nativeSecurity.isDeviceSecure", compareValue: "false" } },
-  ];
-}
-function antivirusConditions() {
-  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "antivirusEnabled", compareValue: "false" } }];
-}
-function exploitedVulnConditions() {
-  return [
-    { field: "osUpdateExploitedPending", operator: "equals", value: true },
-    { field: "vulnExploitedPending", operator: "equals", value: true },
-  ];
-}
-function osEolCondition() {
-  return { field: "osEol", operator: "equals", value: true };
-}
-function staleCheckinCondition(days: number) {
-  return { field: "lastSeenDaysAgo", operator: "greaterThan", value: days };
+type TemplateCondition = { field: string; operator: string; value: unknown };
+
+// ── Per-platform condition builders ──
+// Each one encodes the ONE signal that's actually realistic for that OS in
+// this app -- not a lowest-common-denominator blend. See the file-header
+// comment above for why iOS is structurally excluded from encryption/
+// screen-lock/malware (no agent, no nativeSecurity block ever populated for
+// platform "apple").
+
+function encryptionCondition(platform: "windows" | "macos" | "android"): TemplateCondition[] {
+  if (platform === "android") {
+    // Android Management API's own encryption signal, live on the device
+    // record (deviceNormalize.ts) -- not self-reported by an agent.
+    return [{ field: "customField", operator: "equals", value: { path: "nativeSecurity.isEncrypted", compareValue: "false" } }];
+  }
+  // Windows (BitLocker) and macOS (FileVault) are both normalized to the
+  // same "diskEncryptionEnabled" self-reported attribute name by
+  // WINDOWS_ATTR_ALIASES/MACOS_ATTR_ALIASES (deviceData.schemas.ts) -- the
+  // condition is identical; only the policy's targetPlatform (and so which
+  // fleet it's evaluated against) differs.
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "diskEncryptionEnabled", compareValue: "false" } }];
 }
 
-export const COMPLIANCE_POLICY_TEMPLATES = [
+function screenLockCondition(platform: "windows" | "macos" | "android"): TemplateCondition[] {
+  if (platform === "android") {
+    // isDeviceSecure is Android Management API's own "is a lock screen
+    // configured" flag -- a more direct signal than any alias could give.
+    return [{ field: "customField", operator: "equals", value: { path: "nativeSecurity.isDeviceSecure", compareValue: "false" } }];
+  }
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "screenLockEnabled", compareValue: "false" } }];
+}
+
+function malwareProtectionCondition(platform: "windows" | "macos" | "android"): TemplateCondition[] {
+  if (platform === "android") {
+    // Android has no 3rd-party AV agent path in this app -- Play Protect's
+    // app-verification toggle (verifyAppsEnabled) is the real mobile
+    // equivalent of "is malware scanning active".
+    return [{ field: "customField", operator: "equals", value: { path: "nativeSecurity.verifyAppsEnabled", compareValue: "false" } }];
+  }
+  if (platform === "windows") {
+    // Defender disabled OR its signature definitions have gone stale --
+    // either one leaves the endpoint effectively unprotected.
+    return [
+      { field: "selfReportedAttribute", operator: "equals", value: { name: "antivirusEnabled", compareValue: "false" } },
+      { field: "selfReportedAttribute", operator: "equals", value: { name: "antivirusUpToDate", compareValue: "false" } },
+    ];
+  }
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "antivirusEnabled", compareValue: "false" } }];
+}
+
+function firewallCondition(): TemplateCondition[] {
+  // firewallEnabled is only ever populated by the self-report agent
+  // (WINDOWS_ATTR_ALIASES/MACOS_ATTR_ALIASES) -- Windows/macOS only. iOS
+  // and Android don't expose a comparable local toggle to MDM in this app.
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "firewallEnabled", compareValue: "false" } }];
+}
+
+function windowsHardwareRootOfTrustCondition(): TemplateCondition[] {
+  // TPM anchors BitLocker's strongest key-protector mode in hardware, and
+  // Secure Boot blocks an unsigned/tampered boot chain -- both Windows-only
+  // concepts (report-security-attributes.ps1 reporter) with no macOS/
+  // Android/iOS equivalent surfaced anywhere in this app.
+  return [
+    { field: "selfReportedAttribute", operator: "equals", value: { name: "tpmEnabled", compareValue: "false" } },
+    { field: "selfReportedAttribute", operator: "equals", value: { name: "secureBootEnabled", compareValue: "false" } },
+  ];
+}
+
+function patchVulnCondition(platform: "windows" | "macos" | "android" | "apple"): TemplateCondition[] {
+  if (platform === "windows") {
+    // MSRC-backed OS Updates catalog fields -- Windows-only.
+    return [
+      { field: "osUpdateExploitedPending", operator: "equals", value: true },
+      { field: "osUpdatePendingCount", operator: "greaterThan", value: 0 },
+      { field: "osEol", operator: "equals", value: true },
+    ];
+  }
+  // Apple (iOS/iPadOS), macOS, and Android all share the EUVD-backed
+  // vulnPendingCveCount/vulnExploitedPending fields (vulnCatalog.ts) -- same
+  // underlying fields, but each still gets its own template entry because a
+  // policy's targetPlatform can only lock in one platform at a time.
+  return [
+    { field: "vulnExploitedPending", operator: "equals", value: true },
+    { field: "vulnPendingCveCount", operator: "greaterThan", value: 0 },
+    { field: "osEol", operator: "equals", value: true },
+  ];
+}
+
+function appleAppUpdatesCondition(): TemplateCondition[] {
+  return [{ field: "appleAppUpdatesPending", operator: "greaterThan", value: 0 }];
+}
+
+function androidConfigPostureCondition(): TemplateCondition[] {
+  // Android Management API's own device-posture + policy-compliance signal
+  // plus the two classic mobile attack-surface toggles (USB debugging,
+  // sideloading from unknown sources) -- all live in the same
+  // nativeSecurity block (deviceNormalize.ts), so one combined "any"
+  // condition covers Android's secure-configuration story end to end.
+  return [
+    { field: "customField", operator: "equals", value: { path: "nativeSecurity.devicePosture", compareValue: "AT_RISK" } },
+    { field: "customField", operator: "equals", value: { path: "nativeSecurity.devicePosture", compareValue: "POTENTIALLY_COMPROMISED" } },
+    { field: "customField", operator: "equals", value: { path: "nativeSecurity.policyCompliant", compareValue: "false" } },
+    { field: "customField", operator: "equals", value: { path: "nativeSecurity.adbEnabled", compareValue: "true" } },
+    { field: "customField", operator: "equals", value: { path: "nativeSecurity.unknownSourcesEnabled", compareValue: "true" } },
+  ];
+}
+
+function staleCheckinCondition(days: number): TemplateCondition[] {
+  return [{ field: "lastSeenDaysAgo", operator: "greaterThan", value: days }];
+}
+
+function highRiskTierCondition(): TemplateCondition[] {
+  return [
+    { field: "riskTier", operator: "equals", value: "high" },
+    { field: "riskTier", operator: "equals", value: "critical" },
+  ];
+}
+
+export const COMPLIANCE_POLICY_TEMPLATES: Array<{
+  id: string;
+  framework: string;
+  controlRef: string;
+  title: string;
+  severity: string;
+  conditionLogic: "any" | "all";
+  description: string;
+  targetPlatform: string | null;
+  conditions: TemplateCondition[];
+}> = [
+  // ── ISO/IEC 27001:2022 ──
   {
-    id: "iso27001-disk-encryption", framework: "iso27001", controlRef: "Annex A.8.1 / A.8.24",
-    title: "Disk encryption not enforced", severity: "high", conditionLogic: "any",
-    description: "Flags Windows/macOS devices self-reporting disk encryption off, and Android devices whose native security state confirms they're unencrypted.",
-    conditions: diskEncryptionConditions(),
+    id: "iso27001-encryption-windows", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "windows",
+    title: "Disk encryption (BitLocker) not enabled", severity: "high", conditionLogic: "any",
+    description: "Flags Windows devices self-reporting BitLocker disk encryption as disabled.",
+    conditions: encryptionCondition("windows"),
   },
   {
-    id: "iso27001-screen-lock", framework: "iso27001", controlRef: "Annex A.8.1",
-    title: "Screen lock / passcode not enforced", severity: "high", conditionLogic: "any",
-    description: "Flags Windows/macOS devices self-reporting screen lock off, and Android devices reporting themselves as not secure.",
-    conditions: screenLockConditions(),
+    id: "iso27001-encryption-macos", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "macos",
+    title: "Disk encryption (FileVault) not enabled", severity: "high", conditionLogic: "any",
+    description: "Flags macOS devices self-reporting FileVault disk encryption as disabled.",
+    conditions: encryptionCondition("macos"),
   },
   {
-    id: "iso27001-malware-protection", framework: "iso27001", controlRef: "Annex A.8.7",
+    id: "iso27001-encryption-android", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "android",
+    title: "Device encryption not confirmed", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices whose Android Management API security state confirms they're unencrypted.",
+    conditions: encryptionCondition("android"),
+  },
+  {
+    id: "iso27001-crypto-hardware-windows", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "windows",
+    title: "TPM / Secure Boot not enabled", severity: "high", conditionLogic: "any",
+    description: "Supplements BitLocker: TPM anchors the encryption key in hardware and Secure Boot blocks unsigned boot-chain tampering. Either disabled weakens the cryptographic root of trust — a Windows-specific control with no macOS/Android/iOS equivalent.",
+    conditions: windowsHardwareRootOfTrustCondition(),
+  },
+  {
+    id: "iso27001-screen-lock-windows", framework: "iso27001", controlRef: "Annex A.8.5", targetPlatform: "windows",
+    title: "Screen lock not enforced", severity: "medium", conditionLogic: "any",
+    description: "Flags Windows devices self-reporting screen lock disabled.",
+    conditions: screenLockCondition("windows"),
+  },
+  {
+    id: "iso27001-screen-lock-macos", framework: "iso27001", controlRef: "Annex A.8.5", targetPlatform: "macos",
+    title: "Screen lock not enforced", severity: "medium", conditionLogic: "any",
+    description: "Flags macOS devices self-reporting screen lock disabled.",
+    conditions: screenLockCondition("macos"),
+  },
+  {
+    id: "iso27001-screen-lock-android", framework: "iso27001", controlRef: "Annex A.8.5", targetPlatform: "android",
+    title: "Screen lock not enforced", severity: "medium", conditionLogic: "any",
+    description: "Flags Android devices the Android Management API reports as not secured with a lock screen.",
+    conditions: screenLockCondition("android"),
+  },
+  {
+    id: "iso27001-malware-windows", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "windows",
     title: "Anti-malware protection inactive", severity: "high", conditionLogic: "any",
-    description: "Flags Windows/macOS devices self-reporting their anti-malware/Defender/XProtect protection as disabled.",
-    conditions: antivirusConditions(),
+    description: "Flags Windows devices self-reporting Defender disabled or its definitions out of date.",
+    conditions: malwareProtectionCondition("windows"),
   },
   {
-    id: "iso27001-os-eol", framework: "iso27001", controlRef: "Annex A.8.1 (secure configuration)",
-    title: "OS version past end-of-life", severity: "medium", conditionLogic: "any",
-    description: "Flags devices running an OS version confirmed end-of-life by the OS Lifecycle catalog — no further security patches are coming.",
-    conditions: [osEolCondition()],
+    id: "iso27001-malware-macos", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "macos",
+    title: "Anti-malware protection inactive", severity: "high", conditionLogic: "any",
+    description: "Flags macOS devices self-reporting XProtect (or an equivalent deployed agent) disabled.",
+    conditions: malwareProtectionCondition("macos"),
   },
   {
-    id: "iso27001-stale-inventory", framework: "iso27001", controlRef: "Annex A.8.1 (asset inventory currency)",
+    id: "iso27001-malware-android", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "android",
+    title: "Play Protect app verification disabled", severity: "high", conditionLogic: "any",
+    description: "Android has no 3rd-party AV agent path here — Play Protect's app-verification toggle is the realistic mobile equivalent of anti-malware scanning.",
+    conditions: malwareProtectionCondition("android"),
+  },
+  {
+    id: "iso27001-firewall-windows", framework: "iso27001", controlRef: "Annex A.8.20", targetPlatform: "windows",
+    title: "Host firewall disabled", severity: "medium", conditionLogic: "any",
+    description: "Flags Windows devices self-reporting their local firewall disabled.",
+    conditions: firewallCondition(),
+  },
+  {
+    id: "iso27001-firewall-macos", framework: "iso27001", controlRef: "Annex A.8.20", targetPlatform: "macos",
+    title: "Host firewall disabled", severity: "medium", conditionLogic: "any",
+    description: "Flags macOS devices self-reporting their local firewall disabled.",
+    conditions: firewallCondition(),
+  },
+  {
+    id: "iso27001-vuln-windows", framework: "iso27001", controlRef: "Annex A.8.8", targetPlatform: "windows",
+    title: "Unpatched or end-of-life Windows", severity: "high", conditionLogic: "any",
+    description: "Flags Windows devices with a pending fix for an exploited CVE, any pending security update, or an end-of-life OS build (MSRC-backed).",
+    conditions: patchVulnCondition("windows"),
+  },
+  {
+    id: "iso27001-vuln-macos", framework: "iso27001", controlRef: "Annex A.8.8", targetPlatform: "macos",
+    title: "Unpatched or end-of-life macOS", severity: "high", conditionLogic: "any",
+    description: "Flags macOS devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build.",
+    conditions: patchVulnCondition("macos"),
+  },
+  {
+    id: "iso27001-vuln-android", framework: "iso27001", controlRef: "Annex A.8.8", targetPlatform: "android",
+    title: "Unpatched or end-of-life Android", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build.",
+    conditions: patchVulnCondition("android"),
+  },
+  {
+    id: "iso27001-vuln-apple", framework: "iso27001", controlRef: "Annex A.8.8", targetPlatform: "apple",
+    title: "Unpatched or end-of-life iOS/iPadOS", severity: "high", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build — the only patch-currency signal this app has for iOS, which exposes no local security-posture telemetry at all.",
+    conditions: patchVulnCondition("apple"),
+  },
+  {
+    id: "iso27001-android-config-posture", framework: "iso27001", controlRef: "Annex A.8.9", targetPlatform: "android",
+    title: "Insecure Android configuration or device posture", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices flagged AT_RISK/POTENTIALLY_COMPROMISED by Android Enterprise's own device-posture signal, not policy-compliant, with USB debugging on, or with sideloading from unknown sources allowed.",
+    conditions: androidConfigPostureCondition(),
+  },
+  {
+    id: "iso27001-stale-inventory", framework: "iso27001", controlRef: "Annex A.5.9", targetPlatform: null,
     title: "Device hasn't checked in recently", severity: "low", conditionLogic: "any",
-    description: "Flags devices that haven't checked in for over 30 days — a stale inventory undermines every other endpoint control.",
-    conditions: [staleCheckinCondition(30)],
+    description: "Flags devices that haven't checked in for over 30 days — a stale inventory undermines every other endpoint control, regardless of platform.",
+    conditions: staleCheckinCondition(30),
   },
   {
-    id: "ens-mp-eq-encryption", framework: "ens", controlRef: "mp.eq.2",
-    title: "Cifrado no aplicado en equipo portátil / Portable device encryption not enforced", severity: "high", conditionLogic: "any",
-    description: "Mandatory at categoría alta: flags Windows/macOS devices self-reporting encryption off and Android devices confirmed unencrypted.",
-    conditions: diskEncryptionConditions(),
+    id: "iso27001-app-updates-apple", framework: "iso27001", controlRef: "Annex A.8.1", targetPlatform: "apple",
+    title: "Pending App Store app updates", severity: "medium", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices with pending App Store app updates — outdated apps are a common vector once the OS itself is current.",
+    conditions: appleAppUpdatesCondition(),
   },
   {
-    id: "ens-mp-eq-screen-lock", framework: "ens", controlRef: "mp.eq",
+    id: "iso27001-app-updates-macos", framework: "iso27001", controlRef: "Annex A.8.1", targetPlatform: "macos",
+    title: "Pending App Store app updates", severity: "medium", conditionLogic: "any",
+    description: "Flags macOS devices with pending App Store app updates.",
+    conditions: appleAppUpdatesCondition(),
+  },
+
+  // ── ENS (Esquema Nacional de Seguridad, RD 311/2022) ──
+  {
+    id: "ens-encryption-windows", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "windows",
+    title: "Cifrado no aplicado en equipo Windows / Windows device encryption not enforced", severity: "high", conditionLogic: "any",
+    description: "mp.eq.3 (protección de dispositivos portátiles): flags Windows devices self-reporting BitLocker disabled. Mandatory at categoría alta for equipment that leaves controlled premises.",
+    conditions: encryptionCondition("windows"),
+  },
+  {
+    id: "ens-encryption-macos", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "macos",
+    title: "Cifrado no aplicado en equipo macOS / macOS device encryption not enforced", severity: "high", conditionLogic: "any",
+    description: "mp.eq.3: flags macOS devices self-reporting FileVault disabled.",
+    conditions: encryptionCondition("macos"),
+  },
+  {
+    id: "ens-encryption-android", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "android",
+    title: "Cifrado no confirmado en dispositivo Android / Android device encryption not confirmed", severity: "high", conditionLogic: "any",
+    description: "mp.eq.3: flags Android devices the Android Management API confirms are unencrypted.",
+    conditions: encryptionCondition("android"),
+  },
+  {
+    id: "ens-checkin-windows", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "windows",
+    title: "Equipo sin contacto reciente / Device unreachable beyond reporting window", severity: "medium", conditionLogic: "any",
+    description: "mp.eq.3 (riesgo de pérdida/robo): flags Windows laptops offline for over 14 days.",
+    conditions: staleCheckinCondition(14),
+  },
+  {
+    id: "ens-checkin-macos", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "macos",
+    title: "Equipo sin contacto reciente / Device unreachable beyond reporting window", severity: "medium", conditionLogic: "any",
+    description: "mp.eq.3: flags macOS laptops offline for over 14 days.",
+    conditions: staleCheckinCondition(14),
+  },
+  {
+    id: "ens-checkin-android", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "android",
+    title: "Dispositivo móvil sin contacto reciente / Mobile device unreachable beyond reporting window", severity: "high", conditionLogic: "any",
+    description: "mp.eq.3: a tighter 3-day window for Android — phones/tablets carry a materially higher loss/theft exposure than desks-bound laptops, so ENS expects faster identification.",
+    conditions: staleCheckinCondition(3),
+  },
+  {
+    id: "ens-checkin-apple", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "apple",
+    title: "Dispositivo móvil sin contacto reciente / Mobile device unreachable beyond reporting window", severity: "high", conditionLogic: "any",
+    description: "mp.eq.3: same tightened 3-day window for iOS/iPadOS as Android — this is also the only loss/theft-relevant signal this app has for iOS, since it has no local security telemetry.",
+    conditions: staleCheckinCondition(3),
+  },
+  {
+    id: "ens-screen-lock-windows", framework: "ens", controlRef: "mp.eq.2", targetPlatform: "windows",
+    title: "Bloqueo de puesto de trabajo no activo / Workstation lock not active", severity: "medium", conditionLogic: "any",
+    description: "mp.eq.2 (bloqueo de puesto de trabajo): flags Windows devices self-reporting screen lock disabled.",
+    conditions: screenLockCondition("windows"),
+  },
+  {
+    id: "ens-screen-lock-macos", framework: "ens", controlRef: "mp.eq.2", targetPlatform: "macos",
+    title: "Bloqueo de puesto de trabajo no activo / Workstation lock not active", severity: "medium", conditionLogic: "any",
+    description: "mp.eq.2: flags macOS devices self-reporting screen lock disabled.",
+    conditions: screenLockCondition("macos"),
+  },
+  {
+    id: "ens-screen-lock-android", framework: "ens", controlRef: "mp.eq.2", targetPlatform: "android",
     title: "Bloqueo de pantalla no activo / Screen lock not active", severity: "medium", conditionLogic: "any",
-    description: "Flags devices without an active screen lock — baseline access protection for equipment that leaves controlled premises.",
-    conditions: screenLockConditions(),
+    description: "mp.eq.2: flags Android devices without a configured lock screen.",
+    conditions: screenLockCondition("android"),
   },
   {
-    id: "ens-mp-eq-checkin-window", framework: "ens", controlRef: "mp.eq (incident-reporting timeliness)",
-    title: "Dispositivo sin contacto reciente / Device unreachable beyond reporting window", severity: "high", conditionLogic: "any",
-    description: "Flags devices offline for over 7 days — tighter than the general inventory-currency window, since ENS expects lost/stolen equipment to be identified and reported quickly.",
-    conditions: [staleCheckinCondition(7)],
+    id: "ens-malware-windows", framework: "ens", controlRef: "op.exp.6", targetPlatform: "windows",
+    title: "Protección frente a código dañino inactiva / Malware protection inactive", severity: "high", conditionLogic: "any",
+    description: "op.exp.6 (protección frente a código dañino): flags Windows devices with Defender disabled or its definitions stale.",
+    conditions: malwareProtectionCondition("windows"),
   },
   {
-    id: "nis2-art21-hygiene-screen-lock", framework: "nis2", controlRef: "Article 21(2)(g)",
-    title: "Basic cyber hygiene: screen lock not enforced", severity: "medium", conditionLogic: "any",
-    description: "Flags devices without an active screen lock, part of NIS2's baseline cyber-hygiene practices.",
-    conditions: screenLockConditions(),
+    id: "ens-malware-macos", framework: "ens", controlRef: "op.exp.6", targetPlatform: "macos",
+    title: "Protección frente a código dañino inactiva / Malware protection inactive", severity: "high", conditionLogic: "any",
+    description: "op.exp.6: flags macOS devices with anti-malware protection disabled.",
+    conditions: malwareProtectionCondition("macos"),
   },
   {
-    id: "nis2-art21-vuln-handling", framework: "nis2", controlRef: "Article 21(2)(e)",
-    title: "Vulnerability handling: EOL or exploited-CVE exposure", severity: "high", conditionLogic: "any",
-    description: "Flags devices on an end-of-life OS or with a pending patch for a known-exploited CVE — NIS2's vulnerability-handling and disclosure measure.",
-    conditions: [osEolCondition(), ...exploitedVulnConditions()],
+    id: "ens-malware-android", framework: "ens", controlRef: "op.exp.6", targetPlatform: "android",
+    title: "Play Protect desactivado / Play Protect disabled", severity: "high", conditionLogic: "any",
+    description: "op.exp.6: Android's realistic equivalent is Play Protect's app-verification toggle, not a 3rd-party agent.",
+    conditions: malwareProtectionCondition("android"),
   },
   {
-    id: "nis2-art21-cryptography", framework: "nis2", controlRef: "Article 21(2)(h)",
+    id: "ens-maintenance-vuln-windows", framework: "ens", controlRef: "op.exp.4", targetPlatform: "windows",
+    title: "Mantenimiento pendiente / Pending maintenance (unpatched or EOL)", severity: "high", conditionLogic: "any",
+    description: "op.exp.4 (mantenimiento): flags Windows devices with an exploited-CVE fix pending, any pending security update, or an end-of-life OS build.",
+    conditions: patchVulnCondition("windows"),
+  },
+  {
+    id: "ens-maintenance-vuln-macos", framework: "ens", controlRef: "op.exp.4", targetPlatform: "macos",
+    title: "Mantenimiento pendiente / Pending maintenance (unpatched or EOL)", severity: "high", conditionLogic: "any",
+    description: "op.exp.4: flags macOS devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build.",
+    conditions: patchVulnCondition("macos"),
+  },
+  {
+    id: "ens-maintenance-vuln-android", framework: "ens", controlRef: "op.exp.4", targetPlatform: "android",
+    title: "Mantenimiento pendiente / Pending maintenance (unpatched or EOL)", severity: "high", conditionLogic: "any",
+    description: "op.exp.4: flags Android devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build.",
+    conditions: patchVulnCondition("android"),
+  },
+  {
+    id: "ens-maintenance-vuln-apple", framework: "ens", controlRef: "op.exp.4", targetPlatform: "apple",
+    title: "Mantenimiento pendiente / Pending maintenance (unpatched or EOL)", severity: "high", conditionLogic: "any",
+    description: "op.exp.4: flags iOS/iPadOS devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build.",
+    conditions: patchVulnCondition("apple"),
+  },
+  {
+    id: "ens-firewall-windows", framework: "ens", controlRef: "mp.com.1", targetPlatform: "windows",
+    title: "Perímetro no protegido / Host firewall disabled", severity: "medium", conditionLogic: "any",
+    description: "mp.com.1 (perímetro seguro): flags Windows devices self-reporting their local firewall disabled.",
+    conditions: firewallCondition(),
+  },
+  {
+    id: "ens-firewall-macos", framework: "ens", controlRef: "mp.com.1", targetPlatform: "macos",
+    title: "Perímetro no protegido / Host firewall disabled", severity: "medium", conditionLogic: "any",
+    description: "mp.com.1: flags macOS devices self-reporting their local firewall disabled.",
+    conditions: firewallCondition(),
+  },
+  {
+    id: "ens-android-config", framework: "ens", controlRef: "mp.eq", targetPlatform: "android",
+    title: "Configuración de equipo insegura / Insecure device configuration", severity: "high", conditionLogic: "any",
+    description: "mp.eq (protección de equipos, aplicada de forma genérica — no hay un sub-código ENS dedicado a la postura de dispositivos Android): flags devices AT_RISK/POTENTIALLY_COMPROMISED, not policy-compliant, with USB debugging on, or sideloading allowed.",
+    conditions: androidConfigPostureCondition(),
+  },
+
+  // ── NIS2 Directive (EU 2022/2555), Article 21(2) ──
+  {
+    id: "nis2-crypto-windows", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "windows",
     title: "Cryptography: disk encryption not confirmed", severity: "high", conditionLogic: "any",
-    description: "Flags devices without confirmed disk encryption — NIS2's cryptography and encryption measure.",
-    conditions: diskEncryptionConditions(),
+    description: "Flags Windows devices self-reporting BitLocker disabled — NIS2's cryptography/encryption measure.",
+    conditions: encryptionCondition("windows"),
   },
   {
-    id: "nis2-art21-asset-visibility", framework: "nis2", controlRef: "Article 21(2)(a)",
-    title: "Asset visibility gap: device hasn't checked in", severity: "low", conditionLogic: "any",
-    description: "Flags devices unseen for over 30 days — asset/risk visibility is the foundation NIS2's other measures depend on.",
-    conditions: [staleCheckinCondition(30)],
+    id: "nis2-crypto-macos", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "macos",
+    title: "Cryptography: disk encryption not confirmed", severity: "high", conditionLogic: "any",
+    description: "Flags macOS devices self-reporting FileVault disabled.",
+    conditions: encryptionCondition("macos"),
+  },
+  {
+    id: "nis2-crypto-android", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "android",
+    title: "Cryptography: disk encryption not confirmed", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices the Android Management API confirms are unencrypted.",
+    conditions: encryptionCondition("android"),
+  },
+  {
+    id: "nis2-crypto-hardware-windows", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "windows",
+    title: "Cryptography: TPM / Secure Boot not enabled", severity: "high", conditionLogic: "any",
+    description: "Windows-specific hardware root of trust backing full-disk encryption — no macOS/Android/iOS equivalent exists in this app.",
+    conditions: windowsHardwareRootOfTrustCondition(),
+  },
+  {
+    id: "nis2-hygiene-screenlock-windows", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "windows",
+    title: "Basic cyber hygiene: screen lock not enforced", severity: "medium", conditionLogic: "any",
+    description: "Flags Windows devices without an active screen lock.",
+    conditions: screenLockCondition("windows"),
+  },
+  {
+    id: "nis2-hygiene-screenlock-macos", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "macos",
+    title: "Basic cyber hygiene: screen lock not enforced", severity: "medium", conditionLogic: "any",
+    description: "Flags macOS devices without an active screen lock.",
+    conditions: screenLockCondition("macos"),
+  },
+  {
+    id: "nis2-hygiene-screenlock-android", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "android",
+    title: "Basic cyber hygiene: screen lock not enforced", severity: "medium", conditionLogic: "any",
+    description: "Flags Android devices without a configured lock screen.",
+    conditions: screenLockCondition("android"),
+  },
+  {
+    id: "nis2-hygiene-malware-windows", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "windows",
+    title: "Basic cyber hygiene: malware protection inactive", severity: "high", conditionLogic: "any",
+    description: "Flags Windows devices with Defender disabled or its definitions stale.",
+    conditions: malwareProtectionCondition("windows"),
+  },
+  {
+    id: "nis2-hygiene-malware-macos", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "macos",
+    title: "Basic cyber hygiene: malware protection inactive", severity: "high", conditionLogic: "any",
+    description: "Flags macOS devices with anti-malware protection disabled.",
+    conditions: malwareProtectionCondition("macos"),
+  },
+  {
+    id: "nis2-hygiene-malware-android", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "android",
+    title: "Basic cyber hygiene: Play Protect disabled", severity: "high", conditionLogic: "any",
+    description: "Android's realistic malware-hygiene equivalent is Play Protect's app-verification toggle.",
+    conditions: malwareProtectionCondition("android"),
+  },
+  {
+    id: "nis2-hygiene-firewall-windows", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "windows",
+    title: "Basic cyber hygiene: host firewall disabled", severity: "medium", conditionLogic: "any",
+    description: "Flags Windows devices self-reporting their local firewall disabled.",
+    conditions: firewallCondition(),
+  },
+  {
+    id: "nis2-hygiene-firewall-macos", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "macos",
+    title: "Basic cyber hygiene: host firewall disabled", severity: "medium", conditionLogic: "any",
+    description: "Flags macOS devices self-reporting their local firewall disabled.",
+    conditions: firewallCondition(),
+  },
+  {
+    id: "nis2-vuln-windows", framework: "nis2", controlRef: "Article 21(2)(e)", targetPlatform: "windows",
+    title: "Vulnerability handling: unpatched or EOL Windows", severity: "high", conditionLogic: "any",
+    description: "Flags Windows devices with an exploited-CVE fix pending, any pending security update, or an end-of-life OS build.",
+    conditions: patchVulnCondition("windows"),
+  },
+  {
+    id: "nis2-vuln-macos", framework: "nis2", controlRef: "Article 21(2)(e)", targetPlatform: "macos",
+    title: "Vulnerability handling: unpatched or EOL macOS", severity: "high", conditionLogic: "any",
+    description: "Flags macOS devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build.",
+    conditions: patchVulnCondition("macos"),
+  },
+  {
+    id: "nis2-vuln-android", framework: "nis2", controlRef: "Article 21(2)(e)", targetPlatform: "android",
+    title: "Vulnerability handling: unpatched or EOL Android", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build.",
+    conditions: patchVulnCondition("android"),
+  },
+  {
+    id: "nis2-vuln-apple", framework: "nis2", controlRef: "Article 21(2)(e)", targetPlatform: "apple",
+    title: "Vulnerability handling: unpatched or EOL iOS/iPadOS", severity: "high", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices with a pending exploited CVE, any pending known CVE, or an end-of-life OS build.",
+    conditions: patchVulnCondition("apple"),
+  },
+  {
+    id: "nis2-app-updates-apple", framework: "nis2", controlRef: "Article 21(2)(e)", targetPlatform: "apple",
+    title: "Vulnerability handling: pending App Store app updates", severity: "medium", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices with pending App Store app updates — application-layer vulnerability handling, distinct from OS patching.",
+    conditions: appleAppUpdatesCondition(),
+  },
+  {
+    id: "nis2-app-updates-macos", framework: "nis2", controlRef: "Article 21(2)(e)", targetPlatform: "macos",
+    title: "Vulnerability handling: pending App Store app updates", severity: "medium", conditionLogic: "any",
+    description: "Flags macOS devices with pending App Store app updates.",
+    conditions: appleAppUpdatesCondition(),
+  },
+  {
+    id: "nis2-asset-android-posture", framework: "nis2", controlRef: "Article 21(2)(i)", targetPlatform: "android",
+    title: "Asset management: insecure Android configuration", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices AT_RISK/POTENTIALLY_COMPROMISED, not policy-compliant, with USB debugging on, or sideloading allowed — asset-management visibility into managed-device configuration drift.",
+    conditions: androidConfigPostureCondition(),
+  },
+  {
+    id: "nis2-asset-visibility", framework: "nis2", controlRef: "Article 21(2)(i)", targetPlatform: null,
+    title: "Asset management: device hasn't checked in", severity: "low", conditionLogic: "any",
+    description: "Flags devices unseen for over 30 days, any platform — asset visibility is the foundation every other NIS2 measure depends on.",
+    conditions: staleCheckinCondition(30),
+  },
+  {
+    id: "nis2-risk-tier", framework: "nis2", controlRef: "Article 21(2)(a)", targetPlatform: null,
+    title: "Risk analysis: device Risk Tier elevated", severity: "medium", conditionLogic: "any",
+    description: "Flags any device (regardless of platform) whose composite Device Risk Score has reached High or Critical — a holistic, risk-based check that complements the single-signal templates above, matching NIS2's own risk-based-governance framing.",
+    conditions: highRiskTierCondition(),
   },
 ];
 
