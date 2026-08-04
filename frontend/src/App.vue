@@ -3,13 +3,14 @@ import { computed } from "vue";
 import { RouterView, useRoute } from "vue-router";
 import AppShell from "./layouts/AppShell.vue";
 
-// The login screen renders standalone (no sidebar); every other route gets
-// the AppShell nav wrapper.
+// Login and the RBAC access-denied screen both render standalone (no
+// sidebar/nav — a denied account must not see any nav chrome hinting at
+// what exists behind it); every other route gets the AppShell nav wrapper.
 const route = useRoute();
-const isLogin = computed(() => route.name === "login");
+const isStandalone = computed(() => route.name === "login" || route.name === "access-denied");
 </script>
 
 <template>
-  <AppShell v-if="!isLogin" />
+  <AppShell v-if="!isStandalone" />
   <RouterView v-else />
 </template>

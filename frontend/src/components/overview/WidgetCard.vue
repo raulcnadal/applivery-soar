@@ -38,7 +38,14 @@ const chartData = computed(() => props.data?.chartData ?? []);
 const trendData = computed(() => props.data?.trendData);
 const total = computed(() => chartData.value.reduce((a, c) => a + (c.value || 0), 0));
 
-const isChart = computed(() => ["donut", "pie", "bar", "line", "radar", "gauge"].includes(chartType.value));
+// Donut/pie get their own layout (chart + side legend, below) — 1:1 port of
+// App.jsx's DonutPieWidget (~line 1049): a shrink-0 chart on the left
+// (flex: 0 0 52%) and a colored-dot/label/value legend list on the right
+// (flex: 1 1 48%). Every other chart type just fills the card (no custom
+// legend in the original either — BarWidget/line/radar/gauge rely on
+// ECharts' own axis labels or, for gauge, WidgetInfoModal's zoom view).
+const isDonutPie = computed(() => chartType.value === "donut" || chartType.value === "pie");
+const isChart = computed(() => ["bar", "line", "radar", "gauge"].includes(chartType.value));
 
 const chartOption = computed(() => {
   const t = chartType.value;
@@ -125,6 +132,22 @@ const chartOption = computed(() => {
     <template v-else>
       <div v-if="chartType === 'scorecard'" class="flex-1 flex flex-col items-center justify-center">
         <p class="text-4xl font-semibold text-gray-900 dark:text-white">{{ (data?.scorecardValue ?? 0).toLocaleString() }}</p>
+      </div>
+
+      <div v-else-if="isDonutPie" class="flex-1 min-h-0 flex items-center gap-2 overflow-hidden">
+        <div class="relative flex items-center justify-center shrink-0 h-full" style="flex: 0 0 52%; min-height: 80px">
+          <VChart :option="chartOption" autoresize class="h-full w-full" />
+        </div>
+        <div class="flex flex-col justify-center gap-1 overflow-hidden" style="flex: 1 1 48%; min-width: 0">
+          <div v-for="(row, i) in chartData" :key="row.name" class="flex items-center justify-between w-full gap-1.5 px-1 py-0.5">
+            <div class="flex items-center gap-1.5 min-w-0 overflow-hidden">
+              <div class="w-2.5 h-2.5 rounded-[3px] shrink-0" :style="{ backgroundColor: colorFor(widget.stat, row.name, i) }" />
+              <span class="text-[13px] font-normal truncate text-gray-500 dark:text-gray-400">{{ humanLabel(row.name) }}</span>
+            </div>
+            <span class="text-[13px] font-semibold tabular-nums shrink-0 text-gray-900 dark:text-white">{{ row.value.toLocaleString() }}</span>
+          </div>
+          <p v-if="!chartData.length" class="text-gray-400 text-xs py-2">No data.</p>
+        </div>
       </div>
 
       <div v-else-if="isChart" class="flex-1 min-h-0">

@@ -317,12 +317,18 @@ export interface DashboardState {
   layout: GridLayoutItem[];
 }
 
+// 1:1 port of App.jsx's DEFAULT_DASHBOARD (~line 1728) — the starter layout
+// seeded for a brand-new workspace. w3 had drifted to a bar/cases_summary
+// widget during migration; the original ships a line/stats_downloads_trend
+// widget here, and the migrated backend's widgets.service.ts (~line 852)
+// already fully supports that stat, so there was no reason for the
+// substitution.
 export const DEFAULT_DASHBOARD: DashboardState = {
   widgets: [
     { id: "w0", title: "Workspace Profile", stat: "org_profile", type: "scorecard", size: "small", filters: {} },
     { id: "w1", title: "Devices by OS", stat: "stats_devices_os", type: "donut", size: "small", filters: {} },
     { id: "w2", title: "Compliance Status", stat: "stats_compliance", type: "donut", size: "small", filters: {} },
-    { id: "w3", title: "Cases by Status", stat: "cases_summary", type: "bar", size: "half", filters: {} },
+    { id: "w3", title: "Download Trends", stat: "stats_downloads_trend", type: "line", size: "half", filters: {} },
   ],
   layout: [
     { i: "w0", x: 0, y: 0, w: 4, h: 3 },

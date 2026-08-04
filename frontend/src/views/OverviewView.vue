@@ -75,6 +75,12 @@ onMounted(async () => {
   if (!store.isLoaded) await store.fetchState();
   widgets.value = store.dashboard.widgets.map((w) => ({ ...w }));
   layout.value = store.dashboard.layout.map((l) => ({ ...l }));
+  // Seed the comparison snapshot from the just-loaded layout so the
+  // mount-time "layout-updated" emit (grid-layout-plus's own initial
+  // compact pass, not a user edit) doesn't fire a false-positive isDirty —
+  // see the snapshotLayout/onLayoutUpdated comment above for why this
+  // can't just read back layout.value at comparison time.
+  lastLayoutSnapshot = snapshotLayout(layout.value);
   await loadAllWidgets();
   // Same 60s auto-refresh as the original's setInterval(fetchWidgetData, 60000).
   window.setInterval(loadAllWidgets, 60_000);
@@ -102,15 +108,41 @@ watch(
 // one). Only reassigning when the content actually changed lets the loop
 // settle after its first (mount-time) cycle, same as any normal v-model
 // consumer should.
+//
+// Comparing against `layout.value` directly (as opposed to an independent
+// snapshot) is unsound, and is why resizing a widget silently failed to
+// enter edit mode: `ref(props.layout)` — grid-layout-plus's own
+// `currentLayout`, node_modules/grid-layout-plus/src/components/
+// grid-layout.vue:87 — doesn't clone the array it's handed; since Vue's
+// `ref()` returns an already-reactive value as-is, `currentLayout.value`
+// IS the exact same array/objects as this file's `layout.value` (aliased
+// through the `v-model:layout` binding). The library's resize path
+// (grid-layout.vue's shared drag/resize handler, ~line 389: `let l =
+// getLayoutItem(currentLayout.value, id)!` then `l.w = w; l.h = h`
+// in-place, ~line 419-420) mutates that SAME object directly rather than
+// replacing it — so by the time this handler runs, `next` and
+// `layout.value` are literally identical objects and every property
+// comparison trivially succeeds, even though the size genuinely changed.
+// (Drag doesn't hit this: its handler reassigns `currentLayout.value =
+// moveElement(currentLayout.value, l, x, y, ...)`, ~line 360, which
+// produces fresh objects and breaks the aliasing, so drag's comparison
+// was already correct.) Keeping our own `lastLayoutSnapshot` — deep-
+// cloned independently of grid-layout-plus's internal ref, refreshed only
+// when we accept a change — sidesteps the aliasing entirely.
+function snapshotLayout(items: GridLayoutItem[]) {
+  return items.map((l) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: !!l.static }));
+}
+let lastLayoutSnapshot: ReturnType<typeof snapshotLayout> = [];
 function onLayoutUpdated(next: GridLayoutItem[]) {
-  const normalized = next.map((l) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: !!l.static }));
-  const current = layout.value;
+  const normalized = snapshotLayout(next);
+  const previous = lastLayoutSnapshot;
   const unchanged =
-    normalized.length === current.length &&
+    normalized.length === previous.length &&
     normalized.every((l, idx) => {
-      const c = current[idx];
+      const c = previous[idx];
       return c && c.i === l.i && c.x === l.x && c.y === l.y && c.w === l.w && c.h === l.h && !!c.static === l.static;
     });
+  lastLayoutSnapshot = normalized;
   if (unchanged) return;
   layout.value = normalized;
   isDirty.value = true;
