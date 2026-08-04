@@ -279,7 +279,7 @@ const chartOption = computed(() => {
 
       <div v-else-if="isDonutPie" class="flex-1 min-h-0 flex items-center gap-2 overflow-hidden">
         <div class="relative flex items-center justify-center shrink-0 h-full" :style="{ minHeight: '80px', flex: '0 0 52%', cursor: isClickable ? 'pointer' : 'default' }">
-          <VChart :option="chartOption" autoresize class="h-full w-full" @click="onChartClick($event.name)" @mouseover="onDonutHover" @mouseout="onDonutOut" />
+          <VChart :option="chartOption" :init-options="{ renderer: 'svg' }" autoresize class="h-full w-full" @click="onChartClick($event.name)" @mouseover="onDonutHover" @mouseout="onDonutOut" />
         </div>
         <div class="flex flex-col justify-center gap-1 overflow-hidden" style="flex: 1 1 48%; min-width: 0">
           <div
@@ -306,7 +306,7 @@ const chartOption = computed(() => {
              set with no slice filter — 1:1 port of App.jsx's BarWidget
              (~1040, no sliceName), gauge (~3931, primaryItem.name), and
              line/radar (~3889/3947, no sliceName). -->
-        <VChart :option="chartOption" autoresize class="h-full w-full" @click="onChartClick(chartType === 'gauge' ? (chartData[0]?.name ?? null) : null)" />
+        <VChart :option="chartOption" :init-options="{ renderer: 'svg' }" autoresize class="h-full w-full" @click="onChartClick(chartType === 'gauge' ? (chartData[0]?.name ?? null) : null)" />
       </div>
 
       <div v-else-if="chartType === 'list'" class="flex-1 overflow-y-auto text-sm divide-y divide-gray-100 dark:divide-gray-700">

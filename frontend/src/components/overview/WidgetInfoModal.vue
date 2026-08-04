@@ -313,7 +313,7 @@ function onDonutOut(p: any) {
         <!-- Donut / Pie: centred chart + inline legend below -->
         <div v-if="hasDonutPie" class="flex flex-col items-center gap-2">
           <div class="relative" style="width: 260px; height: 260px">
-            <VChart :option="buildDonutOption()" autoresize style="width: 100%; height: 100%" @mouseover="onDonutHover" @mouseout="onDonutOut" />
+            <VChart :option="buildDonutOption()" :init-options="{ renderer: 'svg' }" autoresize style="width: 100%; height: 100%" @mouseover="onDonutHover" @mouseout="onDonutOut" />
           </div>
           <div class="flex items-center justify-center gap-5 flex-wrap">
             <div
@@ -331,7 +331,7 @@ function onDonutOut(p: any) {
 
         <!-- Bar: full-width -->
         <div v-if="hasBar" :style="{ width: '100%', height: Math.max(200, chartData.length * 36 + 60) + 'px' }">
-          <VChart :option="buildBarOption()" autoresize style="width: 100%; height: 100%" />
+          <VChart :option="buildBarOption()" :init-options="{ renderer: 'svg' }" autoresize style="width: 100%; height: 100%" />
         </div>
 
         <!-- Line trend -->
@@ -341,14 +341,14 @@ function onDonutOut(p: any) {
             <span class="text-sm" :style="{ color: TEXT_MUTED }">{{ info.summary }}</span>
           </div>
           <div style="width: 100%; height: 200px">
-            <VChart :option="buildLineOption()" autoresize style="width: 100%; height: 100%" />
+            <VChart :option="buildLineOption()" :init-options="{ renderer: 'svg' }" autoresize style="width: 100%; height: 100%" />
           </div>
         </div>
 
         <!-- Gauge: centred + breakdown -->
         <div v-if="hasGauge" class="flex flex-col items-center gap-1">
           <div style="width: 280px; height: 180px">
-            <VChart :option="buildGaugeOption()" autoresize style="width: 100%; height: 100%" />
+            <VChart :option="buildGaugeOption()" :init-options="{ renderer: 'svg' }" autoresize style="width: 100%; height: 100%" />
           </div>
           <div class="flex items-center justify-center gap-5 flex-wrap mt-1">
             <div v-for="(d, i) in chartData" :key="i" class="flex items-center gap-1.5">
@@ -361,12 +361,12 @@ function onDonutOut(p: any) {
 
         <!-- Radar: centred -->
         <div v-if="hasRadar" style="width: 100%; height: 260px">
-          <VChart :option="buildRadarOption()" autoresize style="width: 100%; height: 100%" />
+          <VChart :option="buildRadarOption()" :init-options="{ renderer: 'svg' }" autoresize style="width: 100%; height: 100%" />
         </div>
 
         <!-- List / Progress: horizontal bar chart -->
         <div v-if="hasListBar" :style="{ width: '100%', height: Math.max(160, chartData.length * 32 + 24) + 'px' }">
-          <VChart :option="buildListOption()" autoresize style="width: 100%; height: 100%" />
+          <VChart :option="buildListOption()" :init-options="{ renderer: 'svg' }" autoresize style="width: 100%; height: 100%" />
         </div>
 
         <!-- Gauge/List with trendData fallback -->
@@ -376,7 +376,7 @@ function onDonutOut(p: any) {
             <span class="text-sm" :style="{ color: TEXT_MUTED }">{{ info.summary }}</span>
           </div>
           <div style="width: 100%; height: 200px">
-            <VChart :option="buildLineOption()" autoresize style="width: 100%; height: 100%" />
+            <VChart :option="buildLineOption()" :init-options="{ renderer: 'svg' }" autoresize style="width: 100%; height: 100%" />
           </div>
         </div>
 
