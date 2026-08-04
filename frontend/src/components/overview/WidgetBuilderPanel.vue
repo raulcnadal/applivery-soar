@@ -6,6 +6,7 @@
 // always-rendered-but-translated panel.
 import { computed, ref, watch } from "vue";
 import { ICONS, resolveIcon } from "../../lib/solarIcons";
+import { useUiStore } from "../../stores/ui";
 import {
   WIDGET_CATALOG,
   WIDGET_SIZES,
@@ -22,6 +23,7 @@ import {
 } from "../../lib/analyticsCatalog";
 
 const PRIMARY_BLUE = "#0241E3";
+const uiStore = useUiStore();
 
 const props = defineProps<{
   open: boolean;
@@ -117,18 +119,18 @@ function blockDims(id: "small" | "half" | "full") {
     <!-- Sliding panel from the left, full height -->
     <div
       class="fixed top-0 bottom-0 left-0 z-[109] flex flex-col shadow-2xl border-r bg-white dark:bg-gray-800 transition-transform duration-300"
-      style="width: 400px; border-color: #e9eaec"
-      :style="{ transform: open ? 'translateX(0)' : 'translateX(-100%)' }"
+      style="width: 400px"
+      :style="{ transform: open ? 'translateX(0)' : 'translateX(-100%)', borderColor: uiStore.activeTheme.border }"
     >
       <!-- Header -->
-      <div class="flex items-center justify-between px-6 py-5 border-b shrink-0" style="border-color: #e9eaec">
+      <div class="flex items-center justify-between px-6 py-5 border-b shrink-0" :style="{ borderColor: uiStore.activeTheme.border }">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-xl flex items-center justify-center" :style="{ backgroundColor: PRIMARY_BLUE + '15', color: PRIMARY_BLUE }">
             <component :is="isEdit ? ICONS.Pen : ICONS.AddCircle" :size="16" weight="Linear" />
           </div>
           <h2 class="text-base font-bold text-gray-900 dark:text-white">{{ isEdit ? "Edit Widget" : "Add Widget" }}</h2>
         </div>
-        <button type="button" class="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:opacity-70 transition-colors" style="background-color: rgba(107,114,128,0.12)" @click="emit('close')">
+        <button type="button" class="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-70 transition-colors" :style="{ color: uiStore.activeTheme.textMuted, backgroundColor: uiStore.activeTheme.textMuted + '12' }" @click="emit('close')">
           <component :is="ICONS.CloseCircle" :size="15" weight="Linear" />
         </button>
       </div>
@@ -144,7 +146,7 @@ function blockDims(id: "small" | "half" | "full") {
               type="text"
               placeholder="e.g. Current Fleet Status"
               class="w-full rounded-xl px-4 py-3 outline-none text-sm border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white"
-              style="border-color: #e9eaec"
+              :style="{ borderColor: uiStore.activeTheme.border }"
             />
           </div>
 
@@ -154,16 +156,16 @@ function blockDims(id: "small" | "half" | "full") {
             <div class="relative">
               <div
                 class="w-full rounded-xl px-4 py-3 flex justify-between items-center border cursor-pointer transition-colors bg-gray-50 dark:bg-gray-900/50"
-                style="border-color: #e9eaec"
+                :style="{ borderColor: uiStore.activeTheme.border }"
                 @click="isSourceDropdownOpen = !isSourceDropdownOpen"
               >
                 <span class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedSourceLabel }}</span>
-                <component :is="ICONS.AltArrowDown" :size="16" weight="Linear" class="text-gray-400" />
+                <component :is="ICONS.AltArrowDown" :size="16" weight="Linear" :style="{ color: uiStore.activeTheme.textMuted }" />
               </div>
               <div v-if="isSourceDropdownOpen" class="fixed inset-0 z-[110]" @click="isSourceDropdownOpen = false" />
-              <div v-if="isSourceDropdownOpen" class="absolute top-full left-0 w-full mt-2 rounded-xl shadow-xl border z-[111] overflow-y-auto max-h-64 bg-white dark:bg-gray-800" style="border-color: #e9eaec">
+              <div v-if="isSourceDropdownOpen" class="absolute top-full left-0 w-full mt-2 rounded-xl shadow-xl border z-[111] overflow-y-auto max-h-64 bg-white dark:bg-gray-800" :style="{ borderColor: uiStore.activeTheme.border }">
                 <div v-for="group in groupedCatalog" :key="group.group">
-                  <div class="px-4 py-2 mt-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">{{ group.group }}</div>
+                  <div class="px-4 py-2 mt-2 text-[10px] font-bold uppercase tracking-widest" :style="{ color: uiStore.activeTheme.textMuted }">{{ group.group }}</div>
                   <button
                     v-for="item in group.items"
                     :key="item.id"
@@ -182,10 +184,10 @@ function blockDims(id: "small" | "half" | "full") {
           <!-- Filters -->
           <div v-if="hasAnyFilters(local.stat)">
             <label class="text-[10px] font-bold uppercase tracking-widest mb-2.5 block text-gray-500 dark:text-gray-400">Filters</label>
-            <div class="p-4 rounded-xl border flex flex-col gap-4 bg-gray-50 dark:bg-gray-900/50" style="border-color: #e9eaec">
+            <div class="p-4 rounded-xl border flex flex-col gap-4 bg-gray-50 dark:bg-gray-900/50" :style="{ borderColor: uiStore.activeTheme.border }">
               <div v-if="FILTER_SOURCES_WITH_OS.has(local.stat)">
                 <label class="block text-xs font-medium mb-2 text-gray-500 dark:text-gray-400">{{ local.stat === "mdm_devices" ? "Operating System" : "Target OS" }}</label>
-                <select :value="local.filters.type || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" style="border-color: #e9eaec" @change="updateFilter('type', ($event.target as HTMLSelectElement).value)">
+                <select :value="local.filters.type || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" :style="{ borderColor: uiStore.activeTheme.border }" @change="updateFilter('type', ($event.target as HTMLSelectElement).value)">
                   <option value="all">All OS</option>
                   <option value="apple">iOS / iPadOS</option>
                   <option value="macos">macOS</option>
@@ -196,7 +198,7 @@ function blockDims(id: "small" | "half" | "full") {
               <template v-if="FILTER_SOURCES_WITH_COMPLIANCE.has(local.stat)">
                 <div>
                   <label class="block text-xs font-medium mb-2 text-gray-500 dark:text-gray-400">Compliance Status</label>
-                  <select :value="local.filters.complianceStatus || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" style="border-color: #e9eaec" @change="updateFilter('complianceStatus', ($event.target as HTMLSelectElement).value)">
+                  <select :value="local.filters.complianceStatus || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" :style="{ borderColor: uiStore.activeTheme.border }" @change="updateFilter('complianceStatus', ($event.target as HTMLSelectElement).value)">
                     <option value="all">All devices</option>
                     <option value="compliant">Compliant only</option>
                     <option value="non_compliant">Non-compliant only</option>
@@ -209,7 +211,7 @@ function blockDims(id: "small" | "half" | "full") {
               </template>
               <div v-if="FILTER_SOURCES_WITH_ROLE.has(local.stat)">
                 <label class="block text-xs font-medium mb-2 text-gray-500 dark:text-gray-400">Role</label>
-                <select :value="local.filters.role || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" style="border-color: #e9eaec" @change="updateFilter('role', ($event.target as HTMLSelectElement).value)">
+                <select :value="local.filters.role || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" :style="{ borderColor: uiStore.activeTheme.border }" @change="updateFilter('role', ($event.target as HTMLSelectElement).value)">
                   <option value="all">All roles</option>
                   <option value="owner">Owner</option>
                   <option value="admin">Admin</option>
@@ -219,7 +221,7 @@ function blockDims(id: "small" | "half" | "full") {
               </div>
               <div v-if="FILTER_SOURCES_WITH_AUTH_ORIGIN.has(local.stat)">
                 <label class="block text-xs font-medium mb-2 text-gray-500 dark:text-gray-400">Authentication Origin</label>
-                <select :value="local.filters.authOrigin || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" style="border-color: #e9eaec" @change="updateFilter('authOrigin', ($event.target as HTMLSelectElement).value)">
+                <select :value="local.filters.authOrigin || 'all'" class="w-full rounded-lg px-3 py-2.5 text-sm outline-none border focus:border-blue-500 transition-colors focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" :style="{ borderColor: uiStore.activeTheme.border }" @change="updateFilter('authOrigin', ($event.target as HTMLSelectElement).value)">
                   <option value="all">All origins</option>
                   <option value="dashboard">Dashboard</option>
                   <option value="sso">SSO</option>
@@ -237,10 +239,10 @@ function blockDims(id: "small" | "half" | "full") {
                 :key="type.id"
                 type="button"
                 class="flex flex-col items-center justify-center p-3.5 rounded-xl border text-left transition-all"
-                :style="{ backgroundColor: local.type === type.id ? PRIMARY_BLUE + '12' : '#F3F7FE', borderColor: local.type === type.id ? PRIMARY_BLUE : '#e9eaec' }"
+                :style="{ backgroundColor: local.type === type.id ? PRIMARY_BLUE + '12' : uiStore.activeTheme.bg, borderColor: local.type === type.id ? PRIMARY_BLUE : uiStore.activeTheme.border }"
                 @click="pickChartType(type.id)"
               >
-                <component :is="resolveIcon(CHART_ICON_NAMES[type.id])" :size="18" weight="Linear" :style="{ color: local.type === type.id ? PRIMARY_BLUE : '#6B7280' }" />
+                <component :is="resolveIcon(CHART_ICON_NAMES[type.id])" :size="18" weight="Linear" :style="{ color: local.type === type.id ? PRIMARY_BLUE : uiStore.activeTheme.textMuted }" />
                 <div class="font-semibold text-[12px] mt-2" :style="{ color: local.type === type.id ? PRIMARY_BLUE : 'var(--foreground)' }">{{ type.label }}</div>
                 <div class="text-[10px] leading-tight mt-0.5 text-center text-gray-500 dark:text-gray-400">{{ type.desc }}</div>
               </button>
@@ -256,10 +258,10 @@ function blockDims(id: "small" | "half" | "full") {
                 :key="size.id"
                 type="button"
                 class="flex-1 py-3 rounded-xl border transition-all flex flex-col items-center justify-center gap-1.5"
-                :style="{ backgroundColor: local.size === size.id ? PRIMARY_BLUE + '12' : '#F3F7FE', borderColor: local.size === size.id ? PRIMARY_BLUE : '#e9eaec' }"
+                :style="{ backgroundColor: local.size === size.id ? PRIMARY_BLUE + '12' : uiStore.activeTheme.bg, borderColor: local.size === size.id ? PRIMARY_BLUE : uiStore.activeTheme.border }"
                 @click="pickSize(size.id)"
               >
-                <div class="rounded-[3px]" :style="{ ...blockDims(size.id), backgroundColor: local.size === size.id ? PRIMARY_BLUE : '#6B7280', opacity: local.size === size.id ? 0.7 : 0.25 }" />
+                <div class="rounded-[3px]" :style="{ ...blockDims(size.id), backgroundColor: local.size === size.id ? PRIMARY_BLUE : uiStore.activeTheme.textMuted, opacity: local.size === size.id ? 0.7 : 0.25 }" />
                 <span class="font-semibold text-[12px]" :style="{ color: local.size === size.id ? PRIMARY_BLUE : 'var(--foreground)' }">{{ size.label }}</span>
                 <span class="text-[10px] text-gray-500 dark:text-gray-400">{{ size.desc }}</span>
               </button>
@@ -269,8 +271,8 @@ function blockDims(id: "small" | "half" | "full") {
       </div>
 
       <!-- Footer -->
-      <div class="px-6 py-4 border-t flex justify-between gap-3 shrink-0 bg-white dark:bg-gray-800" style="border-color: #e9eaec">
-        <button type="button" class="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors hover:opacity-70 text-gray-500 dark:text-gray-400 border" style="border-color: #e9eaec" @click="emit('close')">Cancel</button>
+      <div class="px-6 py-4 border-t flex justify-between gap-3 shrink-0" :style="{ borderColor: uiStore.activeTheme.border, backgroundColor: uiStore.activeTheme.card }">
+        <button type="button" class="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors hover:opacity-70 border" :style="{ color: uiStore.activeTheme.textMuted, borderColor: uiStore.activeTheme.border }" @click="emit('close')">Cancel</button>
         <button
           type="button"
           class="flex-1 py-2.5 rounded-xl font-semibold text-sm text-white transition-colors disabled:opacity-40"

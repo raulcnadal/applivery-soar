@@ -389,7 +389,7 @@ async function saveWidgetForm(w: DashboardWidget) {
              not the header — so header buttons stay clickable while
              dragging is active. -->
         <div class="h-full w-full rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800 flex flex-col overflow-hidden relative">
-          <div class="px-5 pt-4 pb-3 flex justify-between items-center shrink-0 border-b" style="border-color: #e9eaec4d">
+          <div class="px-5 pt-4 pb-3 flex justify-between items-center shrink-0 border-b" :style="{ borderColor: uiStore.activeTheme.border + '4D' }">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').bg, color: iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').color }">
                 <component :is="iconFor(widgets.find((w) => w.id === item.i)?.stat ?? '').component" :size="15" weight="Linear" />
@@ -421,7 +421,7 @@ async function saveWidgetForm(w: DashboardWidget) {
                 <button
                   type="button"
                   class="w-6 h-6 flex items-center justify-center rounded-md transition-colors"
-                  :style="{ color: '#6B7280', backgroundColor: openMenuFor === item.i ? PRIMARY_BLUE + '12' : 'transparent' }"
+                  :style="{ color: uiStore.activeTheme.textMuted, backgroundColor: openMenuFor === item.i ? PRIMARY_BLUE + '12' : 'transparent' }"
                   @click="toggleMenu(item.i, $event)"
                 >
                   <component :is="ICONS.MenuDots" :size="14" weight="Linear" />
@@ -449,28 +449,35 @@ async function saveWidgetForm(w: DashboardWidget) {
          the widget card. -->
     <Teleport to="body">
       <div v-if="openMenuFor" class="fixed inset-0 z-[199]" @click="closeMenu" />
+      <!-- 1:1 port of WidgetOptionsMenu (App.jsx ~539-573): every color here
+           is theme-driven inline styling in the original (card/border/text/
+           textMuted), not a Tailwind dark: pair — this previously used
+           text-gray-400/border-gray-100/dark:border-gray-800 which don't
+           track the live theme (dark:border-gray-800 in particular matches
+           the CARD background, not the border color, making the border
+           essentially invisible in dark mode). -->
       <div
         v-if="openMenuFor && menuPosition"
-        class="fixed rounded-xl z-[200] min-w-[168px] flex flex-col py-1.5 overflow-hidden bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 shadow-xl"
-        :style="{ top: `${menuPosition.top}px`, right: `${menuPosition.right}px` }"
+        class="fixed rounded-xl z-[200] min-w-[168px] flex flex-col py-1.5 overflow-hidden shadow-xl"
+        :style="{ top: `${menuPosition.top}px`, right: `${menuPosition.right}px`, backgroundColor: uiStore.activeTheme.card, border: `1px solid ${uiStore.activeTheme.border}` }"
       >
-        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="removeWidget(openMenuFor)">
-          <component :is="ICONS.EyeClosed" :size="13" weight="Linear" class="text-gray-400" />
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80" :style="{ color: uiStore.activeTheme.text }" @click="removeWidget(openMenuFor)">
+          <component :is="ICONS.EyeClosed" :size="13" weight="Linear" :style="{ color: uiStore.activeTheme.textMuted }" />
           <span class="text-[13px] font-normal">Hide widget</span>
         </button>
-        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="closeMenu">
-          <component :is="ICONS.TransferHorizontal" :size="13" weight="Linear" class="text-gray-400" />
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80" :style="{ color: uiStore.activeTheme.text }" @click="closeMenu">
+          <component :is="ICONS.TransferHorizontal" :size="13" weight="Linear" :style="{ color: uiStore.activeTheme.textMuted }" />
           <span class="text-[13px] font-normal">Move widget</span>
         </button>
-        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="openBuilder(widgets.find((w) => w.id === openMenuFor)!)">
-          <component :is="ICONS.Pen" :size="13" weight="Linear" class="text-gray-400" />
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80" :style="{ color: uiStore.activeTheme.text }" @click="openBuilder(widgets.find((w) => w.id === openMenuFor)!)">
+          <component :is="ICONS.Pen" :size="13" weight="Linear" :style="{ color: uiStore.activeTheme.textMuted }" />
           <span class="text-[13px] font-normal">Edit widget</span>
         </button>
-        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80 text-gray-900 dark:text-white" @click="toggleWidgetLock(openMenuFor)">
-          <component :is="isWidgetLocked(openMenuFor) ? ICONS.LockUnlocked : ICONS.Lock" :size="13" weight="Linear" class="text-gray-400" />
+        <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80" :style="{ color: uiStore.activeTheme.text }" @click="toggleWidgetLock(openMenuFor)">
+          <component :is="isWidgetLocked(openMenuFor) ? ICONS.LockUnlocked : ICONS.Lock" :size="13" weight="Linear" :style="{ color: uiStore.activeTheme.textMuted }" />
           <span class="text-[13px] font-normal">{{ isWidgetLocked(openMenuFor) ? "Unlock position" : "Lock position" }}</span>
         </button>
-        <div class="h-px mx-3 my-1 bg-gray-100 dark:bg-gray-700" />
+        <div class="h-px mx-3 my-1" :style="{ backgroundColor: uiStore.activeTheme.border }" />
         <button type="button" class="flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors hover:opacity-80" style="color: #ef4444" @click="removeWidget(openMenuFor)">
           <component :is="ICONS.TrashBinTrash" :size="13" weight="Linear" style="color: #ef4444" />
           <span class="text-[13px] font-normal">Remove widget</span>

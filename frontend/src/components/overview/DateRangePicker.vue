@@ -5,6 +5,9 @@
 // shipped with.
 import { computed, ref } from "vue";
 import CalendarMonth from "./CalendarMonth.vue";
+import { useUiStore } from "../../stores/ui";
+
+const uiStore = useUiStore();
 
 export interface DateRangeValue {
   label: string;
@@ -97,9 +100,9 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 </script>
 
 <template>
-  <div class="absolute right-0 top-full mt-2 z-[300] rounded-2xl shadow-2xl border overflow-hidden flex bg-white dark:bg-gray-800" style="border-color: #e9eaec">
+  <div class="absolute right-0 top-full mt-2 z-[300] rounded-2xl shadow-2xl border overflow-hidden flex bg-white dark:bg-gray-800" :style="{ borderColor: uiStore.activeTheme.border }">
     <!-- Presets -->
-    <div class="flex flex-col py-4 border-r" style="border-color: #e9eaec; min-width: 160px">
+    <div class="flex flex-col py-4 border-r" :style="{ borderColor: uiStore.activeTheme.border, minWidth: '160px' }">
       <button
         v-for="p in PRESETS"
         :key="p.label"
@@ -158,10 +161,10 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
         </div>
       </div>
 
-      <div class="flex items-center justify-between border-t pt-4 gap-6" style="border-color: #e9eaec">
-        <span class="text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmt(pendingFrom) }}<template v-if="pendingFrom"> – </template>{{ fmt(pendingTo) }}</span>
+      <div class="flex items-center justify-between border-t pt-4 gap-6" :style="{ borderColor: uiStore.activeTheme.border }">
+        <span class="text-sm tabular-nums" :style="{ color: uiStore.activeTheme.textMuted }">{{ fmt(pendingFrom) }}<template v-if="pendingFrom"> – </template>{{ fmt(pendingTo) }}</span>
         <div class="flex gap-2 shrink-0">
-          <button type="button" class="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:opacity-70 text-gray-500 dark:text-gray-400" style="border-color: #e9eaec" @click="emit('cancel')">Cancel</button>
+          <button type="button" class="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:opacity-70" :style="{ color: uiStore.activeTheme.textMuted, borderColor: uiStore.activeTheme.border }" @click="emit('cancel')">Cancel</button>
           <button
             type="button"
             class="px-6 py-2 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"

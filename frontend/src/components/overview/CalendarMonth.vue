@@ -1,6 +1,10 @@
 <script setup lang="ts">
 // 1:1 port of CalendarMonth (App.jsx ~762-823) — a single month grid used
 // twice (side by side) by DateRangePicker.
+import { useUiStore } from "../../stores/ui";
+
+const uiStore = useUiStore();
+
 const props = defineProps<{
   year: number;
   month: number; // 0-indexed
@@ -61,7 +65,7 @@ function isSingle(d: Date): boolean {
 <template>
   <div style="min-width: 260px">
     <div class="grid grid-cols-7 mb-1">
-      <div v-for="d in DAYS" :key="d" class="text-center py-1 text-xs font-semibold text-gray-400">{{ d }}</div>
+      <div v-for="d in DAYS" :key="d" class="text-center py-1 text-xs font-semibold" :style="{ color: uiStore.activeTheme.textMuted }">{{ d }}</div>
     </div>
     <div class="grid grid-cols-7">
       <div
@@ -82,7 +86,7 @@ function isSingle(d: Date): boolean {
             width: '34px',
             height: '34px',
             backgroundColor: (isStart(cell.d) || isEnd(cell.d) || isSingle(cell.d)) && !cell.outside ? primaryBlue : 'transparent',
-            color: cell.outside ? '#6B728055' : isStart(cell.d) || isEnd(cell.d) || isSingle(cell.d) ? '#fff' : 'var(--foreground)',
+            color: cell.outside ? uiStore.activeTheme.textMuted + '55' : isStart(cell.d) || isEnd(cell.d) || isSingle(cell.d) ? '#fff' : 'var(--foreground)',
             fontWeight: (isStart(cell.d) || isEnd(cell.d) || isSingle(cell.d)) && !cell.outside ? 700 : 400,
             opacity: cell.outside ? 0.35 : 1,
           }"
