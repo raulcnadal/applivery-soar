@@ -63,6 +63,23 @@ body {
   }
 }
 
+/* No `forwards`/`both` fill-mode: with it, the keyframe's final
+   `transform: translateY(0)` — a syntactically non-`none` transform, even
+   though it's a visual no-op — stays applied to the element FOREVER after
+   the 0.25s animation ends (that's what `forwards`/`both` fill-mode does:
+   persists the last keyframe's computed style). Any non-`none` `transform`
+   creates a new stacking context AND becomes the containing block for
+   `position: fixed` descendants per spec — same root cause as
+   grid-layout-plus's `:use-css-transforms` trapping the widget kebab menu
+   (OverviewView.vue's Teleport-to-body fix) and this exact class trapping
+   WidgetInfoModal.vue/OrgProfileModal.vue's `fixed inset-0` overlays
+   permanently under OverviewView's root div — which sits below AppShell's
+   top nav bar in normal document flow, so those "full-viewport" modals
+   were actually only covering the region below the nav bar, with the nav
+   bar (a real root-level stacking context via its own z-50) painting over
+   whatever poked up past that boundary. No animation-delay is used here,
+   so dropping the fill-mode is safe: there's no gap between mount and the
+   animation starting for a `backwards` fill to paper over. */
 .animate-page-enter {
-  animation: page-enter 0.25s ease-out both;
+  animation: page-enter 0.25s ease-out;
 }
