@@ -17,8 +17,9 @@ import { useUiStore } from "../../stores/ui";
 // _colorFor/_humanLabel port, so a widget's colors/labels would visibly
 // change between the live card and its zoomed-in modal. Ported from
 // App.jsx:3757-3799 — see lib/widgetVisuals.ts.
-import { colorFor, humanLabel, brighten, PRIMARY_BLUE } from "../../lib/widgetVisuals";
+import { colorFor, humanLabel, brighten, getOsPlatform, PRIMARY_BLUE } from "../../lib/widgetVisuals";
 import { ICONS } from "../../lib/solarIcons";
+import OsIcon from "../shared/OsIcon.vue";
 
 const props = defineProps<{
   widget: DashboardWidget;
@@ -94,6 +95,31 @@ const lineFooterItems = computed(() => {
   if (t.windows > 0) items.push({ key: "Windows", val: t.windows, color: "#0241E2" });
   return items;
 });
+
+// List/progress rows — 1:1 port of App.jsx's ListProgressRow (~618-647) and
+// its call site (~3958-3979). Both chart types share the exact same row
+// markup (colored dot/OsIcon + label + value, an optional fill-bar track
+// for "progress"), which the migrated version previously split into two
+// separate, much plainer templates: no colored dot at all, and the
+// progress bar was a single flat brand-blue regardless of the row's own
+// semantic color (device-status/OS/battery/etc. — whatever colorFor()
+// would normally assign it, same as every other chart type).
+const maxListValue = computed(() => Math.max(...chartData.value.map((d) => d.value)) || 1);
+function rowOsPlatform(name: string): string | null {
+  // Only stats_os_updates_all rows get the OsIcon treatment in the
+  // original (getOsPlatform is called unconditionally there, but every
+  // other stat's row names never match apple/android/windows, so it's a
+  // no-op for them in practice — this mirrors that exactly).
+  if (props.widget.stat !== "stats_os_updates_all") return null;
+  return getOsPlatform(props.widget.stat, name);
+}
+function rowColor(name: string, i: number): string {
+  const platform = rowOsPlatform(name);
+  if (platform === "apple") return uiStore.isDark ? "#E5E7EB" : "#1D1D1F";
+  if (platform === "android") return "#3DDC84";
+  if (platform === "windows") return "#0241E2";
+  return colorFor(props.widget.stat, name, i, uiStore.isDark);
+}
 
 // Donut/pie hover state — 1:1 port of DonutPieWidget's `hovIdx` React state
 // (App.jsx:1050) driving a ghost (grows on hover, `emphasis.scaleSize: 10`)
@@ -397,27 +423,35 @@ const chartOption = computed(() => {
         <VChart :option="chartOption" :init-options="{ renderer: 'svg' }" autoresize class="h-full w-full" @click="onChartClick(chartType === 'gauge' ? (chartData[0]?.name ?? null) : null)" />
       </div>
 
-      <div v-else-if="chartType === 'list'" class="flex-1 overflow-y-auto text-sm divide-y divide-gray-100 dark:divide-gray-700">
+      <!-- 1:1 port of ListProgressRow (App.jsx ~618-647), shared by both
+           "list" and "progress" — a colored dot (or, for stats_os_updates_all
+           rows only, the platform's OsIcon) using the exact same colorFor()/
+           OS-color result every other chart type uses, "Most used · " bold
+           prefix on stats_models' first row, and (progress only) a fill-bar
+           track tinted `${color}20` with the fill itself in `color` — not
+           the flat brand-blue this previously rendered every row as. -->
+      <div v-else-if="chartType === 'list' || chartType === 'progress'" class="flex-1 overflow-y-auto flex flex-col gap-1">
         <div
-          v-for="row in chartData"
+          v-for="(row, i) in chartData"
           :key="row.name"
-          class="flex justify-between py-1.5"
-          :class="isClickable ? 'cursor-pointer hover:opacity-70' : ''"
+          class="flex flex-col gap-1.5 px-2 py-2 rounded-lg transition-colors"
+          :class="isClickable ? 'cursor-pointer hover:opacity-75' : ''"
           @click="onChartClick(row.name)"
         >
-          <span class="text-gray-600 dark:text-gray-300 truncate pr-2">{{ humanLabel(row.name) }}</span>
-          <span class="font-medium text-gray-900 dark:text-white">{{ row.value }}</span>
-        </div>
-        <p v-if="!chartData.length" class="text-gray-400 text-xs py-2">No data.</p>
-      </div>
-
-      <div v-else-if="chartType === 'progress'" class="flex-1 overflow-y-auto space-y-2">
-        <div v-for="row in chartData" :key="row.name" :class="isClickable ? 'cursor-pointer hover:opacity-70' : ''" @click="onChartClick(row.name)">
-          <div class="flex justify-between text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
-            <span class="truncate pr-2">{{ humanLabel(row.name) }}</span><span>{{ row.value }}</span>
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div v-if="rowOsPlatform(row.name)" class="flex items-center justify-center shrink-0 w-5 h-5">
+                <OsIcon :platform="rowOsPlatform(row.name)!" :size="14" :color="rowColor(row.name, i)" />
+              </div>
+              <div v-else class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ backgroundColor: rowColor(row.name, i) }" />
+              <span class="text-[14px] font-normal truncate text-gray-500 dark:text-gray-400">
+                <span v-if="widget.stat === 'stats_models' && i === 0" class="font-medium">Most used · </span>{{ humanLabel(row.name) }}
+              </span>
+            </div>
+            <span class="text-[14px] font-semibold tabular-nums shrink-0 text-gray-900 dark:text-white">{{ row.value }}</span>
           </div>
-          <div class="w-full h-2 bg-gray-100 dark:bg-gray-700 rounded-full">
-            <div class="h-2 bg-brand-600 rounded-full" :style="{ width: (total ? (row.value / Math.max(...chartData.map((d) => d.value), 1)) * 100 : 0) + '%' }" />
+          <div v-if="chartType === 'progress'" class="w-full h-1.5 rounded-full overflow-hidden" :style="{ backgroundColor: rowColor(row.name, i) + '20' }">
+            <div class="h-full rounded-full transition-all duration-700 ease-out" :style="{ width: (row.value / maxListValue) * 100 + '%', backgroundColor: rowColor(row.name, i) }" />
           </div>
         </div>
         <p v-if="!chartData.length" class="text-gray-400 text-xs py-2">No data.</p>
