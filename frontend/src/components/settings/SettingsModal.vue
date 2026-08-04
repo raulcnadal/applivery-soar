@@ -11,8 +11,7 @@
 // solar-icons/vue equivalents) — with one intentional, disclosed addition:
 // "Inbound Webhooks" was moved here from Workflows (Phase 4) rather than
 // being genuinely missing as an earlier pass had believed.
-import { Alert, Button } from "@applivery/bluesky-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import HelpIcon from "../shared/HelpIcon.vue";
 import GeneralSettingsForm from "./GeneralSettingsForm.vue";
@@ -23,10 +22,8 @@ import AuditLogRetentionPanel from "./AuditLogRetentionPanel.vue";
 import WorkspaceAutomationPanel from "./WorkspaceAutomationPanel.vue";
 import DeviceDataWebhookPanel from "./DeviceDataWebhookPanel.vue";
 import LogExportDestinationsPanel from "./LogExportDestinationsPanel.vue";
-import TriggersTable from "./TriggersTable.vue";
-import TriggerDialog from "./TriggerDialog.vue";
-import CaseAutoRunRulesTable from "./CaseAutoRunRulesTable.vue";
-import CaseAutoRunRuleDialog from "./CaseAutoRunRuleDialog.vue";
+import TriggersPanel from "./TriggersPanel.vue";
+import CaseAutoRunRulesPanel from "./CaseAutoRunRulesPanel.vue";
 import AppliveryEventsPanel from "./AppliveryEventsPanel.vue";
 import CaseSlaSettingsForm from "./CaseSlaSettingsForm.vue";
 import SystemHealthPanel from "./SystemHealthPanel.vue";
@@ -35,23 +32,13 @@ import VulnerabilityCatalogPanel from "./VulnerabilityCatalogPanel.vue";
 import VulnerabilityServicePanel from "./VulnerabilityServicePanel.vue";
 import OsLifecyclePanel from "./OsLifecyclePanel.vue";
 import AppleAppUpdatesPanel from "./AppleAppUpdatesPanel.vue";
-import IntegrationsTable from "./IntegrationsTable.vue";
-import IntegrationDialog from "./IntegrationDialog.vue";
-import ThreatIntelProvidersTable from "./ThreatIntelProvidersTable.vue";
-import ThreatIntelProviderDialog from "./ThreatIntelProviderDialog.vue";
+import IntegrationsPanel from "./IntegrationsPanel.vue";
+import ThreatIntelPanel from "./ThreatIntelPanel.vue";
 import RolesSettingsPanel from "./RolesSettingsPanel.vue";
-import { useIntegrationsStore, type Integration } from "../../stores/integrations";
-import { useThreatIntelStore, type ThreatIntelProvider } from "../../stores/threatIntel";
-import { useCasesStore, type CaseAutoRunRule } from "../../stores/cases";
-import { useTriggersStore, type Trigger } from "../../stores/triggers";
 import { useAuthStore } from "../../stores/auth";
 
 const emit = defineEmits<{ close: [] }>();
 
-const integrationsStore = useIntegrationsStore();
-const threatIntelStore = useThreatIntelStore();
-const casesStore = useCasesStore();
-const triggersStore = useTriggersStore();
 const auth = useAuthStore();
 
 const isSuperAdmin = computed(() => Boolean(auth.access?.isSuperAdmin));
@@ -98,8 +85,13 @@ const CONTENT_HEADING: Record<string, string> = {
 // original (Backup & Restore + Full Workspace Configuration; Device Data
 // Webhook + App Inventory Reporting + Security Attestation Reporting) — their
 // panel components own every heading themselves, so the generic branch below
-// must not also prepend one or it'd duplicate the first heading.
-const SELF_HEADED_TABS = new Set(["backup", "device-webhook"]);
+// must not also prepend one or it'd duplicate the first heading. The other
+// four (integrations/threat-intel/case-autorun/triggers) are the sub-panels
+// converted from Modal-based dialogs to the original's inline-form-above-
+// card-list pattern (docs/settings.md) — each is now a single self-contained
+// component that renders its own heading + intro paragraph + "New X" button,
+// same reasoning as backup/device-webhook above.
+const SELF_HEADED_TABS = new Set(["backup", "device-webhook", "integrations", "threat-intel", "case-autorun", "triggers"]);
 
 const activeTab = ref("general");
 // Port of SETTINGS_TAB_ANCHORS (App.jsx:288-309) — maps this modal's tab
@@ -118,47 +110,14 @@ const SETTINGS_TAB_ANCHORS: Record<string, string> = {
 };
 const helpAnchor = computed(() => SETTINGS_TAB_ANCHORS[activeTab.value] ?? null);
 
-const integrationDialogOpen = ref(false);
-const editingIntegration = ref<Integration | null>(null);
-function openNewIntegration() { editingIntegration.value = null; integrationDialogOpen.value = true; }
-function editIntegration(i: Integration) { editingIntegration.value = i; integrationDialogOpen.value = true; }
-async function deleteIntegration(i: Integration) { await integrationsStore.deleteIntegration(i.id); }
-
-const providerDialogOpen = ref(false);
-const editingProvider = ref<ThreatIntelProvider | null>(null);
-function openNewProvider() { editingProvider.value = null; providerDialogOpen.value = true; }
-function editProvider(p: ThreatIntelProvider) { editingProvider.value = p; providerDialogOpen.value = true; }
-async function deleteProvider(p: ThreatIntelProvider) { await threatIntelStore.deleteProvider(p.id); }
-
-const ruleDialogOpen = ref(false);
-const editingRule = ref<CaseAutoRunRule | null>(null);
-function openNewRule() { editingRule.value = null; ruleDialogOpen.value = true; }
-function editRule(r: CaseAutoRunRule) { editingRule.value = r; ruleDialogOpen.value = true; }
-async function deleteRule(r: CaseAutoRunRule) { await casesStore.deleteAutoRunRule(r.id); }
-
-const triggerDialogOpen = ref(false);
-const editingTrigger = ref<Trigger | null>(null);
-function openNewTrigger() { editingTrigger.value = null; triggerDialogOpen.value = true; }
-function editTrigger(t: Trigger) { editingTrigger.value = t; triggerDialogOpen.value = true; }
-
-onMounted(async () => {
-  await integrationsStore.fetchIntegrations();
-});
-
-async function selectTab(tabId: string) {
+// Integrations/Threat Intel/Case Auto-Run Rules/Triggers each now own their
+// data-fetching, editing state, and CRUD wiring internally (see the
+// "Deliberately NOT a Modal" comment atop each panel component) — this
+// modal no longer needs to hold open/editing refs or prefetch-on-tab-select
+// logic for them; each panel fetches its own data in its own onMounted,
+// same as every other generic tab below.
+function selectTab(tabId: string) {
   activeTab.value = tabId;
-  try {
-    if (tabId === "threat-intel" && threatIntelStore.providers.length === 0) await threatIntelStore.fetchProviders();
-    // fetchAutoRunRules() now throws on a failed GET (previously silent) —
-    // caught here since this isn't awaited by its own caller (a plain
-    // @click handler); CaseAutoRunRulesTable.vue's own error display (if
-    // any) reads casesStore.error, which is already set before this throws.
-    if (tabId === "case-autorun" && casesStore.autoRunRules.length === 0) await casesStore.fetchAutoRunRules();
-    if (tabId === "triggers" && triggersStore.triggers.length === 0) await triggersStore.fetchTriggers();
-  } catch {
-    // Swallowed here — each store already records the failure in its own
-    // `error` ref for the relevant panel to display.
-  }
 }
 </script>
 
@@ -205,66 +164,30 @@ async function selectTab(tabId: string) {
         </div>
 
         <div class="flex-1 min-w-0 overflow-y-auto p-8 bg-gray-50/30 dark:bg-black/10">
-          <template v-if="activeTab === 'integrations'">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-gray-900 dark:text-white">Ticketing &amp; Chat</h3>
-              <Button size="sm" @click="openNewIntegration">New integration</Button>
-            </div>
-            <Alert v-if="integrationsStore.error" type="danger">{{ integrationsStore.error }}</Alert>
-            <IntegrationsTable :integrations="integrationsStore.integrations" :is-loading="integrationsStore.isLoading" @edit="editIntegration" @delete="deleteIntegration" />
-          </template>
-
-          <template v-else-if="activeTab === 'threat-intel'">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-gray-900 dark:text-white">Threat Intel</h3>
-              <Button size="sm" @click="openNewProvider">New provider</Button>
-            </div>
-            <Alert v-if="threatIntelStore.error" type="danger">{{ threatIntelStore.error }}</Alert>
-            <ThreatIntelProvidersTable :providers="threatIntelStore.providers" :is-loading="threatIntelStore.isLoading" @edit="editProvider" @delete="deleteProvider" />
-          </template>
-
-          <template v-else-if="activeTab === 'case-autorun'">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-gray-900 dark:text-white">Case Auto-Run Rules</h3>
-              <Button size="sm" @click="openNewRule">New rule</Button>
-            </div>
-            <CaseAutoRunRulesTable :rules="casesStore.autoRunRules" :is-loading="false" @edit="editRule" @delete="deleteRule" />
-          </template>
-
-          <template v-else-if="activeTab === 'triggers'">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-gray-900 dark:text-white">Inbound Webhooks</h3>
-              <Button size="sm" @click="openNewTrigger">New trigger</Button>
-            </div>
-            <p class="text-xs leading-relaxed mb-4 max-w-2xl text-gray-400">
-              Lets an external system (EDR, firewall, SIEM, IDS — anything that can POST JSON to a URL) fire a specific Workflow directly, no Compliance Policy required. Each trigger gets its own self-contained URL — id and secret both live in the path, the same pattern Slack/Teams/PagerDuty use for their own incoming webhooks — so pasting it into any of those tools is enough.
-            </p>
-            <Alert v-if="triggersStore.error" type="danger">{{ triggersStore.error }}</Alert>
-            <TriggersTable :triggers="triggersStore.triggers" :is-loading="triggersStore.isLoading" @edit="editTrigger" />
-          </template>
-
-          <template v-else>
-            <h3 v-if="!SELF_HEADED_TABS.has(activeTab)" class="text-sm font-bold mb-4 text-gray-900 dark:text-white">
-              {{ CONTENT_HEADING[activeTab] ?? visibleTabs.find((t) => t.id === activeTab)?.label }}
-            </h3>
-            <GeneralSettingsForm v-if="activeTab === 'general'" />
-            <SmtpSettingsForm v-else-if="activeTab === 'smtp'" />
-            <AccountPanel v-else-if="activeTab === 'account'" />
-            <BackupRestorePanel v-else-if="activeTab === 'backup'" />
-            <AuditLogRetentionPanel v-else-if="activeTab === 'auditlog'" />
-            <WorkspaceAutomationPanel v-else-if="activeTab === 'workspace-automation'" />
-            <DeviceDataWebhookPanel v-else-if="activeTab === 'device-webhook'" />
-            <LogExportDestinationsPanel v-else-if="activeTab === 'logexport'" />
-            <AppliveryEventsPanel v-else-if="activeTab === 'applivery-events'" />
-            <CaseSlaSettingsForm v-else-if="activeTab === 'case-sla'" />
-            <SystemHealthPanel v-else-if="activeTab === 'systemhealth'" />
-            <OsUpdateCatalogPanel v-else-if="activeTab === 'os-updates'" />
-            <VulnerabilityCatalogPanel v-else-if="activeTab === 'vuln-catalog'" />
-            <VulnerabilityServicePanel v-else-if="activeTab === 'vuln-service'" />
-            <OsLifecyclePanel v-else-if="activeTab === 'os-lifecycle'" />
-            <AppleAppUpdatesPanel v-else-if="activeTab === 'apple-app-updates'" />
-            <RolesSettingsPanel v-else-if="activeTab === 'roles' && isSuperAdmin" />
-          </template>
+          <h3 v-if="!SELF_HEADED_TABS.has(activeTab)" class="text-sm font-bold mb-4 text-gray-900 dark:text-white">
+            {{ CONTENT_HEADING[activeTab] ?? visibleTabs.find((t) => t.id === activeTab)?.label }}
+          </h3>
+          <GeneralSettingsForm v-if="activeTab === 'general'" />
+          <SmtpSettingsForm v-else-if="activeTab === 'smtp'" />
+          <AccountPanel v-else-if="activeTab === 'account'" />
+          <BackupRestorePanel v-else-if="activeTab === 'backup'" />
+          <AuditLogRetentionPanel v-else-if="activeTab === 'auditlog'" />
+          <WorkspaceAutomationPanel v-else-if="activeTab === 'workspace-automation'" />
+          <DeviceDataWebhookPanel v-else-if="activeTab === 'device-webhook'" />
+          <LogExportDestinationsPanel v-else-if="activeTab === 'logexport'" />
+          <TriggersPanel v-else-if="activeTab === 'triggers'" />
+          <CaseAutoRunRulesPanel v-else-if="activeTab === 'case-autorun'" />
+          <AppliveryEventsPanel v-else-if="activeTab === 'applivery-events'" />
+          <CaseSlaSettingsForm v-else-if="activeTab === 'case-sla'" />
+          <SystemHealthPanel v-else-if="activeTab === 'systemhealth'" />
+          <OsUpdateCatalogPanel v-else-if="activeTab === 'os-updates'" />
+          <VulnerabilityCatalogPanel v-else-if="activeTab === 'vuln-catalog'" />
+          <VulnerabilityServicePanel v-else-if="activeTab === 'vuln-service'" />
+          <OsLifecyclePanel v-else-if="activeTab === 'os-lifecycle'" />
+          <AppleAppUpdatesPanel v-else-if="activeTab === 'apple-app-updates'" />
+          <IntegrationsPanel v-else-if="activeTab === 'integrations'" />
+          <ThreatIntelPanel v-else-if="activeTab === 'threat-intel'" />
+          <RolesSettingsPanel v-else-if="activeTab === 'roles' && isSuperAdmin" />
         </div>
       </div>
 
@@ -275,10 +198,5 @@ async function selectTab(tabId: string) {
         </button>
       </div>
     </div>
-
-    <IntegrationDialog :open="integrationDialogOpen" :integration="editingIntegration" @close="integrationDialogOpen = false" @saved="integrationsStore.fetchIntegrations()" />
-    <ThreatIntelProviderDialog :open="providerDialogOpen" :provider="editingProvider" @close="providerDialogOpen = false" @saved="threatIntelStore.fetchProviders()" />
-    <CaseAutoRunRuleDialog :open="ruleDialogOpen" :rule="editingRule" @close="ruleDialogOpen = false" @saved="casesStore.fetchAutoRunRules()" />
-    <TriggerDialog :open="triggerDialogOpen" :trigger="editingTrigger" @close="triggerDialogOpen = false" @saved="triggersStore.fetchTriggers()" />
   </div>
 </template>
