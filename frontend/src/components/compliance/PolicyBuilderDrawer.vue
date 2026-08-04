@@ -542,7 +542,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         </div>
         <div v-else-if="matchedDevicesLoading" class="rounded-lg px-3 py-2.5 text-xs border border-gray-200 dark:border-gray-700 text-gray-400">Checking which devices currently belong to this audience…</div>
         <div v-else-if="matchedDevicesError" class="rounded-lg px-3 py-2.5 text-xs border" :style="{ borderColor: `${DANGER}40`, backgroundColor: `${DANGER}10`, color: DANGER }">{{ matchedDevicesError }}</div>
-        <div v-else-if="matchedDevices" class="rounded-lg border" :style="{ borderColor: matchedDevices.length === 0 ? `${WARNING}60` : '#E5E7EB' }">
+        <div v-else-if="matchedDevices" class="rounded-lg border" :class="matchedDevices.length === 0 ? '' : 'border-gray-200 dark:border-gray-700'" :style="matchedDevices.length === 0 ? { borderColor: `${WARNING}60` } : {}">
           <div class="px-3 py-2 flex items-center justify-between" :class="matchedDevices.length ? 'border-b border-gray-200 dark:border-gray-700' : ''">
             <span class="text-xs font-semibold" :style="{ color: matchedDevices.length === 0 ? WARNING : 'var(--foreground)' }">
               {{ matchedDevices.length === 0 ? "No devices currently match this audience" : `${matchedDevices.length} device${matchedDevices.length === 1 ? "" : "s"} match this audience right now` }}

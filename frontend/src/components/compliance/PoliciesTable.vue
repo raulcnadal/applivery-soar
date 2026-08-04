@@ -108,7 +108,7 @@ async function remove(p: CompliancePolicy) {
       </div>
       <p v-if="p.description" class="text-xs mb-2 line-clamp-2 text-gray-400">{{ p.description }}</p>
       <p class="text-xs mb-1 inline-flex items-center gap-1 text-gray-400">
-        <component :is="ICONS.TransferHorizontal" :size="11" weight="Linear" /> {{ workflowsById[p.workflowId ?? ""]?.name || "No workflow linked" }}
+        <component :is="ICONS.Structure" :size="11" weight="Linear" /> {{ workflowsById[p.workflowId ?? ""]?.name || "No workflow linked" }}
       </p>
       <p class="text-xs mb-1 inline-flex items-center gap-1 text-gray-400" :title="p.lastEvaluatedAt ? new Date(p.lastEvaluatedAt).toLocaleString() : undefined">
         <component :is="ICONS.ClockCircle" :size="11" weight="Linear" /> {{ p.lastEvaluatedAt ? `Last evaluated ${timeAgo(p.lastEvaluatedAt)}` : "Never evaluated" }}

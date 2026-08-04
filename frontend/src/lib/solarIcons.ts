@@ -80,6 +80,7 @@ import {
   SliderHorizontal,
   Smartphone,
   SortVertical,
+  SpeedometerLow,
   Structure,
   Tag,
   Target,
@@ -171,6 +172,9 @@ export const ICONS = {
   SliderHorizontal,
   Smartphone,
   SortVertical,
+  // Original: `SpeedometerLow as Gauge` (AppListsView.jsx:3) — installed-app
+  // inventory sync status panel.
+  Gauge: SpeedometerLow,
   Structure,
   Tag,
   Target,

@@ -130,6 +130,25 @@ export interface AppList {
   updatedAt?: string;
 }
 
+// Port of the installed-app inventory sync status panel (AppListsView.jsx's
+// InventoryStatusPanel, ~lines 358-420) — surfaces the background
+// installed_apps_refresher's coverage/staleness/budget so admins aren't
+// guessing whether requiredAppList/disallowedAppList conditions actually
+// have data yet.
+export interface InstalledAppsStatus {
+  targetDeviceCount: number;
+  syncedCount: number;
+  neverSyncedCount: number;
+  errorCount: number;
+  selfReportedCount: number;
+  oldestSyncAgeMinutes: number | null;
+  medianSyncAgeMinutes: number | null;
+  refreshBudgetPerHour: number;
+  refreshBudgetMin: number;
+  refreshBudgetMax: number;
+  estimatedFullCycleHours: number;
+}
+
 export const useComplianceStore = defineStore("compliance", () => {
   const policies = ref<CompliancePolicy[]>([]);
   const isLoadingPolicies = ref(false);
@@ -153,6 +172,8 @@ export const useComplianceStore = defineStore("compliance", () => {
 
   const appCatalog = ref<AppCatalogEntry[]>([]);
   const appLists = ref<AppList[]>([]);
+  const installedAppsStatus = ref<InstalledAppsStatus | null>(null);
+  const installedAppsStatusError = ref<string | null>(null);
 
   const smartAttributeNames = ref<string[]>([]);
   const selfReportedAttributeNames = ref<string[]>([]);
@@ -233,10 +254,24 @@ export const useComplianceStore = defineStore("compliance", () => {
     }
   }
 
-  function exportViolationsUrl(): string {
-    const params = new URLSearchParams();
-    if (violationsStatusFilter.value) params.set("status", violationsStatusFilter.value);
-    return `/api/compliance/violations/export?${params.toString()}`;
+  // Port of handleExportViolations (CompliancePoliciesView.jsx:118-130) — the
+  // export endpoint sits behind verifyDashboardToken, which only reads the
+  // X-Dashboard-Token header (auth.middleware.ts:28), so a bare `window.open`
+  // to this URL would 401 with no header attached. Must go through `api`
+  // (whose request interceptor stamps that header on every call) and pull
+  // the response down as an authenticated blob instead, same pattern as
+  // auditLogs.ts's exportCsv.
+  async function exportViolationsCsv() {
+    const { api } = await import("../api/http");
+    const res = await api.get("/compliance/violations/export", { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "compliance-violations.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function approveViolation(violationId: string) {
@@ -389,7 +424,30 @@ export const useComplianceStore = defineStore("compliance", () => {
   async function searchApps(platform: string, query: string, source?: string) {
     const { api } = await import("../api/http");
     const res = await api.get("/app-search", { params: { platform, text: query, source } });
-    return res.data.items ?? [];
+    return { items: res.data.items ?? [], error: res.data.error ?? null };
+  }
+
+  async function fetchInstalledAppsStatus() {
+    const { api } = await import("../api/http");
+    try {
+      const res = await api.get("/app-lists/installed-apps-status");
+      installedAppsStatus.value = res.data;
+      installedAppsStatusError.value = null;
+    } catch (err: any) {
+      installedAppsStatusError.value = err?.response?.data?.detail || "Could not load inventory sync status.";
+    }
+  }
+
+  async function refreshInstalledAppsNow(): Promise<number> {
+    const { api } = await import("../api/http");
+    const res = await api.post("/app-lists/refresh-installed-apps", {});
+    return res.data?.queued ?? 0;
+  }
+
+  async function setInstalledAppsBudget(budgetPerHour: number) {
+    const { api } = await import("../api/http");
+    await api.put("/app-lists/installed-apps-budget", { budgetPerHour });
+    await fetchInstalledAppsStatus();
   }
 
   return {
@@ -411,6 +469,8 @@ export const useComplianceStore = defineStore("compliance", () => {
     frameworks,
     appCatalog,
     appLists,
+    installedAppsStatus,
+    installedAppsStatusError,
     smartAttributeNames,
     selfReportedAttributeNames,
     smartAttributes,
@@ -427,7 +487,7 @@ export const useComplianceStore = defineStore("compliance", () => {
     evaluateNow,
     fetchViolatingDeviceIds,
     fetchViolations,
-    exportViolationsUrl,
+    exportViolationsCsv,
     approveViolation,
     dismissViolation,
     bulkApprove,
@@ -445,5 +505,8 @@ export const useComplianceStore = defineStore("compliance", () => {
     updateAppList,
     deleteAppList,
     searchApps,
+    fetchInstalledAppsStatus,
+    refreshInstalledAppsNow,
+    setInstalledAppsBudget,
   };
 });

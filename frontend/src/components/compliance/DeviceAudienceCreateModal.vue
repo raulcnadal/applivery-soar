@@ -196,7 +196,8 @@ onMounted(() => {
                 :key="opt"
                 type="button"
                 class="px-2 py-1 rounded-md text-[11px] font-medium transition-colors border"
-                :style="g.includes(opt) ? { backgroundColor: `${PRIMARY_BLUE}18`, color: PRIMARY_BLUE, borderColor: PRIMARY_BLUE } : { color: '#9CA3AF', borderColor: '#E5E7EB' }"
+                :class="g.includes(opt) ? '' : 'border-gray-200 dark:border-gray-700'"
+                :style="g.includes(opt) ? { backgroundColor: `${PRIMARY_BLUE}18`, color: PRIMARY_BLUE, borderColor: PRIMARY_BLUE } : { color: '#9CA3AF' }"
                 @click="toggleInGroup(cfg.groups, gi, opt)"
               >
                 {{ opt }}
