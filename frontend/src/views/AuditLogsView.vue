@@ -8,12 +8,15 @@
 // (Cases, Integrations, Threat Intel, Triggers, generic Device/Compliance
 // entries), so the extra categories are real added functionality, not a
 // mismatch to hide.
-import { Alert, Button } from "@applivery/bluesky-vue";
+import { Alert } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import { useAuditLogsStore, type AuditLogEntry, type AuditLogFilters } from "../stores/auditLogs";
+import { useUiStore } from "../stores/ui";
+
+const ui = useUiStore();
 
 const PRIMARY_BLUE = "#0241E3";
 const SUCCESS = "#22C55E";
@@ -165,12 +168,18 @@ onMounted(async () => {
       <div class="flex items-center gap-2 shrink-0">
         <button
           :disabled="store.isLoading"
-          class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
+          class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1"
           @click="store.fetchLogs(buildFilters())"
         >
           <component :is="ICONS.Refresh" :size="14" weight="Linear" :class="store.isLoading ? 'animate-spin' : ''" /> Refresh
         </button>
-        <Button :disabled="isExporting || store.total === 0" :loading="isExporting" @click="handleExport">Export CSV</Button>
+        <button
+          :disabled="isExporting || store.total === 0"
+          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 transition-all duration-200 hover:bg-brand-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+          @click="handleExport"
+        >
+          <component :is="ICONS.Download" :size="14" weight="Linear" /> {{ isExporting ? "Exporting…" : "Export CSV" }}
+        </button>
       </div>
     </header>
 
@@ -202,9 +211,9 @@ onMounted(async () => {
       </select>
       <div class="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <component :is="ICONS.Calendar" :size="13" weight="Linear" class="text-gray-400" />
-        <input v-model="dateFrom" type="date" class="text-sm outline-none bg-transparent text-gray-900 dark:text-white" />
+        <input v-model="dateFrom" type="date" class="text-sm outline-none bg-transparent text-gray-900 dark:text-white" :style="{ colorScheme: ui.isDark ? 'dark' : 'light' }" />
         <span class="text-xs text-gray-400">to</span>
-        <input v-model="dateTo" type="date" class="text-sm outline-none bg-transparent text-gray-900 dark:text-white" />
+        <input v-model="dateTo" type="date" class="text-sm outline-none bg-transparent text-gray-900 dark:text-white" :style="{ colorScheme: ui.isDark ? 'dark' : 'light' }" />
       </div>
       <button v-if="hasFilters" class="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium text-gray-400" @click="clearFilters">
         <component :is="ICONS.CloseCircle" :size="13" weight="Linear" /> Clear filters
