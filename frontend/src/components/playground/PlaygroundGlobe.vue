@@ -2,16 +2,20 @@
 // The 3D device globe — port of App.jsx's GlobeWidget (App.jsx:1835-2078).
 // Pulsing ring + solid point per device (color-coded by compliance, falling
 // back to a platform color), a HUD overlay (fleet/compliance/OS counts,
-// satellite count, branding), decorative arcs between a handful of real
-// devices, 3 orbiting satellite sprites, and a slowly-rotating cloud layer
-// — all purely cosmetic except the rings/points, which are the real,
-// clickable device markers. Devices with no resolvable location still
-// render, at a stable pseudo-random position derived from the device's id
-// (smaller, dimmer marker) so the fleet is never silently incomplete.
+// branding), decorative arcs between a handful of real devices, and a
+// slowly-rotating cloud layer — all purely cosmetic except the rings/
+// points, which are the real, clickable device markers. Devices with no
+// resolvable location still render, at a stable pseudo-random position
+// derived from the device's id (smaller, dimmer marker) so the fleet is
+// never silently incomplete.
+//
+// Note: the orbiting-satellite sprites + "N Satellites" HUD badge that
+// App.jsx's GlobeWidget also renders (SATELLITE_ORBITS, App.jsx:1799-1803)
+// were intentionally dropped from this port per product decision.
 import Globe, { type GlobeInstance } from "globe.gl";
 import * as THREE from "three";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ICONS } from "../../lib/solarIcons";
+import OsIcon from "../shared/OsIcon.vue";
 
 const props = defineProps<{ items: any[]; filterActive: boolean; totalDevices: number; paused: boolean }>();
 const emit = defineEmits<{ "device-click": [item: any]; zoom: [pov: { lat: number; lng: number; altitude: number }] }>();
@@ -21,14 +25,6 @@ let globe: GlobeInstance | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let rafId: number | null = null;
 let clouds: THREE.Mesh | null = null;
-let tick = 0;
-
-// Port of SATELLITE_ORBITS (App.jsx:1799-1803).
-const SATELLITE_ORBITS = [
-  { lat: 40.4, lngOffset: 0, alt: 0.38, speed: 0.12, label: "Melkor-1" },
-  { lat: -23.5, lngOffset: 120, alt: 0.55, speed: 0.07, label: "Balthasar-2" },
-  { lat: 60.0, lngOffset: 240, alt: 0.44, speed: 0.09, label: "Casper-3" },
-];
 
 // Port of resolveRealDeviceLatLng (App.jsx:1808-1815).
 function resolveRealDeviceLatLng(item: any): { lat: number; lng: number } | null {
@@ -168,34 +164,10 @@ onMounted(async () => {
     clouds = mesh;
   });
 
-  // Satellite sprites (App.jsx:1852-1856, 1938-1946).
-  const satTexture = new THREE.TextureLoader().load("/applivery-satellite.svg");
-  const satMaterial = new THREE.SpriteMaterial({ map: satTexture, color: 0xffffff, transparent: true, opacity: 0.95 });
-  const satObjects = SATELLITE_ORBITS.map((orb, idx) => ({ ...orb, idx, lng: orb.lngOffset - 180 }));
-  globe
-    .objectsData(satObjects as any)
-    .objectLat("lat" as any)
-    .objectLng("lng" as any)
-    .objectAltitude("alt" as any)
-    .objectLabel((d: any) => `<div style="${tooltipStyle("#0241E2")}"><div style="font-weight:700">${d.label}</div><div style="color:#3DDC84;font-size:9px;text-transform:uppercase;margin-top:2px;letter-spacing:1px">● Actively Scanning</div></div>`)
-    .objectThreeObject(() => {
-      const sprite = new THREE.Sprite(satMaterial);
-      sprite.scale.set(5, 5, 1);
-      return sprite;
-    });
-
   applyData();
 
-  // Single RAF loop — moves satellites + rotates clouds, skipped while paused
-  // (App.jsx:1859-1877).
+  // RAF loop — rotates the cloud layer, skipped while paused (App.jsx:1859-1877).
   const loop = () => {
-    tick++;
-    if (tick % 2 === 0) {
-      satObjects.forEach((orb) => {
-        orb.lng = ((orb.lngOffset + tick * orb.speed * 3) % 360) - 180;
-      });
-      globe?.objectsData([...satObjects] as any);
-    }
     if (clouds && !props.paused) clouds.rotation.y += 0.0001;
     rafId = requestAnimationFrame(loop);
   };
@@ -240,28 +212,21 @@ onBeforeUnmount(() => {
     <div class="absolute bottom-4 left-4 pointer-events-none">
       <div class="flex gap-2">
         <div v-if="appleCount > 0" class="flex items-center gap-1.5 bg-black/40 backdrop-blur px-2 py-1 rounded-lg border border-[#79C6E8]/20">
-          <component :is="ICONS.Smartphone" :size="10" weight="Linear" style="color: #79c6e8" /><span class="text-[10px] font-semibold text-[#79C6E8]">{{ appleCount }}</span>
+          <OsIcon platform="apple" :size="10" color="#79C6E8" /><span class="text-[10px] font-semibold text-[#79C6E8]">{{ appleCount }}</span>
         </div>
         <div v-if="androidCount > 0" class="flex items-center gap-1.5 bg-black/40 backdrop-blur px-2 py-1 rounded-lg border border-[#3DDC84]/20">
-          <component :is="ICONS.Smartphone" :size="10" weight="Linear" style="color: #3ddc84" /><span class="text-[10px] font-semibold text-[#3DDC84]">{{ androidCount }}</span>
+          <OsIcon platform="android" :size="10" color="#3DDC84" /><span class="text-[10px] font-semibold text-[#3DDC84]">{{ androidCount }}</span>
         </div>
         <div v-if="winCount > 0" class="flex items-center gap-1.5 bg-black/40 backdrop-blur px-2 py-1 rounded-lg border border-[#0078D4]/20">
-          <component :is="ICONS.Smartphone" :size="10" weight="Linear" style="color: #0078d4" /><span class="text-[10px] font-semibold text-[#0078D4]">{{ winCount }}</span>
+          <OsIcon platform="windows" :size="10" color="#0078D4" /><span class="text-[10px] font-semibold text-[#0078D4]">{{ winCount }}</span>
         </div>
       </div>
     </div>
 
     <!-- HUD: branding (bottom-right) -->
     <div class="absolute bottom-3 right-4 pointer-events-none flex items-center gap-2">
-      <span class="text-[9px] font-bold uppercase tracking-widest text-white/30">Applivery SOAR</span>
-    </div>
-
-    <!-- HUD: satellite count (top-right) -->
-    <div class="absolute top-4 right-4 pointer-events-none">
-      <div class="flex items-center gap-1.5 bg-black/40 backdrop-blur px-2.5 py-1.5 rounded-lg border border-green-500/20">
-        <div class="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-        <span class="text-[10px] font-semibold text-green-300">{{ SATELLITE_ORBITS.length }} Satellites</span>
-      </div>
+      <img src="https://dashboard.applivery.io/images/logo-combined-white.svg" class="h-[14px] object-contain opacity-40" alt="Applivery" />
+      <span class="text-[9px] font-bold uppercase tracking-widest text-white/30">SOAR</span>
     </div>
   </div>
 </template>

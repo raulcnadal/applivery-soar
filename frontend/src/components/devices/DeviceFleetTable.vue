@@ -546,7 +546,7 @@ onMounted(() => {
                 <div v-if="d.battery !== null && d.battery !== undefined" class="flex items-center gap-1 mt-1">
                   <component :is="ICONS.BatteryFull" :size="11" weight="Linear" :style="{ color: batteryColor(d.battery) }" />
                   <span class="text-[10px] font-semibold" :style="{ color: batteryColor(d.battery) }">{{ d.battery }}%</span>
-                  <div class="w-12 h-1 rounded-full overflow-hidden bg-gray-200">
+                  <div class="w-12 h-1 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                     <div class="h-full rounded-full" :style="{ width: `${d.battery}%`, backgroundColor: batteryColor(d.battery) }" />
                   </div>
                 </div>

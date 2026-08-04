@@ -8,6 +8,7 @@ import { RouterLink } from "vue-router";
 import { computed, onMounted, ref, watch } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
+import OsIcon from "../components/shared/OsIcon.vue";
 import PlaygroundGlobe from "../components/playground/PlaygroundGlobe.vue";
 import PlaygroundMapView from "../components/playground/PlaygroundMapView.vue";
 import DeviceInsightModal from "../components/playground/DeviceInsightModal.vue";
@@ -44,7 +45,7 @@ const filteredDevices = computed(() => {
 
 const compliantCount = computed(() => globeDevices.value.filter((d) => d.is_compliant_normalized === true).length);
 const nonCompliantCount = computed(() => globeDevices.value.filter((d) => d.is_compliant_normalized === false).length);
-const appleCount = computed(() => globeDevices.value.filter((d) => String(d.platform_normalized || "").toLowerCase().includes("apple")).length);
+const appleCount = computed(() => globeDevices.value.filter((d) => String(d.platform_normalized || "").toLowerCase().includes("apple") || String(d.platform_normalized || "").toLowerCase().includes("ios")).length);
 const androidCount = computed(() => globeDevices.value.filter((d) => String(d.platform_normalized || "").toLowerCase().includes("android")).length);
 const winCount = computed(() => globeDevices.value.filter((d) => String(d.platform_normalized || "").toLowerCase().includes("win")).length);
 
@@ -136,9 +137,9 @@ onMounted(async () => {
         <div class="flex items-center gap-3 flex-wrap">
           <div v-if="compliantCount > 0" class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span class="text-[11px] font-medium text-white/70">{{ compliantCount }} Compliant</span></div>
           <div v-if="nonCompliantCount > 0" class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-red-400" /><span class="text-[11px] font-medium text-white/70">{{ nonCompliantCount }} Non-compliant</span></div>
-          <div v-if="appleCount > 0" class="flex items-center gap-1.5"><component :is="ICONS.Smartphone" :size="11" weight="Linear" style="color: #79c6e8" /><span class="text-[11px] text-white/50">{{ appleCount }}</span></div>
-          <div v-if="androidCount > 0" class="flex items-center gap-1.5"><component :is="ICONS.Smartphone" :size="11" weight="Linear" style="color: #3ddc84" /><span class="text-[11px] text-white/50">{{ androidCount }}</span></div>
-          <div v-if="winCount > 0" class="flex items-center gap-1.5"><component :is="ICONS.Smartphone" :size="11" weight="Linear" style="color: #0078d4" /><span class="text-[11px] text-white/50">{{ winCount }}</span></div>
+          <div v-if="appleCount > 0" class="flex items-center gap-1.5"><OsIcon platform="apple" :size="11" color="#79C6E8" /><span class="text-[11px] text-white/50">{{ appleCount }}</span></div>
+          <div v-if="androidCount > 0" class="flex items-center gap-1.5"><OsIcon platform="android" :size="11" color="#3DDC84" /><span class="text-[11px] text-white/50">{{ androidCount }}</span></div>
+          <div v-if="winCount > 0" class="flex items-center gap-1.5"><OsIcon platform="windows" :size="11" color="#0078D4" /><span class="text-[11px] text-white/50">{{ winCount }}</span></div>
         </div>
       </div>
 

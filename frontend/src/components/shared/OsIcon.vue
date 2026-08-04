@@ -51,4 +51,12 @@ const fillColor = computed(() => {
   <svg v-else-if="kind === 'windows'" :width="size" :height="size" viewBox="0 0 24 24" :fill="fillColor">
     <path d="M0 0h11.4v11.4H0V0zm12.6 0H24v11.4H12.6V0zM0 12.6h11.4V24H0V12.6zm12.6 0H24V24H12.6V12.6z" />
   </svg>
+  <!-- Fallback for unrecognized platforms — App.jsx's OsIcon falls back to
+       a generic <Layout> glyph (App.jsx:229) for anything that isn't
+       apple/android/windows. -->
+  <svg v-else :width="size" :height="size" viewBox="0 0 24 24" fill="none" :stroke="fillColor || 'currentColor'">
+    <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.6" />
+    <line x1="3" y1="9" x2="21" y2="9" stroke-width="1.6" />
+    <line x1="9" y1="9" x2="9" y2="21" stroke-width="1.6" />
+  </svg>
 </template>

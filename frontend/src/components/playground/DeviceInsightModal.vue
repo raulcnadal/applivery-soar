@@ -6,14 +6,31 @@
 // / Assets / Agent) reached only from Playground's globe/map clicks.
 import { computed, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
+import OsIcon from "../shared/OsIcon.vue";
+import { useUiStore } from "../../stores/ui";
 
 const PRIMARY_BLUE = "#0241E3";
 const SUCCESS = "#22C55E";
 const WARNING = "#F59E0B";
 const DANGER = "#EF4444";
+const OFFICIAL_OS_COLORS: Record<string, string> = { android: "#3DDC84", windows: "#0241E2" };
+function getAppleColor(isDark: boolean) {
+  return isDark ? "#E5E7EB" : "#1D1D1F";
+}
+
+const uiStore = useUiStore();
 
 const props = defineProps<{ device: Record<string, any> | null }>();
 const emit = defineEmits<{ close: [] }>();
+
+// Port of DeviceInsightCard's `os`/`osIconColor` (App.jsx:2411-2413).
+const osPlatform = computed(() => props.device?.platform_normalized || "other");
+const osIconColor = computed(() => {
+  const os = osPlatform.value;
+  if (os === "apple") return getAppleColor(uiStore.isDark);
+  if (os === "android") return OFFICIAL_OS_COLORS.android;
+  return OFFICIAL_OS_COLORS.windows;
+});
 
 const RISK_TIER_META: Record<string, { label: string; color: string }> = {
   low: { label: "Low", color: SUCCESS },
@@ -114,6 +131,11 @@ function freeStorageGb() {
   if (avail == null) return null;
   return (Number(avail) / 1024 / 1024 / 1024).toFixed(1);
 }
+function signalPct(strength: number | null | undefined): number | null {
+  if (strength === null || strength === undefined) return null;
+  const pct = strength > 4 ? strength / 100 : strength / 4;
+  return Math.min(Math.max(pct, 0), 1);
+}
 function activePolicyNames(): string[] {
   const d = props.device ?? {};
   const names = new Set<string>();
@@ -147,8 +169,8 @@ function activePolicyNames(): string[] {
         <div class="flex-1 overflow-y-auto p-6">
           <!-- Device header -->
           <div class="flex items-center gap-4 mb-4">
-            <div class="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0" :style="{ backgroundColor: `${PRIMARY_BLUE}15` }">
-              <component :is="ICONS.Smartphone" :size="26" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
+            <div class="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0" :style="{ backgroundColor: `${osIconColor}15` }">
+              <OsIcon :platform="osPlatform" :size="32" :color="osIconColor" />
             </div>
             <div class="min-w-0">
               <h3 class="text-xl font-bold text-gray-900 dark:text-white truncate">{{ device.displayName || "Unknown device" }}</h3>
@@ -206,6 +228,13 @@ function activePolicyNames(): string[] {
                 <div class="flex justify-between"><span class="text-gray-400">UDID</span><span class="font-mono text-xs text-gray-900 dark:text-white break-all select-all">{{ summary.udid || device.udid || "—" }}</span></div>
                 <div class="flex justify-between"><span class="text-gray-400">IP address</span><span class="font-mono text-xs text-gray-900 dark:text-white">{{ summary.ipAddress || device.ipAddress || "—" }}</span></div>
                 <div class="flex justify-between"><span class="text-gray-400">Management mode</span><span class="text-gray-900 dark:text-white">{{ device.managementMode || summary.managementMode || "—" }}</span></div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-widest mb-2 text-gray-400">Operating System</p>
+              <div class="p-4 rounded-xl border border-gray-100 dark:border-gray-800 text-sm">
+                <div class="flex justify-between"><span class="text-gray-400">OS Version</span><span class="text-gray-900 dark:text-white">{{ summary.osVersion || "—" }}</span></div>
               </div>
             </div>
 
@@ -278,14 +307,23 @@ function activePolicyNames(): string[] {
               <p class="text-[10px] font-bold uppercase tracking-widest mb-2 text-gray-400">Network Status</p>
               <div v-if="loadingExtras" class="p-4 rounded-xl border border-gray-100 dark:border-gray-800 animate-pulse h-12" />
               <div v-else-if="network" class="p-4 rounded-xl border border-gray-100 dark:border-gray-800 space-y-1.5 text-sm">
-                <div class="flex items-center gap-2">
-                  <component :is="String(network.type || '').toLowerCase().includes('wifi') ? ICONS.WiFiRouter : ICONS.Radio" :size="14" weight="Linear" :style="{ color: String(network.type || '').toLowerCase().includes('wifi') ? PRIMARY_BLUE : SUCCESS }" />
-                  <span class="text-gray-900 dark:text-white">{{ network.type || "Unknown" }}</span>
-                  <span v-if="network.signalStrength" class="text-xs text-gray-400">· signal {{ network.signalStrength }}</span>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <component :is="String(network.type || '').toLowerCase().includes('wifi') ? ICONS.WiFiRouter : ICONS.Radio" :size="14" weight="Linear" :style="{ color: String(network.type || '').toLowerCase().includes('wifi') ? PRIMARY_BLUE : SUCCESS }" />
+                    <span class="font-semibold" :style="{ color: String(network.type || '').toLowerCase().includes('wifi') ? PRIMARY_BLUE : SUCCESS }">{{ network.type || "Unknown" }}</span>
+                  </div>
+                  <div v-if="signalPct(network.signalStrength) !== null" class="flex items-center gap-2">
+                    <span class="text-[11px] text-gray-400">{{ Math.round(signalPct(network.signalStrength)! * 100) }}%</span>
+                    <div class="w-10 h-1.5 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
+                      <div class="h-full rounded-full" :style="{ width: `${signalPct(network.signalStrength)! * 100}%`, backgroundColor: String(network.type || '').toLowerCase().includes('wifi') ? PRIMARY_BLUE : SUCCESS }" />
+                    </div>
+                  </div>
                 </div>
-                <div v-if="network.carrier" class="flex justify-between"><span class="text-gray-400">Carrier</span><span class="text-gray-900 dark:text-white">{{ network.carrier }}</span></div>
-                <div v-if="network.city" class="flex justify-between"><span class="text-gray-400">City</span><span class="text-gray-900 dark:text-white">{{ network.city }}</span></div>
-                <div v-if="network.createdAt" class="flex justify-between"><span class="text-gray-400">Last updated</span><span class="text-gray-900 dark:text-white">{{ new Date(network.createdAt).toLocaleString() }}</span></div>
+                <div v-if="network.carrier || network.simState" class="flex items-center gap-2 text-xs text-gray-400">
+                  <component :is="ICONS.Cpu" :size="12" weight="Linear" /> {{ [network.carrier, network.simState].filter(Boolean).join(" · ") }}
+                </div>
+                <div v-if="network.city" class="flex items-center gap-2 text-xs text-gray-400"><component :is="ICONS.MapPoint" :size="12" weight="Linear" /> {{ network.city }}</div>
+                <div v-if="network.createdAt" class="flex items-center gap-2 text-xs text-gray-400"><component :is="ICONS.ClockCircle" :size="12" weight="Linear" /> {{ new Date(network.createdAt).toLocaleString() }}</div>
               </div>
               <div v-else class="flex flex-col items-center justify-center py-8 text-center border border-gray-100 dark:border-gray-800 rounded-xl">
                 <component :is="ICONS.WiFiRouter" :size="20" weight="Linear" class="mb-2 text-gray-300" />

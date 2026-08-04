@@ -10,7 +10,6 @@ import { useDevicesStore, type NormalizedDevice } from "../../stores/devices";
 import type { Workflow } from "../../stores/workflows";
 import { useWorkflowsStore } from "../../stores/workflows";
 import { flattenSegments, type SegmentNode } from "../../lib/segments";
-import DeviceMockup from "./DeviceMockup.vue";
 import PolicyPickerModal from "./PolicyPickerModal.vue";
 import SegmentPickerModal from "./SegmentPickerModal.vue";
 import TagEditorModal from "./TagEditorModal.vue";
@@ -171,7 +170,9 @@ function formatDate(value: string | null): string {
       <div class="shrink-0 px-5 pt-5 pb-4 border-b border-gray-200 dark:border-gray-700">
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-3 min-w-0">
-            <DeviceMockup :platform="device.platform" :size="44" />
+            <div class="w-11 h-11 rounded-full flex items-center justify-center shrink-0 bg-gray-100 dark:bg-gray-700">
+              <component :is="ICONS.Smartphone" :size="20" weight="Linear" class="text-gray-400" />
+            </div>
             <div class="min-w-0">
               <p class="font-semibold truncate text-gray-900 dark:text-white">{{ device.displayName }}</p>
               <p class="text-xs truncate text-gray-400">{{ device.platformLabel }} · {{ device.manufacturer ? `${device.manufacturer} ${device.model}`.trim() : device.model || "—" }}</p>
@@ -265,7 +266,7 @@ function formatDate(value: string | null): string {
           <div v-if="device.osUpdateStatus" class="mb-6">
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">OS Updates</p>
             <p v-if="(device.osUpdateStatus as any).confidence === 'unknown'" class="text-xs text-gray-400">
-              No confirmed patch-level comparison available yet for this Windows build.
+              No confirmed patch-level comparison available yet for this Windows build — Microsoft's catalog hasn't published a build number we could match against this feature version.
             </p>
             <div v-else-if="(device.osUpdateStatus as any).pendingCount > 0" class="space-y-1.5">
               <p class="text-xs font-medium" :style="{ color: WARNING }">
@@ -278,7 +279,13 @@ function formatDate(value: string | null): string {
                     {{ kb.maxSeverity || "Unknown" }}{{ kb.cveCount ? ` · ${kb.cveCount} CVE${kb.cveCount === 1 ? "" : "s"}` : "" }}
                   </span>
                 </div>
+                <p v-if="(kb.cveIds || []).length > 0" class="text-[10px] mt-0.5 truncate text-gray-400" :title="kb.cveIds.join(', ')">
+                  {{ kb.cveIds.slice(0, 4).join(", ") }}{{ kb.cveIds.length > 4 ? ` +${kb.cveIds.length - 4} more` : "" }}
+                </p>
               </div>
+              <p class="text-[10px] text-gray-400">
+                Security updates only — MSRC doesn't track Driver, Feature, or Quality-only updates, and Applivery reports no per-device driver inventory to compare against.
+              </p>
             </div>
             <p v-else class="text-xs" :style="{ color: SUCCESS }">Up to date with the latest known security update for this build.</p>
           </div>
@@ -286,20 +293,43 @@ function formatDate(value: string | null): string {
           <!-- OS Lifecycle -->
           <div v-if="device.osLifecycleStatus && (device.osLifecycleStatus as any).confidence !== 'unknown' && (device.osLifecycleStatus as any).isEol !== null && (device.osLifecycleStatus as any).isEol !== undefined" class="mb-6">
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">OS Lifecycle</p>
-            <p v-if="(device.osLifecycleStatus as any).isEol" class="text-xs font-medium" :style="{ color: DANGER }">
+            <div v-if="(device.osLifecycleStatus as any).trainLabel" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+              <span class="text-gray-400">Train</span>
+              <span class="text-gray-900 dark:text-white">{{ (device.osLifecycleStatus as any).trainLabel }}</span>
+            </div>
+            <p v-if="(device.osLifecycleStatus as any).isEol" class="text-xs font-medium mt-2" :style="{ color: DANGER }">
               This OS version has reached end of life for security support{{ (device.osLifecycleStatus as any).eolFrom ? ` (since ${(device.osLifecycleStatus as any).eolFrom})` : "" }}.
               {{ (device.osLifecycleStatus as any).esuUntil ? ` Paid Extended Security Updates are available until ${(device.osLifecycleStatus as any).esuUntil}.` : "" }}
             </p>
-            <p v-else class="text-xs" :style="{ color: SUCCESS }">
+            <p v-else class="text-xs mt-2" :style="{ color: SUCCESS }">
               This OS version is still within its security support window.
               {{
                 (device.osLifecycleStatus as any).onLatestVersion === false && (device.osLifecycleStatus as any).latestKnownVersion
-                  ? ` A newer version is available: ${(device.osLifecycleStatus as any).latestKnownVersion}.`
+                  ? ` A newer version is available: ${(device.osLifecycleStatus as any).latestKnownVersion}${(device.osLifecycleStatus as any).latestKnownBuild ? ` (build ${(device.osLifecycleStatus as any).latestKnownBuild})` : ""}.`
                   : ""
               }}
             </p>
+            <template v-if="(device.osLifecycleStatus as any).latestKnownBuild">
+              <div class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+                <span class="text-gray-400">Latest signed build</span>
+                <span class="font-mono text-xs text-gray-900 dark:text-white">{{ (device.osLifecycleStatus as any).latestKnownBuild }}</span>
+              </div>
+              <div v-if="(device.osLifecycleStatus as any).updateExpirationDate" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+                <span class="text-gray-400">Signed until</span>
+                <span class="text-gray-900 dark:text-white">{{ (device.osLifecycleStatus as any).updateExpirationDate }}</span>
+              </div>
+              <div v-if="(device.osLifecycleStatus as any).hardwareMatched === true || (device.osLifecycleStatus as any).hardwareMatched === false" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+                <span class="text-gray-400">Hardware match</span>
+                <span class="text-gray-900 dark:text-white">{{ (device.osLifecycleStatus as any).hardwareMatched === true ? "Confirmed for this model" : "Unconfirmed — fleet-wide result" }}</span>
+              </div>
+            </template>
             <div v-if="(device.osLifecycleStatus as any).rapidSecurityResponse?.available" class="mt-2 px-3 py-2 rounded-lg text-xs border" :style="{ backgroundColor: `${WARNING}10`, borderColor: `${WARNING}30` }">
-              <p class="font-semibold" :style="{ color: WARNING }">Rapid Security Response available</p>
+              <p class="font-semibold" :style="{ color: WARNING }">
+                Rapid Security Response available{{ (device.osLifecycleStatus as any).rapidSecurityResponse.supplementalBuildVersion ? ` (${(device.osLifecycleStatus as any).rapidSecurityResponse.supplementalBuildVersion})` : "" }}
+              </p>
+              <p v-if="((device.osLifecycleStatus as any).rapidSecurityResponse.cveIds || []).length > 0" class="mt-0.5 text-gray-400">
+                {{ (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds.join(", ") }}
+              </p>
             </div>
           </div>
 
@@ -307,14 +337,14 @@ function formatDate(value: string | null): string {
           <div v-if="device.vulnStatus" class="mb-6">
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Vulnerabilities</p>
             <p v-if="(device.vulnStatus as any).confidence === 'unknown'" class="text-xs text-gray-400">
-              No confirmed vulnerability comparison available yet for this OS version.
+              No confirmed vulnerability comparison available yet for this OS version — the EUVD catalog hasn't published a parseable fixed-version match for it.
             </p>
             <div v-else-if="(device.vulnStatus as any).pendingCount > 0" class="space-y-1.5">
               <p class="text-xs font-medium" :style="{ color: WARNING }">{{ (device.vulnStatus as any).pendingCount }} known CVE{{ (device.vulnStatus as any).pendingCount === 1 ? "" : "s" }} fixed in a newer version</p>
               <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
                 <span class="text-gray-900 dark:text-white">{{ c.cveId }} <span class="text-gray-400">· fixed in {{ c.fixedVersion || c.fixedInMajor }}</span></span>
                 <span class="font-semibold shrink-0" :style="{ color: c.exploited || c.baseSeverity === 'Critical' ? DANGER : WARNING }">
-                  {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}
+                  {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}{{ typeof c.epss === "number" ? ` · EPSS ${(c.epss * 100).toFixed(0)}%` : "" }}
                 </span>
               </div>
             </div>
@@ -328,22 +358,41 @@ function formatDate(value: string | null): string {
               <p class="text-xs text-gray-400">
                 {{
                   (device.vulnServiceStatus as any).lastCheckedAt
-                    ? `Last checked ${new Date((device.vulnServiceStatus as any).lastCheckedAt).toLocaleString()} — nothing conclusive was found then.`
-                    : "Not checked yet — waiting on the next scheduled refresh."
+                    ? `Last checked ${new Date((device.vulnServiceStatus as any).lastCheckedAt).toLocaleString()} — nothing conclusive was found then, and it hasn't been refreshed since. If this device is still active, check Settings > Vulnerability Service for refresh errors.`
+                    : "Not checked yet — waiting on the next scheduled refresh (Settings > Vulnerability Service)."
                 }}
               </p>
             </template>
             <template v-else>
-              <p
+              <div
                 v-if="((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0) > 0"
-                class="text-xs font-medium"
-                :style="{ color: (device.vulnServiceStatus as any).hasKev ? DANGER : WARNING }"
+                class="space-y-1.5"
               >
-                Known CVEs across the OS and {{ (device.vulnServiceStatus as any).appsCheckedCount }} checked app(s){{ (device.vulnServiceStatus as any).hasKev ? " — includes a known-exploited (CISA KEV) CVE" : "" }}
+                <p class="text-xs font-medium" :style="{ color: (device.vulnServiceStatus as any).hasKev ? DANGER : WARNING }">
+                  {{ ((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0) }}
+                  known CVE{{ (((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0)) === 1 ? "" : "s" }}
+                  across the OS and {{ (device.vulnServiceStatus as any).appsCheckedCount }} checked app{{ (device.vulnServiceStatus as any).appsCheckedCount === 1 ? "" : "s" }}
+                  {{ (device.vulnServiceStatus as any).hasKev ? " — includes a known-exploited (CISA KEV) CVE" : "" }}
+                </p>
+                <div v-for="c in (device.vulnServiceStatus as any).topCves" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                  <span class="text-gray-900 dark:text-white">
+                    {{ c.id }} <span v-if="c.fixed_in" class="text-gray-400">· fixed in {{ c.fixed_in }}</span>
+                  </span>
+                  <span class="font-semibold shrink-0" :style="{ color: c.is_kev || c.severity === 'CRITICAL' ? DANGER : WARNING }">
+                    {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}{{ typeof c.epss_score === "number" ? ` · EPSS ${(c.epss_score * 100).toFixed(0)}%` : "" }}
+                  </span>
+                </div>
+                <p v-if="(device.vulnServiceStatus as any).uncertain > 0" class="text-[10px] text-gray-400">
+                  {{ (device.vulnServiceStatus as any).uncertain }} additional match{{ (device.vulnServiceStatus as any).uncertain === 1 ? "" : "es" }} couldn't be confirmed against a fixed version.
+                </p>
+              </div>
+              <p v-else class="text-xs" :style="{ color: SUCCESS }">
+                No known CVEs against this device's OS or {{ (device.vulnServiceStatus as any).appsCheckedCount }} checked app{{ (device.vulnServiceStatus as any).appsCheckedCount === 1 ? "" : "s" }}.
               </p>
-              <p v-else class="text-xs" :style="{ color: SUCCESS }">No known CVEs against this device's OS or checked apps.</p>
             </template>
-            <p class="text-[10px] mt-2 text-gray-400">From your org's Vulnerability Service integration.</p>
+            <p class="text-[10px] mt-2 text-gray-400">
+              From your org's Vulnerability Service integration — an independent signal alongside the Vulnerability Catalog above, covering all platforms and both the OS and individual apps.
+            </p>
           </div>
 
           <!-- Firewall Rule Sets (Windows only) -->
@@ -359,6 +408,9 @@ function formatDate(value: string | null): string {
                 <span class="shrink-0 text-gray-400">Applied {{ a.appliedAt ? formatDate(a.appliedAt) : "—" }}</span>
               </div>
             </div>
+            <p class="text-[10px] mt-2 text-gray-400">
+              Reflects the last Apply/Restore action dispatched from a workflow (Workflows → Firewall Policy Library) — confirms the command was sent, not a live read of the device's actual rule state. Run the matching "Restore Firewall" action to remove a rule set.
+            </p>
           </div>
 
           <!-- App Updates -->
@@ -366,10 +418,19 @@ function formatDate(value: string | null): string {
             <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">App Updates</p>
             <div v-if="(device.appleAppUpdateStatus as any).pendingCount > 0" class="space-y-1.5">
               <p class="text-xs font-medium" :style="{ color: WARNING }">
-                {{ (device.appleAppUpdateStatus as any).pendingCount }} of {{ (device.appleAppUpdateStatus as any).totalApps }} app(s) have an update available
+                {{ (device.appleAppUpdateStatus as any).pendingCount }} of {{ (device.appleAppUpdateStatus as any).totalApps }} app{{ (device.appleAppUpdateStatus as any).totalApps === 1 ? "" : "s" }} have an update available
+              </p>
+              <div v-for="a in (device.appleAppUpdateStatus as any).pendingApps" :key="a.identifier" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                <span class="truncate text-gray-900 dark:text-white">
+                  {{ a.name || a.identifier }} <span v-if="a.isBetaApp" class="text-gray-400">(beta)</span>
+                </span>
+                <span class="font-mono shrink-0 text-gray-400">{{ a.installedVersion || "—" }}</span>
+              </div>
+              <p class="text-[10px] text-gray-400">
+                Straight from Apple's own App Store/VPP metadata via Applivery — "update available" here means Apple itself has published a newer version, not a version comparison we computed.
               </p>
             </div>
-            <p v-else class="text-xs" :style="{ color: SUCCESS }">All {{ (device.appleAppUpdateStatus as any).totalApps }} tracked app(s) up to date.</p>
+            <p v-else class="text-xs" :style="{ color: SUCCESS }">All {{ (device.appleAppUpdateStatus as any).totalApps }} tracked app{{ (device.appleAppUpdateStatus as any).totalApps === 1 ? "" : "s" }} up to date.</p>
           </div>
 
           <div v-if="(device.smartAttributes || []).length > 0" class="mb-6">
