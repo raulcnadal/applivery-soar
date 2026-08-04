@@ -132,6 +132,10 @@ const chartOption = computed(() => {
           data: slices.map((d, i) => ({ name: d.name, value: d.value, itemStyle: { color: d.color, opacity: h === -1 ? 1 : h === i ? 1 : 0.15, borderWidth: 0 } })),
         },
       ],
+      // Center total — 1:1 port of DonutPieWidget's graphic group (App.jsx
+      // ~1112-1117): 700-weight 28px value, 400-weight 11px "Total" label
+      // below it. Donut only (pie's hollow-less radius has no room for it,
+      // same as the original).
       graphic:
         t === "donut"
           ? [
@@ -140,8 +144,8 @@ const chartOption = computed(() => {
                 left: "center",
                 top: "center",
                 children: [
-                  { type: "text", style: { text: total.value.toLocaleString(), font: "700 22px Outfit,sans-serif", fill: th.text, textAlign: "center", y: -11 } },
-                  { type: "text", style: { text: "Total", font: "400 10px Outfit,sans-serif", fill: th.textMuted, textAlign: "center", y: 15 } },
+                  { type: "text", style: { text: total.value.toString(), font: "700 28px Outfit, sans-serif", fill: th.text, textAlign: "center", y: -14 } },
+                  { type: "text", style: { text: "Total", font: "400 11px Outfit, sans-serif", fill: th.textMuted, textAlign: "center", y: 22 } },
                 ],
               },
             ]
@@ -214,8 +218,15 @@ const chartOption = computed(() => {
           axisTick: { show: false },
           splitLine: { show: false },
           axisLabel: { show: false },
-          detail: { valueAnimation: true, fontSize: 22, formatter: "{value}%", offsetCenter: [0, "20%"], color: th.text },
-          data: [{ value: val }],
+          // 1:1 port of the original gauge's title+detail pair (App.jsx
+          // ~3939-3940): `title` is the slice's own name (e.g. "iOS"),
+          // shown small above center; `detail` is the big bold percentage
+          // below it. This component was previously missing `title`
+          // entirely (no name label in the middle of the gauge) and had
+          // `detail` at 22px instead of the original's 34px/bold.
+          title: { fontSize: 13, color: th.textMuted, offsetCenter: [0, "30%"], fontFamily: "Outfit, sans-serif" },
+          detail: { fontSize: 34, fontWeight: "bold", formatter: "{value}%", offsetCenter: [0, "-5%"], color: th.text, fontFamily: "Outfit, sans-serif" },
+          data: [{ value: val, name: primary ? humanLabel(primary.name) : "" }],
         },
       ],
     };
@@ -249,13 +260,21 @@ const chartOption = computed(() => {
         </div>
       </div>
 
+      <!-- 1:1 port of ScorecardContent (App.jsx ~579-599): 68px/700-weight/
+           -3px-tracking value, plus the "Tap to view list" pill when
+           clickable. Previously rendered at Tailwind's text-4xl (36px,
+           semibold) — barely half the original's size. -->
       <div
         v-else-if="chartType === 'scorecard'"
-        class="flex-1 flex flex-col items-center justify-center"
-        :class="isClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''"
+        class="flex-1 flex flex-col items-center justify-center gap-2"
+        :class="isClickable ? 'cursor-pointer' : ''"
         @click="onChartClick()"
       >
-        <p class="text-4xl font-semibold text-gray-900 dark:text-white">{{ (data?.scorecardValue ?? 0).toLocaleString() }}</p>
+        <span class="text-gray-900 dark:text-white" style="font-family: 'Outfit', sans-serif; font-size: 68px; font-weight: 700; letter-spacing: -3px; line-height: 1">{{ data?.scorecardValue ?? 0 }}</span>
+        <div v-if="isClickable" class="flex items-center gap-1 mt-1 px-2.5 py-1 rounded-full bg-brand-600/12">
+          <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="text-brand-600" />
+          <span class="text-[10px] font-medium text-brand-600">Tap to view list</span>
+        </div>
       </div>
 
       <div v-else-if="isDonutPie" class="flex-1 min-h-0 flex items-center gap-2 overflow-hidden">
