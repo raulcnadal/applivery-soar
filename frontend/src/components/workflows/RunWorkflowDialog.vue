@@ -49,26 +49,25 @@ watch(
   },
 );
 
-const eligibleDevices = computed(() => {
-  if (!props.workflow?.targetPlatform) return devicesStore.devices;
-  return devicesStore.devices.filter((d) => d.platform === props.workflow!.targetPlatform);
-});
-
-const filtered = computed(() => eligibleDevices.value.filter((d) => d.displayName.toLowerCase().includes(search.value.toLowerCase())));
+// Port of DevicePickerModal (WorkflowRunModals.jsx:29-238) — it takes no
+// `workflow` prop at all, so there's no target-platform filtering here;
+// every device in the fleet is selectable regardless of the workflow's
+// target platform.
+const filtered = computed(() => devicesStore.devices.filter((d) => d.displayName.toLowerCase().includes(search.value.toLowerCase())));
 
 const availableTags = computed(() => {
   const set = new Set<string>();
-  eligibleDevices.value.forEach((d) => (d.tags || []).forEach((t) => set.add(t)));
+  devicesStore.devices.forEach((d) => (d.tags || []).forEach((t) => set.add(t)));
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 });
 
 const audienceMatches = computed(() => {
   if (!audienceId.value) return [];
-  return eligibleDevices.value.filter((d) => (d.deviceAudiences || []).some((a) => String(a.id) === String(audienceId.value)));
+  return devicesStore.devices.filter((d) => (d.deviceAudiences || []).some((a) => String(a.id) === String(audienceId.value)));
 });
 const tagMatches = computed(() => {
   if (!tag.value) return [];
-  return eligibleDevices.value.filter((d) => (d.tags || []).includes(tag.value));
+  return devicesStore.devices.filter((d) => (d.tags || []).includes(tag.value));
 });
 
 function toggleDevice(id: string) {
@@ -105,7 +104,7 @@ async function launch() {
     targets = tagMatches.value;
     targetDescription = `Tag: ${tag.value}`;
   } else {
-    targets = eligibleDevices.value.filter((d) => selectedIds.value.has(d.id));
+    targets = devicesStore.devices.filter((d) => selectedIds.value.has(d.id));
   }
   if (targets.length === 0) return;
   isLaunching.value = true;
@@ -127,7 +126,7 @@ async function launch() {
 </script>
 
 <template>
-  <Modal :open="open" :title="workflow ? `Select target devices — ${workflow.name}` : 'Select target devices'" size="lg" @close="emit('close')">
+  <Modal :open="open" title="Select target devices" size="lg" @close="emit('close')">
     <div class="space-y-3">
       <Alert v-if="launchError" type="danger">{{ launchError }}</Alert>
 

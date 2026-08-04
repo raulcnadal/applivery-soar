@@ -45,6 +45,14 @@ function openResult(run: WorkflowRun) {
   openRun.value = run;
   resultOpen.value = true;
 }
+
+async function exportCsv() {
+  try {
+    await store.exportRunsCsv(dateFrom.value || undefined, dateTo.value || undefined);
+  } catch {
+    alert("Failed to export workflow runs.");
+  }
+}
 </script>
 
 <template>
@@ -58,11 +66,9 @@ function openResult(run: WorkflowRun) {
         <input v-model="dateFrom" type="date" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500" @change="refresh()" />
         <span class="text-xs text-gray-400">to</span>
         <input v-model="dateTo" type="date" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500" @change="refresh()" />
-        <a :href="store.exportRunsUrl(dateFrom || undefined, dateTo || undefined)" target="_blank" rel="noopener">
-          <button class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200">
-            <component :is="ICONS.Download" :size="12" weight="Linear" /> Export CSV
-          </button>
-        </a>
+        <button class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="exportCsv">
+          <component :is="ICONS.Download" :size="12" weight="Linear" /> Export CSV
+        </button>
       </div>
     </div>
 

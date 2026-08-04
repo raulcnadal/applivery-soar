@@ -194,12 +194,27 @@ export const useWorkflowsStore = defineStore("workflows", () => {
     }
   }
 
-  function exportRunsUrl(dateFrom?: string, dateTo?: string): string {
-    const params = new URLSearchParams();
-    if (dateFrom) params.set("date_from", dateFrom);
-    if (dateTo) params.set("date_to", dateTo);
-    const qs = params.toString();
-    return `/api/workflows/runs/export${qs ? `?${qs}` : ""}`;
+  // Port of handleExportRuns (WorkflowsView.jsx:83-97) — the export endpoint
+  // sits behind verifyDashboardToken, which only reads the X-Dashboard-Token
+  // header (auth.middleware.ts:28), so a plain `<a href>`/`window.open` 401s
+  // with no header attached. Must go through `api` (whose request
+  // interceptor stamps that header on every call) and pull the response
+  // down as an authenticated blob instead — same fix as compliance.ts's
+  // exportViolationsCsv and cases.ts's exportCasesCsv.
+  async function exportRunsCsv(dateFrom?: string, dateTo?: string) {
+    const { api } = await import("../api/http");
+    const params: Record<string, string> = {};
+    if (dateFrom) params.date_from = dateFrom;
+    if (dateTo) params.date_to = dateTo;
+    const res = await api.get("/workflows/runs/export", { params, responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "workflow-runs.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function fetchMdmActions() {
@@ -226,7 +241,7 @@ export const useWorkflowsStore = defineStore("workflows", () => {
     runWorkflow,
     fetchRun,
     fetchRuns,
-    exportRunsUrl,
+    exportRunsCsv,
     fetchMdmActions,
   };
 });

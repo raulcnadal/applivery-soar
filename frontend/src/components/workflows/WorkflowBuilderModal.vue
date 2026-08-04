@@ -11,6 +11,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { Alert, Button } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
+import { useActionLibraryStore } from "../../stores/actionLibrary";
 import { useComplianceStore } from "../../stores/compliance";
 import { useWorkflowsStore, type MdmActionDef, type Workflow, type WorkflowStep } from "../../stores/workflows";
 import WorkflowStepEditor from "./WorkflowStepEditor.vue";
@@ -23,6 +24,8 @@ const emit = defineEmits<{ close: []; saved: [] }>();
 
 const store = useWorkflowsStore();
 const complianceStore = useComplianceStore();
+const actionLibraryStore = useActionLibraryStore();
+const actionLibraryEntries = computed(() => actionLibraryStore.entries);
 
 const PLATFORM_OPTIONS = [
   { value: "apple", label: "iOS" },
@@ -45,8 +48,26 @@ const DEPLOYMENT_MODELS: Record<string, Array<{ value: string; label: string }>>
 function newStepId(): string {
   return crypto.randomUUID();
 }
+// Port of emptyStepConfig (WorkflowBuilder.jsx:38-49).
+function emptyStepConfig(type: string): Record<string, any> {
+  if (type === "mdm_action") return { action: "" };
+  if (type === "run_script_wait") return { libraryId: "", timeoutMinutes: 30 };
+  if (type === "http_request") return { method: "POST", url: "", headers: {}, body: "" };
+  if (type === "notification") return { channel: "webhook", target: "admin", webhookUrl: "", recipients: "", subject: "", title: "", message: "" };
+  if (type === "policy_replace") return { policyId: "", policyName: "" };
+  if (type === "policy_add") return { policyId: "", policyName: "", priority: "bottom" };
+  if (type === "policy_restore") return {};
+  if (type === "monitor") return { compliancePolicyId: "", restoreOnCompliant: true };
+  if (type === "wait") return { amount: 30, unit: "minutes" };
+  return {};
+}
+// Port of addStep/addRecoveryStep (WorkflowBuilder.jsx:680-682, 700-703) —
+// defaults to mdm_action only once a target platform is locked in;
+// otherwise defaults to http_request, since mdm_action isn't even offered
+// in the type picker yet.
 function newStep(): WorkflowStep {
-  return { id: newStepId(), type: "mdm_action", name: "", config: {}, onSuccess: null, onFailure: null };
+  const type = form.targetPlatform ? "mdm_action" : "http_request";
+  return { id: newStepId(), type, name: "", config: emptyStepConfig(type), onSuccess: null, onFailure: null };
 }
 
 const screen = ref<"details" | "steps">("details");
@@ -89,6 +110,7 @@ watch(() => props.open, async (open) => {
   resetForm();
   if (store.mdmActions.length === 0) await store.fetchMdmActions();
   if (complianceStore.policies.length === 0) await complianceStore.fetchPolicies();
+  if (actionLibraryStore.entries.length === 0) await actionLibraryStore.fetchEntries();
 });
 
 const needsDeploymentModel = computed(() => ["apple", "macos", "android"].includes(form.targetPlatform));
@@ -109,7 +131,11 @@ function isActionCompatible(action: MdmActionDef, platform: string, deploymentMo
 function reconcileStep(s: WorkflowStep, platform: string, deploymentModel: string): WorkflowStep {
   if (s.type === "mdm_action" && s.config?.action) {
     const meta = mdmActionsByKey.value[s.config.action];
-    if (!(meta && isActionCompatible(meta, platform, deploymentModel))) return { ...s, config: {} };
+    if (!(meta && isActionCompatible(meta, platform, deploymentModel))) return { ...s, config: emptyStepConfig("mdm_action") };
+  }
+  if (s.type === "run_script_wait" && s.config?.libraryId) {
+    const stillValid = actionLibraryEntries.value.some((entry) => entry.id === s.config.libraryId && entry.type === "script" && entry.platform === platform);
+    if (!stillValid) return { ...s, config: emptyStepConfig("run_script_wait") };
   }
   return s;
 }
@@ -307,6 +333,7 @@ async function save() {
               :step-index="idx"
               :all-steps="form.steps"
               :target-platform="form.targetPlatform"
+              :target-deployment-model="form.targetDeploymentModel"
               show-branching
               @remove="removeStep(idx)"
               @move-up="moveStep(idx, -1)"
@@ -320,10 +347,10 @@ async function save() {
               <div class="flex-1">
                 <p class="text-xs font-semibold text-gray-900 dark:text-white">This workflow includes a destructive action</p>
                 <p class="text-[11px] mt-1 mb-2.5 leading-relaxed text-gray-400">
-                  Anywhere this workflow is set to fire unattended, that specific Policy/Rule still requires its own explicit acknowledgment. This toggle only sets that checkbox's starting value the first time a policy/rule is pointed at this workflow.
+                  Anywhere this workflow is set to fire unattended — a Compliance Policy's autoRun, a Case Auto-Run Rule, or an Applivery Event rule — that specific policy/rule still requires its own explicit acknowledgment before it can actually run this workflow without human review. This toggle doesn't change that; it only sets the starting value of that acknowledgment checkbox the first time a policy/rule is pointed at this workflow.
                 </p>
                 <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
-                  <input v-model="form.allowUnattendedDestructive" type="checkbox" /> This workflow is approved to run unattended
+                  <input v-model="form.allowUnattendedDestructive" type="checkbox" /> This workflow is approved to run unattended (pre-fills new acknowledgment checkboxes as checked)
                 </label>
               </div>
             </div>
@@ -340,7 +367,7 @@ async function save() {
               </label>
             </div>
             <p class="text-xs mb-3 text-gray-400">
-              The moment the Compliance Policy below is no longer violated for a device, the Steps above stop escalating right there, and the recovery steps below run once, in order.
+              The moment the Compliance Policy below is no longer violated for a device, the Steps above stop escalating right there — no further steps run — and the recovery steps below run once, in order, to put the device back the way it was (e.g. Restore Policies, Install App to bring back something removed, Re-enable device). Any "Run script" step above with a restore script configured fires that restore script automatically first.
             </p>
             <template v-if="form.recoveryEnabled">
               <select v-model="form.recoveryCompliancePolicyId" class="w-full px-2 py-1.5 rounded-lg text-sm outline-none mb-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500">
@@ -363,6 +390,7 @@ async function save() {
                   :step-index="idx"
                   :all-steps="form.recoverySteps"
                   :target-platform="form.targetPlatform"
+                  :target-deployment-model="form.targetDeploymentModel"
                   @remove="removeRecoveryStep(idx)"
                   @move-up="moveRecoveryStep(idx, -1)"
                   @move-down="moveRecoveryStep(idx, 1)"

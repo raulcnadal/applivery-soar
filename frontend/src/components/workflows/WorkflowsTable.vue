@@ -3,7 +3,7 @@
 // see WorkflowsView.jsx:180-243): icon badge, step count + MDM/Auto-run-
 // approved inline badges, target platform badge, description, and a
 // Run/Dry-run/Version-history/Edit/Delete action row.
-import { computed, onMounted } from "vue";
+import { computed } from "vue";
 import { EmptyState } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useAuthStore } from "../../stores/auth";
@@ -29,13 +29,15 @@ const canDelete = computed(() => authStore.hasRiskyAction("canDeletePolicyOrWork
 const notRunTitle = "Your role isn't permitted to run workflows with a destructive MDM step.";
 const notDeleteTitle = "Your role isn't permitted to delete Workflows.";
 
-onMounted(async () => {
-  if (store.mdmActions.length === 0) await store.fetchMdmActions();
-});
-
-const mdmActionsByKey = computed(() => Object.fromEntries(store.mdmActions.map((a) => [a.key, a])));
+// Port of WorkflowsView.jsx:194 — the list card's own hasDestructive is a
+// broader, UI-only check ("includes ANY mdm_action step at all") than the
+// catalog-driven `_workflow_has_destructive_step` the backend actually
+// enforces on POST /run (workflows.controller.ts:148, matched by
+// PolicyBuilder's narrower isDestructiveWorkflow for the autoRun
+// acknowledgment). The backend is still authoritative either way — this
+// just needs to match the original's (more conservative) card display.
 function hasDestructive(w: Workflow): boolean {
-  return (w.steps ?? []).some((s) => s.type === "mdm_action" && mdmActionsByKey.value[s.config?.action]?.destructive);
+  return (w.steps ?? []).some((s) => s.type === "mdm_action");
 }
 
 async function remove(w: Workflow) {

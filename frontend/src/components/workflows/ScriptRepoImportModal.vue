@@ -12,6 +12,7 @@ import { useScriptReposStore, type ScriptRepoBrowseItem } from "../../stores/scr
 
 const PRIMARY_BLUE = "#0241E3";
 const DANGER = "#EF4444";
+const PLATFORM_LABELS: Record<string, string> = { windows: "Windows", macos: "macOS" };
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: []; imported: [] }>();
@@ -196,7 +197,7 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
                     <input type="checkbox" :checked="selected.has(e.path)" :disabled="!e.importable" @change="toggle(e)" />
                     <component :is="ICONS.CodeFile" :size="13" weight="Linear" class="text-gray-400" />
                     <span class="truncate flex-1">{{ e.name }}</span>
-                    <span v-if="e.inferredPlatform" class="text-[9px] px-1.5 py-0.5 rounded-full font-light border border-gray-200 dark:border-gray-700 text-gray-400">{{ e.inferredPlatform }}</span>
+                    <span v-if="e.inferredPlatform" class="text-[9px] px-1.5 py-0.5 rounded-full font-light border border-gray-200 dark:border-gray-700 text-gray-400">{{ PLATFORM_LABELS[e.inferredPlatform] || e.inferredPlatform }}</span>
                   </label>
                 </div>
               </div>

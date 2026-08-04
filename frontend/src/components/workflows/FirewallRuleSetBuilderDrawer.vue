@@ -140,9 +140,9 @@ async function save() {
                 type="select"
                 :options="['Any', 'TCP', 'UDP'].map((p) => ({ value: p, label: p }))"
                 label="Protocol"
-                @update:model-value="rule.protocol = $event as string"
+                @update:model-value="rule.protocol = $event as string; if ($event === 'Any') rule.localPorts = 'Any'"
               />
-              <Input v-model="rule.localPorts" label="Local ports" placeholder="Any / 445 / 5985-5986" />
+              <Input v-model="rule.localPorts" :disabled="rule.protocol === 'Any'" label="Local ports" placeholder="Any / 445 / 5985-5986" />
             </div>
             <div class="grid grid-cols-2 gap-2">
               <Input v-model="rule.remoteAddresses" label="Remote addresses" placeholder="Any / CIDR / comma-separated" />
