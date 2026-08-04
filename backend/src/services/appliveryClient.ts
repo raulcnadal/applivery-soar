@@ -38,7 +38,17 @@ export class AppliveryClient {
     this.rateLimiter = new TokenBucket(env.appliveryRateLimitBurst, sustainedPerSec);
     this.client = axios.create({
       baseURL: env.appliveryApiUrl,
-      timeout: 10_000,
+      // The original (`_applivery_call`'s callers, main.py) used per-endpoint
+      // httpx timeouts ranging from a 20s flat minimum (auth/login, most
+      // list endpoints) up to `Timeout(30.0, connect=15.0, read=30.0)` for
+      // heavier ones like /smart-attributes and /segments, and 60s for bulk
+      // device-command endpoints. This client is a single shared instance
+      // instead of per-call config, so 30s is the safe floor matching the
+      // original's own busiest endpoints — 10s here was cutting off
+      // legitimate slow-but-successful Applivery responses well before the
+      // original ever would have, surfacing as spurious ECONNABORTED
+      // timeouts in production (e.g. GET /smart-attributes?limit=500).
+      timeout: 30_000,
       // Never throw on non-2xx — see class doc above.
       validateStatus: () => true,
     });
