@@ -104,10 +104,6 @@ const NAV_TABS: NavTab[] = [
   { id: "cases", label: "Cases", icon: Folder, area: "cases" },
   { id: "workflows", label: "Workflows", icon: Routing, area: "workflows" },
   { id: "reporting", label: "Reporting", icon: FileText, area: "reporting" },
-  // Not present in the original app (added during migration) — kept as a
-  // trailing tab rather than dropped, since it has no original-design
-  // equivalent to fold into.
-  { id: "playground", label: "Playground", icon: Widget },
 ];
 const visibleTabs = computed(() => NAV_TABS.filter((t) => !t.area || auth.hasFeatureAccess(t.area, "read")));
 
