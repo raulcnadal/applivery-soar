@@ -83,6 +83,24 @@ const SETTINGS_TABS: SettingsTab[] = [
 ];
 const visibleTabs = computed(() => SETTINGS_TABS.filter((t) => !t.superAdminOnly || isSuperAdmin.value));
 
+// The content-pane heading is its own hardcoded string per tab in the
+// original (App.jsx:5838+), distinct from (and sometimes more descriptive
+// than) the left-nav label above — e.g. nav "General" but content heading
+// "General Configuration". Only listing the tabs where the two differ;
+// everywhere else the nav label doubles as the content heading verbatim.
+const CONTENT_HEADING: Record<string, string> = {
+  general: "General Configuration",
+  smtp: "SMTP Email Engine",
+  auditlog: "Audit Log Retention",
+  logexport: "Log Export Destinations",
+};
+// "backup" and "device-webhook" render more than one heading+card in the
+// original (Backup & Restore + Full Workspace Configuration; Device Data
+// Webhook + App Inventory Reporting + Security Attestation Reporting) — their
+// panel components own every heading themselves, so the generic branch below
+// must not also prepend one or it'd duplicate the first heading.
+const SELF_HEADED_TABS = new Set(["backup", "device-webhook"]);
+
 const activeTab = ref("general");
 // Port of SETTINGS_TAB_ANCHORS (App.jsx:288-309) — maps this modal's tab
 // ids onto docs/settings.md's anchor slugs.
@@ -151,7 +169,7 @@ async function selectTab(tabId: string) {
       <div class="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 shrink-0">
         <div class="flex items-center gap-2">
           <h2 class="text-xl font-bold flex items-center gap-2 text-gray-900 dark:text-white">
-            <component :is="ICONS.Settings" :size="20" weight="Linear" class="text-brand-600" /> Platform Settings
+            <component :is="ICONS.Settings" :size="20" weight="Linear" style="color: #0055ff" /> Platform Settings
           </h2>
           <HelpIcon slug="settings" :anchor="helpAnchor" title="Settings admin guide" />
         </div>
@@ -177,7 +195,8 @@ async function selectTab(tabId: string) {
             :key="tab.id"
             type="button"
             class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-[13px] transition-colors"
-            :class="activeTab === tab.id ? 'bg-brand-50 dark:bg-brand-500/15 text-brand-600 dark:text-brand-400 font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium hover:bg-gray-100 dark:hover:bg-white/10'"
+            :class="activeTab === tab.id ? 'font-semibold' : 'text-gray-500 dark:text-gray-400 font-medium hover:bg-gray-100 dark:hover:bg-white/10'"
+            :style="activeTab === tab.id ? { backgroundColor: '#0055FF18', color: '#0055FF' } : {}"
             @click="selectTab(tab.id)"
           >
             <component :is="tab.icon" :size="15" weight="Linear" class="shrink-0" />
@@ -225,7 +244,9 @@ async function selectTab(tabId: string) {
           </template>
 
           <template v-else>
-            <h3 class="text-sm font-bold mb-4 text-gray-900 dark:text-white">{{ visibleTabs.find((t) => t.id === activeTab)?.label }}</h3>
+            <h3 v-if="!SELF_HEADED_TABS.has(activeTab)" class="text-sm font-bold mb-4 text-gray-900 dark:text-white">
+              {{ CONTENT_HEADING[activeTab] ?? visibleTabs.find((t) => t.id === activeTab)?.label }}
+            </h3>
             <GeneralSettingsForm v-if="activeTab === 'general'" />
             <SmtpSettingsForm v-else-if="activeTab === 'smtp'" />
             <AccountPanel v-else-if="activeTab === 'account'" />
@@ -249,7 +270,9 @@ async function selectTab(tabId: string) {
 
       <!-- FOOTER -->
       <div class="p-6 border-t border-gray-200 dark:border-gray-700 shrink-0 flex justify-end">
-        <Button @click="emit('close')">Apply &amp; Save Configuration</Button>
+        <button type="button" class="px-8 py-3 rounded-xl font-bold text-sm text-white shadow-lg transition-colors hover:opacity-90" style="background-color: #0055ff" @click="emit('close')">
+          Apply &amp; Save Configuration
+        </button>
       </div>
     </div>
 

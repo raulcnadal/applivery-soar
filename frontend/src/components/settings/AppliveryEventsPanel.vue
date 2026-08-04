@@ -104,7 +104,7 @@ onMounted(async () => {
             <td class="px-4 py-3"><input type="checkbox" v-model="r.enabled" /></td>
             <td class="px-4 py-3"><input type="checkbox" v-model="r.openCase" /></td>
             <td class="px-4 py-3">
-              <select v-model="r.caseSeverity" class="rounded-lg px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700">
+              <select v-model="r.caseSeverity" class="rounded-lg px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
                 <option v-for="s in ['low', 'medium', 'high', 'critical']" :key="s" :value="s">{{ s }}</option>
               </select>
             </td>

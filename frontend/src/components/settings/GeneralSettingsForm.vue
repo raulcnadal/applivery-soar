@@ -22,6 +22,13 @@ const isSaving = ref(false);
 const saveError = ref<string | null>(null);
 const saved = ref(false);
 
+// Port of App.jsx:5848 — a <select> over the full IANA tz database via
+// Intl.supportedValuesOf('timeZone'), not a free-text field (App.jsx has no
+// text input for this).
+const TIMEZONE_OPTIONS = (typeof Intl !== "undefined" && "supportedValuesOf" in Intl ? (Intl as any).supportedValuesOf("timeZone") : ["UTC"]).map(
+  (tz: string) => ({ value: tz, label: tz }),
+);
+
 onMounted(async () => {
   if (!store.isLoaded) await store.fetchState();
 });
@@ -66,7 +73,13 @@ async function save() {
     <Input v-model="form.webhookUrl" label="Notifications Webhook URL" placeholder="https://chat.googleapis.com/v1/spaces/..." />
     <p class="text-xs text-gray-400 -mt-3">Feeds this app's own outbound chat notifications (a Google Chat space webhook). Used by Reporting's "Send to Webhook" delivery option.</p>
 
-    <Input v-model="form.timezone" label="System Timezone (for Scheduled Reports)" placeholder="UTC" />
+    <Input
+      :model-value="form.timezone"
+      type="select"
+      :options="TIMEZONE_OPTIONS"
+      label="System Timezone (for Scheduled Reports)"
+      @update:model-value="form.timezone = $event as string"
+    />
 
     <Input
       :model-value="form.sessionTimeoutMinutes"

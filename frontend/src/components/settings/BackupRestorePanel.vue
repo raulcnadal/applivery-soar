@@ -166,7 +166,11 @@ onMounted(async () => {
         This file contains every credential configured for this workspace — Jira/ServiceNow, PagerDuty/Opsgenie, chat webhook URLs, Threat Intel API keys, and the SMTP password are encrypted at rest and stay encrypted in this export; the Applivery webhook secret is not. Store and share it the same way you'd handle any other credential bundle.
       </p>
 
-      <div v-if="!canManage()" class="flex items-start gap-2 px-3 py-2 rounded-lg text-xs mb-4 max-w-xl bg-amber-50 border border-amber-200 text-amber-700">
+      <div
+        v-if="!canManage()"
+        class="flex items-start gap-2 px-3 py-2 rounded-lg text-xs mb-4 max-w-xl"
+        style="background-color: #f59e0b12; border: 1px solid #f59e0b30; color: #b45309"
+      >
         <component :is="ICONS.ShieldWarning" :size="14" weight="Linear" class="shrink-0 mt-0.5" />
         Your role doesn't include the "export, import, or clone workspace configuration" permission — these actions are disabled.
       </div>

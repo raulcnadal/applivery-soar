@@ -32,6 +32,7 @@ onMounted(async () => {
   <div class="space-y-4">
     <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
       Ships this workspace's audit trail somewhere outside the app. Syslog and webhook deliver in real time as events happen; S3, NFS, and SFTP export once a day.
+      Google Drive/OneDrive aren't available yet — those need an OAuth app registration created on your end first.
     </p>
     <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
     <Alert v-if="testResult" type="info">{{ testResult }}</Alert>
