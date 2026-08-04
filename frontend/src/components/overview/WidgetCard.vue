@@ -18,6 +18,7 @@ import { useUiStore } from "../../stores/ui";
 // change between the live card and its zoomed-in modal. Ported from
 // App.jsx:3757-3799 — see lib/widgetVisuals.ts.
 import { colorFor, humanLabel } from "../../lib/widgetVisuals";
+import { ICONS } from "../../lib/solarIcons";
 
 const props = defineProps<{
   widget: DashboardWidget;
@@ -25,6 +26,20 @@ const props = defineProps<{
   isLoading: boolean;
   error: string | null;
 }>();
+const emit = defineEmits<{ openOrgProfile: [] }>();
+
+// The predefined "Workspace Profile" widget isn't a normal chart-typed
+// widget — App.jsx's renderWidgetContent special-cases `widget.stat ===
+// 'org_profile'` (~line 3823) ahead of the generic `widget.type` switch,
+// rendering the raw Applivery org-profile API response (logo/name/slug)
+// instead, and the whole card is clickable to open a dedicated modal
+// (setSelectedOrgProfile) rather than the generic WidgetInfoModal every
+// other widget's ⓘ button opens. This is that same special-case, ahead of
+// the `chartType === 'scorecard'` branch below (org_profile is typed
+// "scorecard" in DEFAULT_DASHBOARD/the catalog, same as the original, but
+// never actually renders as one).
+const isOrgProfile = computed(() => props.widget.stat === "org_profile");
+const orgLogo = computed(() => props.data?.orgProfile?.branding?.logo || props.data?.orgProfile?.branding?.picture || "");
 
 // Live widget cards render via ECharts (SVG canvas, not DOM), so Tailwind's
 // `dark:` classes can't reach the chart itself — theme-aware colors here
@@ -130,7 +145,27 @@ const chartOption = computed(() => {
     <div v-if="isLoading" class="flex-1 flex items-center justify-center"><Spinner size="sm" /></div>
     <div v-else-if="error" class="flex-1 flex items-center justify-center text-xs text-red-500 text-center px-2">{{ error }}</div>
     <template v-else>
-      <div v-if="chartType === 'scorecard'" class="flex-1 flex flex-col items-center justify-center">
+      <div
+        v-if="isOrgProfile"
+        class="flex-1 flex flex-col items-center justify-center p-4 cursor-pointer hover:opacity-80 transition-opacity gap-2"
+        @click="emit('openOrgProfile')"
+      >
+        <div class="flex-1 flex items-center justify-center w-full min-h-0 overflow-hidden">
+          <img v-if="orgLogo" :src="orgLogo" :alt="data?.orgProfile?.name" class="max-w-full max-h-full object-contain" style="max-height: 80px" @error="($event.target as HTMLImageElement).style.display = 'none'" />
+          <div v-else class="flex items-center justify-center w-20 h-20 rounded-2xl bg-brand-600/15">
+            <component :is="ICONS.Buildings2" :size="44" weight="Linear" class="text-brand-600 opacity-70" />
+          </div>
+        </div>
+        <div class="text-center shrink-0 mt-1">
+          <div class="text-sm font-bold leading-tight truncate max-w-full text-gray-900 dark:text-white">{{ data?.orgProfile?.name }}</div>
+          <div class="text-[11px] mt-0.5 text-gray-500 dark:text-gray-400">{{ data?.orgProfile?.slug }}</div>
+        </div>
+        <div class="flex items-center gap-1 shrink-0 text-gray-500 dark:text-gray-400">
+          <component :is="ICONS.InfoCircle" :size="9" weight="Linear" /><span class="text-[9px]">Tap for details</span>
+        </div>
+      </div>
+
+      <div v-else-if="chartType === 'scorecard'" class="flex-1 flex flex-col items-center justify-center">
         <p class="text-4xl font-semibold text-gray-900 dark:text-white">{{ (data?.scorecardValue ?? 0).toLocaleString() }}</p>
       </div>
 

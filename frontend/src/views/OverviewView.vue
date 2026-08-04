@@ -12,6 +12,7 @@ import HelpIcon from "../components/shared/HelpIcon.vue";
 import WidgetCard from "../components/overview/WidgetCard.vue";
 import WidgetBuilderPanel from "../components/overview/WidgetBuilderPanel.vue";
 import WidgetInfoModal from "../components/overview/WidgetInfoModal.vue";
+import OrgProfileModal from "../components/overview/OrgProfileModal.vue";
 import DateRangePicker, { type DateRangeValue } from "../components/overview/DateRangePicker.vue";
 import { useDashboardStateStore } from "../stores/dashboardState";
 import { useSegmentsStore } from "../stores/segments";
@@ -220,6 +221,16 @@ function openWidgetInfo(id: string) {
   widgetInfoModalFor.value = id;
 }
 
+// ── Workspace Profile modal — the org_profile widget's own dedicated
+// modal (App.jsx's setSelectedOrgProfile, ~line 3824), separate from the
+// generic WidgetInfoModal above; see WidgetCard.vue's isOrgProfile branch
+// for why. Also mounted at the view root for the same stacking-context
+// reason as WidgetInfoModal. ──
+const selectedOrgProfile = ref<Record<string, any> | null>(null);
+function openOrgProfile(id: string) {
+  selectedOrgProfile.value = widgetSlots[id]?.data?.orgProfile ?? null;
+}
+
 // ── Add / Edit widget builder panel ──
 const editingWidget = ref<DashboardWidget | null>(null);
 const isBuilderOpen = ref(false);
@@ -355,6 +366,7 @@ async function saveWidgetForm(w: DashboardWidget) {
               :data="widgetSlots[item.i]?.data ?? null"
               :is-loading="widgetSlots[item.i]?.isLoading ?? true"
               :error="widgetSlots[item.i]?.error ?? null"
+              @open-org-profile="openOrgProfile(item.i)"
             />
           </div>
         </div>
@@ -403,5 +415,6 @@ async function saveWidgetForm(w: DashboardWidget) {
       :date-range="dateRange"
       @close="widgetInfoModalFor = null"
     />
+    <OrgProfileModal :profile="selectedOrgProfile" @close="selectedOrgProfile = null" />
   </div>
 </template>
