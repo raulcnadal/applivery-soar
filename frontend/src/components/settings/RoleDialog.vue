@@ -17,17 +17,30 @@
 // RolesSettingsPanel.vue now v-if's between the list view and this
 // component directly, mirroring the original's editing-state swap.
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
-import { onMounted, reactive, watch } from "vue";
+import { computed, onMounted, reactive, watch } from "vue";
 import { ref } from "vue";
 import { useRolesStore, type RolePayload, type SoarRole } from "../../stores/roles";
 import { useDevicesStore } from "../../stores/devices";
 import type { FeatureArea, FeatureLevel, RiskyAction } from "../../stores/auth";
+import { ICONS } from "../../lib/solarIcons";
+import TagValuesEditor from "./TagValuesEditor.vue";
 
 const props = defineProps<{ role: SoarRole | null }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
 const store = useRolesStore();
 const devicesStore = useDevicesStore();
+
+// availableTags is the canonical org-wide list (GET .../collaborators/
+// groups) — union with tagCandidates seen on already-fetched collaborators
+// in case the two ever disagree (RolesSettings.jsx's allTagSuggestions,
+// ~line 118). Both come from the same collaborators-directory endpoint the
+// "Collaborators & Tags" sub-tab already uses (useRolesStore), so no new
+// backend call was needed here — just wiring the existing store data in.
+const allTagSuggestions = computed(() =>
+  Array.from(new Set([...store.availableTags, ...store.collaborators.flatMap((c) => c.tagCandidates ?? [])])),
+);
+const showRawCollaborators = ref(false);
 
 const FEATURE_AREA_LABELS: Record<FeatureArea, string> = {
   devices: "Devices",
@@ -66,7 +79,7 @@ const form = reactive({
   description: "",
   featureAccess: emptyFeatureAccess(),
   riskyActions: emptyRiskyActions(),
-  appliveryTagValues: "",
+  appliveryTagValues: [] as string[],
   segmentIds: [] as string[],
 });
 const isSaving = ref(false);
@@ -74,6 +87,12 @@ const saveError = ref<string | null>(null);
 
 onMounted(async () => {
   if (devicesStore.segments.length === 0) await devicesStore.fetchPickers();
+  // Always refetch (not "only if empty") — this directory is what the tag
+  // suggestions and the raw-collaborator dump below are built from, and it
+  // should reflect Applivery's current state each time the editor opens,
+  // same as RolesSettings.jsx's `useEffect(() => { if (editing...)
+  // fetchDirectory(); })`.
+  await store.fetchCollaboratorsDirectory();
 });
 
 // Runs once at mount (this component only exists in the DOM while active —
@@ -86,7 +105,7 @@ watch(
     form.description = r?.description ?? "";
     form.featureAccess = { ...emptyFeatureAccess(), ...(r?.featureAccess ?? {}) } as Record<FeatureArea, FeatureLevel>;
     form.riskyActions = { ...emptyRiskyActions(), ...(r?.riskyActions ?? {}) } as Record<RiskyAction, boolean>;
-    form.appliveryTagValues = (r?.appliveryTagValues ?? []).join(", ");
+    form.appliveryTagValues = [...(r?.appliveryTagValues ?? [])];
     form.segmentIds = [...(r?.segmentIds ?? [])];
     saveError.value = null;
   },
@@ -108,7 +127,7 @@ async function save() {
       description: form.description,
       featureAccess: form.featureAccess,
       riskyActions: form.riskyActions,
-      appliveryTagValues: form.appliveryTagValues.split(",").map((t) => t.trim()).filter(Boolean),
+      appliveryTagValues: form.appliveryTagValues,
       segmentIds: form.segmentIds,
     };
     if (props.role) await store.updateRole(props.role.id, payload);
@@ -156,12 +175,27 @@ async function save() {
         </div>
       </div>
 
-      <Input
-        v-model="form.appliveryTagValues"
-        label="Applivery collaborator tag/group values (comma-separated)"
-        placeholder="soc-analyst, tier2"
-      />
-      <p class="text-xs text-gray-400 -mt-3">Collaborators whose Applivery tags match one of these values earn this role. A role with none mapped is currently unreachable.</p>
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-200">Applivery collaborator tag / group values</p>
+          <button
+            type="button"
+            class="flex items-center gap-1 text-[10px] font-semibold text-brand-600 dark:text-brand-400"
+            @click="store.fetchCollaboratorsDirectory()"
+          >
+            <component :is="ICONS.Refresh" :size="11" weight="Linear" :class="store.isLoadingCollaborators ? 'animate-spin' : ''" />
+            {{ store.isLoadingCollaborators ? "Loading…" : "Refresh from Applivery" }}
+          </button>
+        </div>
+        <p class="text-[10px] mb-2 leading-relaxed text-gray-400">
+          A collaborator authenticating with any of these tag values (Applivery's own Collaborator "tags" field) is granted this Role.
+          Suggestions below combine the org-wide tag list with anything seen on individual collaborators. Don't see the tag you need
+          yet? Go to Settings &gt; Roles &gt; Collaborators &amp; Tags to assign it directly.
+        </p>
+        <p v-if="store.error" class="text-[10px] mb-2 text-red-500">{{ store.error }}</p>
+        <TagValuesEditor v-model="form.appliveryTagValues" :suggestions="allTagSuggestions" />
+        <p class="text-xs text-gray-400 mt-2">A role with no tag values mapped is currently unreachable.</p>
+      </div>
 
       <div v-if="devicesStore.segments.length > 0">
         <p class="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Segments (optional)</p>
@@ -176,6 +210,24 @@ async function save() {
             <input type="checkbox" class="hidden" :checked="form.segmentIds.includes(seg.id)" @change="toggleSegment(seg.id)" />
             {{ seg.name }}
           </label>
+        </div>
+      </div>
+
+      <div v-if="store.collaborators.length > 0">
+        <button
+          type="button"
+          class="flex items-center gap-1 text-[10px] font-semibold text-gray-400"
+          @click="showRawCollaborators = !showRawCollaborators"
+        >
+          <component :is="showRawCollaborators ? ICONS.AltArrowUp : ICONS.AltArrowDown" :size="12" weight="Linear" />
+          Raw collaborator data ({{ store.collaborators.length }})
+        </button>
+        <div v-if="showRawCollaborators" class="mt-2 max-h-56 overflow-y-auto rounded-lg p-2 space-y-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-black/20">
+          <div v-for="(c, i) in store.collaborators" :key="(c._id as string) || (c.id as string) || i" class="text-[10px]">
+            <p class="font-semibold text-gray-900 dark:text-white">{{ c.email || (c as any).user?.email || "unknown" }} — role: {{ c.role_normalized }}</p>
+            <p class="text-gray-400">tag candidates found: {{ (c.tagCandidates ?? []).length ? c.tagCandidates!.join(", ") : "none" }}</p>
+            <pre class="mt-1 p-1.5 rounded overflow-x-auto max-h-[90px] bg-white dark:bg-gray-800 text-gray-400">{{ JSON.stringify(c, null, 1) }}</pre>
+          </div>
         </div>
       </div>
 
