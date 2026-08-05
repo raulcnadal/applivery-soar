@@ -1,6 +1,7 @@
 import { env } from "../../config/env";
 import { appliveryClient } from "../../services/appliveryClient";
 import { extractItems } from "../../utils/extractItems";
+import { HttpError } from "../../utils/httpError";
 import type { ResolvedAccess, SoarRoleRecord } from "../../middleware/rbac.middleware";
 
 /**
@@ -69,6 +70,22 @@ export async function findSelfCollaborator(
   email: string,
 ): Promise<Record<string, any> | null> {
   const res = await appliveryClient.get(`${orgBase}/collaborators/`, { headers, params: { limit: 500 } });
+  // A 401/403 here means the *forwarded Applivery bearer token* is
+  // invalid/expired -- not that this account genuinely has no Collaborator
+  // record. appliveryClient deliberately never throws on non-2xx (callers
+  // inspect .status themselves, see its class doc), so without this check
+  // an expired-but-otherwise-valid session silently fell through to the
+  // same `return null` as a real "no such collaborator" case below, which
+  // resolveSoarAccess then reported as allowed:false with a misleading
+  // "No Applivery Collaborator record found" reason -- a 200 OK from our
+  // own /auth/resolve-access, not an error the frontend could recognize as
+  // "your session expired, please sign in again" (router/index.ts and
+  // http.ts's response interceptor both only react to a real 401). Throwing
+  // here instead makes that distinction explicit and correctly surfaces as
+  // an actual 401 from /auth/resolve-access.
+  if (res.status === 401 || res.status === 403) {
+    throw new HttpError(401, "Applivery session expired — please sign in again.");
+  }
   if (res.status !== 200) return null;
   const items = extractItems(res.data);
   const emailLower = (email || "").toLowerCase();
