@@ -6,12 +6,20 @@
 # frontend/dist goes unused since soar-frontend's Nginx is what actually
 # serves the SPA in this topology.
 #
-# Both services pull pre-built multi-arch images from Docker Hub
-# (docker-publish.yml publishes both on every push to main) — no local
-# build or repo checkout required to deploy. If you're working on the
-# source and want to build locally instead, layer
-# docker-compose.build.yml on top: `docker compose -f docker-compose.yml
-# -f docker-compose.build.yml up --build`.
+# Both services pull pre-built multi-arch images from GitHub Container
+# Registry (ghcr.io), attached to this repo (docker-publish.yml publishes
+# both on every push to main) — no local build or repo checkout required to
+# deploy. If you're working on the source and want to build locally instead,
+# layer docker-compose.build.yml on top: `docker compose -f
+# docker-compose.yml -f docker-compose.build.yml up --build`.
+#
+# These packages are private (inherited from the repo's own visibility), so
+# the deployment host needs a one-time login before its first pull:
+#   echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
+# where GHCR_PAT is a GitHub personal access token with at least
+# `read:packages` scope. Docker caches that login in the host's own
+# ~/.docker/config.json, so this is a one-time setup step per host, not
+# something needed on every `docker compose pull`.
 #
 # soar-redis is optional-but-provisioned: only matters if soar-backend is
 # scaled to more than one replica (`docker compose up --scale soar-backend=3`),
@@ -24,8 +32,8 @@
 
 services:
   soar-frontend:
-    image: raulcnadal/applivery-soar-frontend:latest
-    # Forces a manifest re-check against Docker Hub on every deploy/redeploy
+    image: ghcr.io/raulcnadal/applivery-soar-frontend:latest
+    # Forces a manifest re-check against GHCR on every deploy/redeploy
     # (Portainer's "re-pull image" option, `docker compose up --pull always`,
     # etc.), instead of silently reusing whatever digest is already cached
     # locally under the `:latest` tag. Without this, some orchestrators only
@@ -40,7 +48,7 @@ services:
       - soar-backend
 
   soar-backend:
-    image: raulcnadal/applivery-soar:latest
+    image: ghcr.io/raulcnadal/applivery-soar:latest
     pull_policy: always
     container_name: soar-backend
     restart: unless-stopped

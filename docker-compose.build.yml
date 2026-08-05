@@ -1,5 +1,6 @@
 # Override for docker-compose.yml — builds soar-frontend and soar-backend
-# from local source instead of pulling the published Docker Hub images.
+# from local source instead of pulling the published GHCR (GitHub Container
+# Registry) images.
 # Use this if you've made changes to frontend/ or backend/ and want to test
 # them before they're published (docker-publish.yml only builds/pushes on a
 # push to main), or if you're running a fork with local modifications.
