@@ -37,6 +37,17 @@ export interface CompliancePolicy {
   autoRunDestructiveAck: boolean;
   escalatedWorkflowId?: string | null;
   escalatedWorkflowMinRiskTier: string;
+  // Violation alerting — see backend/prisma/schema.prisma's
+  // CompliancePolicy.alertOnViolation doc comment. A rolled-up (not
+  // per-device) webhook/email alert per evaluation pass, independent of
+  // autoRun/workflow.
+  alertOnViolation: boolean;
+  alertViaWebhook: boolean;
+  alertViaEmail: boolean;
+  alertWebhookUrl?: string | null;
+  alertEmailRecipients?: string | null;
+  lastAlertSentAt?: string | null;
+  lastAlertError?: string | null;
   lastEvaluatedAt?: string | null;
   autoRunTripped: boolean;
   autoRunTrippedReason?: string | null;

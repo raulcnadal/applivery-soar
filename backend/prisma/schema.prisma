@@ -146,6 +146,23 @@ model CompliancePolicy {
   autoRunDestructiveAck         Boolean   @default(false)
   escalatedWorkflowId          String?
   escalatedWorkflowMinRiskTier  String    @default("high")
+  // Violation alerting — a rolled-up (not per-device) notification fired
+  // once per evaluation pass when this policy finds at least one NEW
+  // violation, independent of autoRun/workflow config. alertWebhookUrl
+  // overrides Settings > General's single global "Notifications Webhook
+  // URL" when set (falls back to it when null/blank); alertEmailRecipients
+  // is this policy's own list, independent of Settings > SMTP's global
+  // "Alert Email Recipients" (used for SLA breach/System Health instead).
+  // lastAlertSentAt/lastAlertError mirror Integration.lastFiredAt/lastError
+  // so a misconfigured webhook/recipient list is visible, not a silent
+  // no-op — see compliance.service.ts's firePolicyViolationAlert.
+  alertOnViolation             Boolean   @default(false)
+  alertViaWebhook              Boolean   @default(false)
+  alertViaEmail                Boolean   @default(false)
+  alertWebhookUrl              String?
+  alertEmailRecipients         String?
+  lastAlertSentAt              DateTime?
+  lastAlertError               String?
   // Scheduler/circuit-breaker state — not part of the save payload, managed
   // by the evaluation engine itself (see CompliancePolicyPayload comments
   // in compliance.schemas.ts). An explicit save resets the trip, same as

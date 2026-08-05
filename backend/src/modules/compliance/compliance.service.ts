@@ -13,6 +13,8 @@ import { getWorkflowRun, launchWorkflowRun, workflowHasDestructiveStep } from ".
 import type { WorkflowDeviceRefPayload } from "../workflows/workflows.schemas";
 import type { CompliancePolicyPayload } from "./compliance.schemas";
 import { addCaseTimelineEntry, dispatchAndAttachCaseEvent, markCaseRecovered, upsertCaseForViolation } from "../cases/cases.service";
+import { sendChatText } from "../settings/notificationsWebhook.service";
+import { sendAlertEmail } from "../../services/alertEmail";
 
 /**
  * CompliancePolicy CRUD + the shared evaluation engine — port of
@@ -99,6 +101,11 @@ export async function createCompliancePolicy(workspaceSlug: string, payload: Com
       autoRunDestructiveAck: payload.autoRunDestructiveAck,
       escalatedWorkflowId: payload.escalatedWorkflowId ?? null,
       escalatedWorkflowMinRiskTier: payload.escalatedWorkflowMinRiskTier,
+      alertOnViolation: payload.alertOnViolation,
+      alertViaWebhook: payload.alertViaWebhook,
+      alertViaEmail: payload.alertViaEmail,
+      alertWebhookUrl: payload.alertWebhookUrl?.trim() || null,
+      alertEmailRecipients: payload.alertEmailRecipients?.trim() || null,
     },
   });
   await recordAuditEvent(workspaceSlug, {
@@ -143,6 +150,11 @@ export async function updateCompliancePolicy(workspaceSlug: string, policyId: st
       autoRunDestructiveAck: payload.autoRunDestructiveAck,
       escalatedWorkflowId: payload.escalatedWorkflowId ?? null,
       escalatedWorkflowMinRiskTier: payload.escalatedWorkflowMinRiskTier,
+      alertOnViolation: payload.alertOnViolation,
+      alertViaWebhook: payload.alertViaWebhook,
+      alertViaEmail: payload.alertViaEmail,
+      alertWebhookUrl: payload.alertWebhookUrl?.trim() || null,
+      alertEmailRecipients: payload.alertEmailRecipients?.trim() || null,
       // Explicit save = the human review/reset step for the autoRun circuit
       // breaker (main.py:10921-10929) — clears the trip so autoRun resumes
       // on the next pass; it re-trips on its own if the same failure repeats.
@@ -310,6 +322,73 @@ interface MarkerAction {
 }
 
 /**
+ * Fires this policy's own violation alert — a single rolled-up
+ * webhook/email message per evaluation pass (never per-device: a policy
+ * matching dozens of devices in one pass still only sends one message),
+ * only when `alertOnViolation` is on and this pass actually found at least
+ * one NEW violation for it. Independent of autoRun/workflow entirely — a
+ * policy with no workflow linked at all can still alert.
+ *
+ * alertWebhookUrl is this policy's own override; falls back to Settings >
+ * General's single global "Notifications Webhook URL" (WorkspaceState's
+ * "global" row — see services/alertEmail.ts's doc comment for why that's
+ * always "global", never the real workspaceSlug) when left blank.
+ * alertEmailRecipients is this policy's own list, deliberately NOT the
+ * global "Alert Email Recipients" field (that one's reserved for SLA
+ * breach/System Health per its own Settings > SMTP help text) — passed as
+ * sendAlertEmail's recipientsOverride.
+ *
+ * Best-effort per channel (one channel failing doesn't block the other)
+ * but NOT silent — lastAlertSentAt/lastAlertError are updated so a
+ * misconfigured URL/recipient list is visible on the policy itself,
+ * mirroring Integration.lastFiredAt/lastError.
+ */
+async function firePolicyViolationAlert(
+  workspaceSlug: string,
+  policy: { id: string; name: string; alertOnViolation: boolean; alertViaWebhook: boolean; alertViaEmail: boolean; alertWebhookUrl: string | null; alertEmailRecipients: string | null },
+  newViolationCount: number,
+  deviceCount: number,
+): Promise<void> {
+  if (!policy.alertOnViolation || newViolationCount < 1) return;
+  if (!policy.alertViaWebhook && !policy.alertViaEmail) return;
+
+  const subject = `[Compliance] "${policy.name}" — ${newViolationCount} new violation${newViolationCount === 1 ? "" : "s"}`;
+  const text = `${newViolationCount} device${newViolationCount === 1 ? "" : "s"} newly violated Compliance Policy "${policy.name}" this evaluation pass (${deviceCount} device${deviceCount === 1 ? "" : "s"} in scope). Review in Compliance > Violations.`;
+
+  const errors: string[] = [];
+
+  if (policy.alertViaWebhook) {
+    try {
+      const url = policy.alertWebhookUrl?.trim()
+        || (await prisma.workspaceState.findUnique({ where: { workspaceSlug: "global" } }))?.webhookUrl?.trim()
+        || null;
+      if (!url) throw new Error("no webhook URL configured (set one on this policy or in Settings > General)");
+      await sendChatText(url, text);
+    } catch (e) {
+      errors.push(`webhook: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  if (policy.alertViaEmail) {
+    if (!policy.alertEmailRecipients?.trim()) {
+      errors.push("email: no recipients configured on this policy");
+    } else {
+      // sendAlertEmail is itself best-effort (never throws) and only
+      // no-ops silently when SMTP host/user aren't configured at all —
+      // that specific case is common/expected (SMTP is optional) and not
+      // worth surfacing as a per-policy error, unlike a genuinely broken
+      // per-policy recipients list or webhook URL above.
+      await sendAlertEmail(workspaceSlug, subject, text, policy.alertEmailRecipients);
+    }
+  }
+
+  await prisma.compliancePolicy.update({
+    where: { id: policy.id },
+    data: { lastAlertSentAt: new Date(), lastAlertError: errors.length ? errors.join("; ").slice(0, 500) : null },
+  }).catch((e: unknown) => console.warn(`[Compliance] Failed to record alert status for policy ${policy.id}: ${e}`));
+}
+
+/**
  * Shared by the manual "Evaluate now" endpoint (policyIds=null -> every
  * enabled policy) and, once built, the scheduler loop. Port of
  * `_run_compliance_evaluation` (main.py:11025).
@@ -372,6 +451,10 @@ export async function runComplianceEvaluation(
   // real HTTP calls per device inline would defeat the point of batching.
   // Port of `case_notify_events` (main.py:11073 and its dispatch loop).
   const caseNotifyEvents: Array<{ caseId: string; eventType: "created" | "reopened" | "closed" }> = [];
+  // Same deferred-dispatch reasoning as caseNotifyEvents — one alert per
+  // policy per pass, fired after the whole pass finishes, not inline per
+  // device.
+  const policyAlertEvents: Array<{ policy: (typeof policies)[number]; newViolations: number; deviceCount: number }> = [];
   let policiesChanged = false;
 
   for (const policy of policies) {
@@ -575,6 +658,8 @@ export async function runComplianceEvaluation(
           ? `"${policy.name}" evaluated — clean (${policyRecovered} device(s) recovered) among ${scopedDevices.length} device(s)`
           : `"${policy.name}" evaluated — no violations found among ${scopedDevices.length} device(s)`,
     });
+
+    if (policyNewViolations > 0) policyAlertEvents.push({ policy, newViolations: policyNewViolations, deviceCount: scopedDevices.length });
   }
 
   await saveComplianceState(workspaceSlug, state);
@@ -594,6 +679,14 @@ export async function runComplianceEvaluation(
       await dispatchAndAttachCaseEvent(workspaceSlug, caseId, eventType);
     } catch (e) {
       console.error(`[Compliance] Case integration dispatch failed for case ${caseId}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  for (const { policy, newViolations, deviceCount } of policyAlertEvents) {
+    try {
+      await firePolicyViolationAlert(workspaceSlug, policy, newViolations, deviceCount);
+    } catch (e) {
+      console.error(`[Compliance] Violation alert failed for policy ${policy.id}: ${e instanceof Error ? e.message : e}`);
     }
   }
 

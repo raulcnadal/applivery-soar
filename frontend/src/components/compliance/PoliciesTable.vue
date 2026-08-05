@@ -161,6 +161,14 @@ async function remove(p: CompliancePolicy) {
         >
           <component :is="ICONS.Folder" :size="10" weight="Linear" /> {{ (p.openCaseOnViolation ?? true) ? (p.autoResolveCaseOnRecovery ? "Cases: auto-resolve" : "Cases: on") : "Cases: off" }}
         </button>
+        <span
+          v-if="p.alertOnViolation"
+          :title="p.lastAlertError ? `Last alert attempt had a problem: ${p.lastAlertError}` : 'Sends a rolled-up webhook/email alert when this policy is violated'"
+          class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
+          :style="{ backgroundColor: p.lastAlertError ? `${WARNING}15` : `${PRIMARY_BLUE}12`, color: p.lastAlertError ? WARNING : PRIMARY_BLUE }"
+        >
+          <component :is="p.lastAlertError ? ICONS.DangerTriangle : ICONS.Bell" :size="10" weight="Linear" /> {{ p.lastAlertError ? "Alerts: error" : "Alerts: on" }}
+        </span>
       </div>
 
       <div class="flex items-center gap-2">

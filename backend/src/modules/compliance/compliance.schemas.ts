@@ -42,6 +42,14 @@ export const compliancePolicySchema = z.object({
   autoRunDestructiveAck: z.boolean().default(false),
   escalatedWorkflowId: z.string().nullable().optional(),
   escalatedWorkflowMinRiskTier: z.enum(["low", "medium", "high", "critical"]).default("high"),
+  // See CompliancePolicy.alertOnViolation in schema.prisma for the full
+  // rationale — a rolled-up per-pass webhook/email alert, independent of
+  // autoRun/workflow config.
+  alertOnViolation: z.boolean().default(false),
+  alertViaWebhook: z.boolean().default(false),
+  alertViaEmail: z.boolean().default(false),
+  alertWebhookUrl: z.string().nullable().optional(),
+  alertEmailRecipients: z.string().nullable().optional(),
 });
 export type CompliancePolicyPayload = z.infer<typeof compliancePolicySchema>;
 

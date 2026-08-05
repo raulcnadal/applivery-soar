@@ -116,7 +116,16 @@ const form = reactive({
   segmentId: "0",
   evalUnit: "hours" as "minutes" | "hours",
   evalAmount: "" as string | number,
+  alertOnViolation: false,
+  alertViaWebhook: false,
+  alertViaEmail: false,
+  alertWebhookUrl: "",
+  alertEmailRecipients: "",
 });
+
+const isTestingAlertWebhook = ref(false);
+const testAlertWebhookError = ref<string | null>(null);
+const testAlertWebhookOk = ref(false);
 
 const templateFramework = ref<string | null>(null);
 const templateControlRef = ref<string | null>(null);
@@ -183,10 +192,34 @@ function resetForm() {
   form.evalAmount = initialMinutes == null ? "" : initialMinutes % 60 === 0 ? initialMinutes / 60 : initialMinutes;
   templateFramework.value = p?.framework ?? props.prefillFramework ?? null;
   templateControlRef.value = p?.controlRef ?? props.prefillControlRef ?? null;
+  form.alertOnViolation = p?.alertOnViolation ?? false;
+  form.alertViaWebhook = p?.alertViaWebhook ?? false;
+  form.alertViaEmail = p?.alertViaEmail ?? false;
+  form.alertWebhookUrl = p?.alertWebhookUrl ?? "";
+  form.alertEmailRecipients = p?.alertEmailRecipients ?? "";
+  testAlertWebhookError.value = null;
+  testAlertWebhookOk.value = false;
   matchedDevices.value = null;
   matchedDevicesError.value = null;
   matchedDevicesDiagnostics.value = null;
   saveError.value = null;
+}
+
+async function testAlertWebhook() {
+  const url = form.alertWebhookUrl.trim();
+  if (!url) return;
+  isTestingAlertWebhook.value = true;
+  testAlertWebhookError.value = null;
+  testAlertWebhookOk.value = false;
+  try {
+    const { api } = await import("../../api/http");
+    await api.post("/settings/test-webhook", { webhookUrl: url });
+    testAlertWebhookOk.value = true;
+  } catch (err: any) {
+    testAlertWebhookError.value = err?.response?.data?.detail || "Failed to reach the webhook.";
+  } finally {
+    isTestingAlertWebhook.value = false;
+  }
 }
 
 watch(
@@ -405,6 +438,11 @@ async function save() {
       framework: templateFramework.value,
       controlRef: templateControlRef.value,
       severity: (props.policy?.severity ?? props.prefillSeverity ?? "medium") as any,
+      alertOnViolation: form.alertOnViolation,
+      alertViaWebhook: form.alertOnViolation && form.alertViaWebhook,
+      alertViaEmail: form.alertOnViolation && form.alertViaEmail,
+      alertWebhookUrl: form.alertWebhookUrl.trim() || null,
+      alertEmailRecipients: form.alertEmailRecipients.trim() || null,
     };
     if (props.policy) {
       await store.updatePolicy(props.policy.id, payload);
@@ -672,6 +710,47 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
           <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700" :class="!form.openCaseOnViolation ? 'opacity-50' : ''">
             <input v-model="form.autoResolveCaseOnRecovery" type="checkbox" :disabled="!form.openCaseOnViolation" /> <span class="text-gray-900 dark:text-white">Auto-resolve the Case once the device recovers</span>
           </label>
+        </div>
+      </div>
+
+      <div class="mt-5">
+        <p class="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5 text-gray-400">
+          <component :is="ICONS.Bell" :size="12" weight="Linear" /> Alerts
+        </p>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700">
+          <input v-model="form.alertOnViolation" type="checkbox" /> <span class="text-gray-900 dark:text-white">Send an alert when this policy is violated</span>
+        </label>
+        <p class="text-[11px] mt-1.5 leading-relaxed text-gray-400">
+          One message per evaluation pass — e.g. "3 new violations" — not one per device, and independent of the workflow/autoRun settings above.
+        </p>
+
+        <div v-if="form.alertOnViolation" class="mt-3 space-y-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+          <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
+            <input v-model="form.alertViaWebhook" type="checkbox" /> Webhook
+          </label>
+          <div v-if="form.alertViaWebhook" class="pl-6 space-y-1.5">
+            <div class="flex items-center gap-2">
+              <input v-model="form.alertWebhookUrl" placeholder="Leave blank to use Settings > General's Notifications Webhook URL" class="flex-1 px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" />
+              <button type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40" :disabled="!form.alertWebhookUrl.trim() || isTestingAlertWebhook" @click="testAlertWebhook">
+                {{ isTestingAlertWebhook ? "Testing…" : "Test" }}
+              </button>
+            </div>
+            <p v-if="testAlertWebhookError" class="text-[11px]" :style="{ color: DANGER }">{{ testAlertWebhookError }}</p>
+            <p v-if="testAlertWebhookOk" class="text-[11px]" style="color: #22C55E">Test message sent.</p>
+            <p class="text-[11px] leading-relaxed text-gray-400">Override just for this policy, or leave blank to reuse the deployment's single global webhook.</p>
+          </div>
+
+          <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
+            <input v-model="form.alertViaEmail" type="checkbox" /> Email
+          </label>
+          <div v-if="form.alertViaEmail" class="pl-6 space-y-1.5">
+            <input v-model="form.alertEmailRecipients" placeholder="security@yourorg.com, ops@yourorg.com" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" />
+            <p class="text-[11px] leading-relaxed text-gray-400">This policy's own recipient list — separate from Settings &gt; SMTP's "Alert Email Recipients" (used for SLA breach/System Health instead). Requires SMTP to be configured in Settings.</p>
+          </div>
+
+          <p v-if="policy?.lastAlertError" class="text-[11px] flex items-start gap-1.5" :style="{ color: WARNING }">
+            <component :is="ICONS.DangerTriangle" :size="12" weight="Linear" class="shrink-0 mt-0.5" /> Last alert attempt had a problem: {{ policy.lastAlertError }}
+          </p>
         </div>
       </div>
 
