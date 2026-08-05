@@ -78,6 +78,31 @@ export const useDashboardStateStore = defineStore("dashboardState", () => {
     try {
       const { api } = await import("../api/http");
       await api.post("/state", partial, GLOBAL_HEADERS);
+      // Mirror the just-saved fields back onto this store's own refs. Every
+      // *SettingsForm/*Panel component calling this generic saveState()
+      // directly (General, SMTP, Audit Log Retention, and any future one)
+      // was relying on `isLoaded` flipping back to false so its own
+      // `onMounted`'s `if (!isLoaded) fetchState()` guard would re-fetch —
+      // but isLoaded is Pinia store state, which outlives a Settings modal
+      // close/reopen or a tab switch for the rest of the session, so that
+      // guard never re-ran after the very first load. A save that genuinely
+      // persisted server-side (POST /api/state above succeeded) was then
+      // never reflected back into dashboard/themeMode/webhookUrl/
+      // smtpConfig/etc., so reopening that same panel later re-populated
+      // its form from stale pre-save data — indistinguishable, from the
+      // admin's side, from "the Save button doesn't actually save
+      // anything." saveDashboard/saveScheduledReports/saveCustomReportTemplate
+      // below already did their own version of this per-field; this
+      // generalizes it to every key any caller sends through here.
+      if (Object.prototype.hasOwnProperty.call(partial, "dashboard") && partial.dashboard) dashboard.value = partial.dashboard;
+      if (Object.prototype.hasOwnProperty.call(partial, "themeMode")) themeMode.value = partial.themeMode ?? null;
+      if (Object.prototype.hasOwnProperty.call(partial, "webhookUrl")) webhookUrl.value = partial.webhookUrl ?? "";
+      if (Object.prototype.hasOwnProperty.call(partial, "smtpConfig")) smtpConfig.value = partial.smtpConfig ?? {};
+      if (Object.prototype.hasOwnProperty.call(partial, "scheduledReports")) scheduledReports.value = partial.scheduledReports ?? [];
+      if (Object.prototype.hasOwnProperty.call(partial, "timezone")) timezone.value = partial.timezone ?? "UTC";
+      if (Object.prototype.hasOwnProperty.call(partial, "customReportTemplate")) customReportTemplate.value = partial.customReportTemplate ?? "";
+      if (Object.prototype.hasOwnProperty.call(partial, "auditLogRetentionDays")) auditLogRetentionDays.value = partial.auditLogRetentionDays ?? null;
+      if (Object.prototype.hasOwnProperty.call(partial, "sessionTimeoutMinutes")) sessionTimeoutMinutes.value = partial.sessionTimeoutMinutes ?? null;
     } catch (err: any) {
       error.value = err?.response?.data?.detail || "Failed to save dashboard state.";
       throw err;
