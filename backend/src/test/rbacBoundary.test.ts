@@ -107,6 +107,7 @@ const CASES: Case[] = [
   // ── settings.controller.ts — newly gated (deep audit) ──
   { label: "settings: GET /api/settings/automation-credential", method: "get", path: "/api/settings/automation-credential", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
   { label: "settings: POST /api/settings/automation-credential", method: "post", path: "/api/settings/automation-credential", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
+  { label: "settings: POST /api/settings/test-webhook", method: "post", path: "/api/settings/test-webhook", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
 
   // ── scriptRepos.controller.ts — newly gated (deep audit) ──
   { label: "scriptRepos: GET /api/script-repos", method: "get", path: "/api/script-repos", area: "workflows", level: "read", insufficientAccess: roleWithAccess({ workflows: "none" }) },

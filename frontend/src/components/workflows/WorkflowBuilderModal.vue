@@ -249,7 +249,7 @@ async function save() {
           <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ workflow ? "Edit workflow" : "Create workflow" }}</h3>
           <p class="text-xs mt-0.5 text-gray-400">{{ screen === "details" ? "Step 1 of 2 — Details" : "Step 2 of 2 — Steps & Recovery" }}</p>
         </div>
-        <button class="p-1 rounded-lg text-gray-400 hover:opacity-70" @click="emit('close')">
+        <button class="p-1 rounded-lg text-gray-400 hover:opacity-70 outline-none focus:ring-2 focus:ring-brand-500" @click="emit('close')">
           <component :is="ICONS.CloseCircle" :size="16" weight="Linear" />
         </button>
       </div>
@@ -269,7 +269,7 @@ async function save() {
               <button
                 v-for="p in PLATFORM_OPTIONS"
                 :key="p.value"
-                class="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-500"
                 :class="form.targetPlatform !== p.value ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
                 :style="form.targetPlatform === p.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
                 @click="pickPlatform(p.value)"
@@ -294,7 +294,7 @@ async function save() {
                 <button
                   v-for="m in modelOptions"
                   :key="m.value"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                  class="px-3 py-1.5 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-500"
                   :class="form.targetDeploymentModel !== m.value ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
                   :style="form.targetDeploymentModel === m.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
                   @click="pickDeploymentModel(m.value)"
@@ -315,12 +315,12 @@ async function save() {
               <component :is="ICONS.CheckCircle" :size="14" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
               Target: {{ form.targetPlatform ? PLATFORM_LABELS[form.targetPlatform] : "Common (no platform)" }}<template v-if="form.targetDeploymentModel"> · {{ modelLabel }}</template>
             </div>
-            <button class="text-xs font-medium" :style="{ color: PRIMARY_BLUE }" @click="screen = 'details'">Change</button>
+            <button class="text-xs font-medium rounded outline-none focus:ring-2 focus:ring-brand-500" :style="{ color: PRIMARY_BLUE }" @click="screen = 'details'">Change</button>
           </div>
 
           <div class="flex items-center justify-between mb-2">
             <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Steps</p>
-            <button class="inline-flex items-center gap-1 text-xs font-medium" :style="{ color: PRIMARY_BLUE }" @click="addStep">
+            <button class="inline-flex items-center gap-1 text-xs font-medium rounded outline-none focus:ring-2 focus:ring-brand-500" :style="{ color: PRIMARY_BLUE }" @click="addStep">
               <component :is="ICONS.AddSquare" :size="12" weight="Linear" /> Add step
             </button>
           </div>
@@ -377,7 +377,7 @@ async function save() {
 
               <div class="flex items-center justify-between mb-2">
                 <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Recovery steps</p>
-                <button class="inline-flex items-center gap-1 text-xs font-medium" :style="{ color: PRIMARY_BLUE }" @click="addRecoveryStep">
+                <button class="inline-flex items-center gap-1 text-xs font-medium rounded outline-none focus:ring-2 focus:ring-brand-500" :style="{ color: PRIMARY_BLUE }" @click="addRecoveryStep">
                   <component :is="ICONS.AddSquare" :size="12" weight="Linear" /> Add recovery step
                 </button>
               </div>
@@ -402,7 +402,7 @@ async function save() {
       </div>
 
       <div class="flex items-center justify-between px-5 py-4 shrink-0 border-t border-gray-200 dark:border-gray-700">
-        <button v-if="screen === 'steps'" class="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium text-gray-400" @click="screen = 'details'">
+        <button v-if="screen === 'steps'" class="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 outline-none focus:ring-2 focus:ring-brand-500" @click="screen = 'details'">
           <component :is="ICONS.AltArrowLeft" :size="15" weight="Linear" /> Back
         </button>
         <div v-else />

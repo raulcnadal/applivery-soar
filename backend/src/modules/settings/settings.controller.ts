@@ -6,6 +6,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { clearAutomationCredential, getAutomationCredentialStatus, setAutomationCredential } from "./automationCredential.service";
 import { clearDeviceReportSecret, getDeviceReportSecretStatus, rotateDeviceReportSecret } from "./deviceReportSecret.service";
 import { testSmtp } from "./smtp.service";
+import { testNotificationsWebhook } from "./notificationsWebhook.service";
 
 /**
  * Port of main.py:1550-1594 — GET/POST/DELETE /api/settings/automation-credential.
@@ -82,5 +83,17 @@ const smtpTestPayloadSchema = z.object({
 settingsRouter.post("/api/settings/test-smtp", ...manageSettings, asyncHandler(async (req, res) => {
   const payload = smtpTestPayloadSchema.parse(req.body);
   await testSmtp(payload.smtpConfig, payload.testRecipient);
+  res.json({ status: "ok" });
+}));
+
+// ── Notifications Webhook URL test send ──
+
+const webhookTestPayloadSchema = z.object({
+  webhookUrl: z.string().min(1),
+});
+
+settingsRouter.post("/api/settings/test-webhook", ...manageSettings, asyncHandler(async (req, res) => {
+  const payload = webhookTestPayloadSchema.parse(req.body);
+  await testNotificationsWebhook(payload.webhookUrl);
   res.json({ status: "ok" });
 }));

@@ -26,6 +26,10 @@ const isSaving = ref(false);
 const saveError = ref<string | null>(null);
 const saved = ref(false);
 
+const isTesting = ref(false);
+const testError = ref<string | null>(null);
+const testOk = ref(false);
+
 // Port of App.jsx:5848 — a <select> over the full IANA tz database via
 // Intl.supportedValuesOf('timeZone'), not a free-text field (App.jsx has no
 // text input for this).
@@ -61,6 +65,25 @@ async function save() {
     isSaving.value = false;
   }
 }
+
+// Tests whatever URL is currently typed into the form right now — not
+// necessarily saved yet — same "test before you save" convention as SMTP's
+// own "Send Test Email" button.
+async function sendTestWebhook() {
+  if (!form.webhookUrl) return;
+  isTesting.value = true;
+  testError.value = null;
+  testOk.value = false;
+  try {
+    const { api } = await import("../../api/http");
+    await api.post("/settings/test-webhook", { webhookUrl: form.webhookUrl });
+    testOk.value = true;
+  } catch (err: any) {
+    testError.value = err?.response?.data?.detail || "Failed to reach the webhook.";
+  } finally {
+    isTesting.value = false;
+  }
+}
 </script>
 
 <template>
@@ -76,6 +99,11 @@ async function save() {
 
     <Input v-model="form.webhookUrl" label="Notifications Webhook URL" placeholder="https://chat.googleapis.com/v1/spaces/..." />
     <p class="text-xs text-gray-400 -mt-3">Feeds this app's own outbound chat notifications (a Google Chat space webhook). Used by Reporting's "Send to Webhook" delivery option.</p>
+    <div class="-mt-2">
+      <Alert v-if="testError" type="danger">{{ testError }}</Alert>
+      <Alert v-if="testOk" type="success">Test message sent — check the Chat space.</Alert>
+      <Button variant="ghost" size="sm" :loading="isTesting" :disabled="!form.webhookUrl" @click="sendTestWebhook">Test</Button>
+    </div>
 
     <Input
       :model-value="form.timezone"
