@@ -46,10 +46,26 @@ router.beforeEach(async (to) => {
   if (auth.access === null) {
     try {
       await auth.resolveAccess();
-    } catch {
-      // Resolution itself failed (network/auth error) — fail closed, same
-      // as the original's catch block turning this into a denied state
-      // rather than silently letting the user through.
+    } catch (err: any) {
+      // A 401 here means the dashboard session itself is invalid/expired
+      // (e.g. the idle timeout lapsed) — verifyDashboardToken on the
+      // backend rejects the request before resolve-access's handler ever
+      // runs (auth.middleware.ts, "Invalid session: ..."). http.ts's
+      // response interceptor already reacts to that same 401 by clearing
+      // the session and hard-navigating to /login — but that's a real
+      // page navigation, which isn't instant, while this guard's own
+      // fallback below resolves synchronously in-SPA. Without this check,
+      // the synchronous access-denied redirect wins that race and the user
+      // sees "Access not configured" (a screen meant for a *valid* session
+      // with no SOAR Role mapped) instead of the login screen. Routing to
+      // login here directly closes that race rather than relying on timing.
+      if (err?.response?.status === 401) {
+        auth.clearSession();
+        return to.name === "login" ? true : { name: "login" };
+      }
+      // Any other resolution failure (network error, 5xx, etc.) — fail
+      // closed, same as the original's catch block turning this into a
+      // denied state rather than silently letting the user through.
       return to.name === "access-denied" ? true : { name: "access-denied" };
     }
   }
