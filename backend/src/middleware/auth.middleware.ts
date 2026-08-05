@@ -38,7 +38,12 @@ export function verifyDashboardToken(req: Request, res: Response, next: NextFunc
 
   try {
     // 60s clock-skew tolerance, same as the original's {"leeway": 60}.
-    const claims = jwt.verify(cleanToken, env.dashboardSecret, { clockTolerance: 60 }) as DashboardTokenClaims;
+    // `algorithms` pinned to HS256 explicitly — this is the sole gate on
+    // every /api/* route, so it shouldn't rely on jsonwebtoken's default
+    // algorithm handling at all. signDashboardToken below always signs with
+    // HS256, so this rejects nothing legitimate; it just closes off any
+    // ambiguity about what a "valid" token's header is allowed to claim.
+    const claims = jwt.verify(cleanToken, env.dashboardSecret, { clockTolerance: 60, algorithms: ["HS256"] }) as DashboardTokenClaims;
     req.dashboardUser = claims;
     return next();
   } catch (error: any) {

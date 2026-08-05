@@ -2,6 +2,7 @@ import { Queue, Worker, type Job } from "bullmq";
 import { env } from "../config/env";
 import { recordJobHeartbeat } from "../services/systemHealth";
 import { getRedisConnection } from "./connection";
+import { releaseJobSlot, tryAcquireJobSlot } from "../jobs/jobReentrancyGuard";
 
 /**
  * Redis/BullMQ-backed replacement for backgroundJobs.ts's plain
@@ -85,6 +86,20 @@ export function startBackgroundJobWorker(jobs: readonly QueueableJob[]): Worker 
         console.warn(`[BackgroundQueue] Received a job named "${bullJob.name}" with no matching entry in JOBS — skipping.`);
         return;
       }
+      // Same reentrancy guard as the in-process fallback (jobReentrancyGuard.ts)
+      // — this worker's own concurrency is deliberately set to jobs.length so
+      // every distinct job NAME can run side-by-side, which also means two
+      // instances of the SAME repeatable job could be claimed and processed
+      // at once if the first is still in flight (e.g. a slow
+      // compliance_scheduler pass still running when its next 60s repeat
+      // fires). Only guards within this one replica's Worker — a second
+      // replica's Worker isn't covered, so this is a meaningful reduction
+      // but not a cross-replica guarantee; the common case per env.ts's own
+      // docs is a single replica without REDIS_URL at all.
+      if (!tryAcquireJobSlot(job.jobKey)) {
+        console.warn(`[BackgroundQueue] ${job.jobKey} tick skipped — previous run still in progress on this replica.`);
+        return;
+      }
       try {
         await job.run();
         await recordJobHeartbeat(job.jobKey, "ok");
@@ -95,6 +110,8 @@ export function startBackgroundJobWorker(jobs: readonly QueueableJob[]): Worker 
         // the failed set) reflects it too — heartbeat above is what Settings >
         // System Health actually reads, this is just for BullMQ's own state.
         throw e;
+      } finally {
+        releaseJobSlot(job.jobKey);
       }
     },
     { connection: getRedisConnection(), concurrency: jobs.length },

@@ -16,6 +16,7 @@ import { runComplianceSchedulerTick, COMPLIANCE_SCHEDULER_TICK_MS } from "../mod
 import { runInstalledAppsRefresherTick, INSTALLED_APPS_REFRESH_TICK_MS } from "../modules/appLists/installedAppsJobs";
 import { runLocationRefresherTick, LOCATION_REFRESH_TICK_MS } from "../modules/geofencing/locationJobs";
 import { isQueueBackedJobsEnabled, registerRepeatableJobs, startBackgroundJobWorker, stopBackgroundJobQueue } from "../queue/backgroundQueue";
+import { releaseJobSlot, tryAcquireJobSlot } from "./jobReentrancyGuard";
 
 /**
  * Background scheduler for the five GLOBAL intelligence catalogs (no
@@ -106,12 +107,21 @@ const STARTUP_STAGGER_MS = 15_000;
 const timers: NodeJS.Timeout[] = [];
 
 async function runJobOnce(job: CatalogJob): Promise<void> {
+  // See jobReentrancyGuard.ts: skip this tick entirely (no heartbeat write —
+  // nothing ran) if the previous tick of this exact job is still in flight,
+  // rather than letting setInterval start a second overlapping instance.
+  if (!tryAcquireJobSlot(job.jobKey)) {
+    console.warn(`[BackgroundJobs] ${job.jobKey} tick skipped — previous run still in progress.`);
+    return;
+  }
   try {
     await job.run();
     await recordJobHeartbeat(job.jobKey, "ok");
   } catch (e) {
     console.warn(`[BackgroundJobs] ${job.jobKey} failed: ${e}`);
     await recordJobHeartbeat(job.jobKey, "error", String(e).slice(0, 300));
+  } finally {
+    releaseJobSlot(job.jobKey);
   }
 }
 

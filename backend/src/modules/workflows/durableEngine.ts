@@ -186,155 +186,183 @@ export async function runDeviceStepChain(
     return { deviceId, deviceName, steps: [], finalStatus: "success", status: "done" };
   }
 
-  const workspaceState = await prisma.workspaceState.findUnique({ where: { workspaceSlug: slugKey } });
-
-  const recoveryCfg = (workflow.recovery as { enabled?: boolean; compliancePolicyId?: string | null }) ?? {};
-  const recoveryPolicy = recoveryCfg.enabled && recoveryCfg.compliancePolicyId
-    ? await prisma.compliancePolicy.findFirst({ where: { workspaceSlug: slugKey, id: recoveryCfg.compliancePolicyId } })
-    : null;
-  const appLists = recoveryPolicy ? await loadAppListsContext(slugKey) : undefined;
-  const geoConditions = (recoveryPolicy?.conditions as any[]) ?? [];
-  const geo = geoConditions.some((c) => c?.field === "geofenceZoneId")
-    ? { zonesById: await loadGeofenceZonesById(slugKey), locationsByDeviceId: await loadDeviceLocations(slugKey, [deviceId]) }
-    : undefined;
-
-  // A resumed chain (startStepId set) may run long after the launching
-  // human's session token expired, so it switches to the automation
-  // credential. A fresh/live chain still uses the launching request's own
-  // token, same as the in-memory engine always has. Port of main.py:7147-7155.
-  let credsAuthorization = authorization;
-  if (startStepId) {
-    const automationBearer = await getAutomationBearer(slugKey);
-    if (automationBearer) credsAuthorization = automationBearer;
-  }
-
-  const headers = { Authorization: credsAuthorization, "Content-Type": "application/json" };
-  const orgBase = await resolveOrgBase(headers, slugKey);
-
   const log: StepLogEntry[] = [...(existingLog ?? [])];
-  let currentId: string | null | undefined = startStepId || stepOrder[0];
-  let guard = log.length;
 
-  while (currentId && currentId !== "end" && guard < 50) {
-    guard++;
-    const step = stepsById.get(currentId);
-    if (!step) break;
+  // Everything below can throw (a Prisma hiccup, an unexpected null, a
+  // transient network error not already normalized into an { ok: false }
+  // step result by the executeXStep helpers) — previously nothing here
+  // caught that: the exception propagated straight out of
+  // runDeviceStepChain to whichever of the three callers invoked it
+  // (executeWorkflowRunDurable's fire-and-forget launch, resumeOne's timer
+  // resume, or resumeWorkflowPendingStepByToken's fast-path resume), and
+  // all three call sites only console.error the failure — none of them
+  // call upsertRunResult/finalizeRunIfDone for the device that blew up.
+  // Since finalizeRunIfDone only flips a WorkflowRun to "completed" once
+  // every device has a WorkflowRunResult row, a device that never gets one
+  // leaves that run stuck showing "running" in the UI forever, with no
+  // System Health alert (that only covers the JOBS heartbeat, not
+  // individual runs) and no sweeper anywhere to ever revisit it. Wrapping
+  // the chain so an unexpected error still records a "failed" result and
+  // finalizes the run turns a silent, permanent stall into a visible,
+  // completed-with-a-failed-step outcome — matching how every *expected*
+  // failure in this loop already behaves.
+  try {
+    const workspaceState = await prisma.workspaceState.findUnique({ where: { workspaceSlug: slugKey } });
 
-    if (recoveryPolicy) {
-      const deviceFull = await getFullDevice(credsAuthorization, slugKey, deviceId, true);
-      if (deviceFull) {
-        const conditions = (recoveryPolicy.conditions as any[]) ?? [];
-        if (conditions.some((c) => ["requiredAppList", "disallowedAppList"].includes(c?.field))) {
-          (deviceFull as any).installedApps = await readInstalledAppsFromStore(slugKey, deviceId);
+    const recoveryCfg = (workflow.recovery as { enabled?: boolean; compliancePolicyId?: string | null }) ?? {};
+    const recoveryPolicy = recoveryCfg.enabled && recoveryCfg.compliancePolicyId
+      ? await prisma.compliancePolicy.findFirst({ where: { workspaceSlug: slugKey, id: recoveryCfg.compliancePolicyId } })
+      : null;
+    const appLists = recoveryPolicy ? await loadAppListsContext(slugKey) : undefined;
+    const geoConditions = (recoveryPolicy?.conditions as any[]) ?? [];
+    const geo = geoConditions.some((c) => c?.field === "geofenceZoneId")
+      ? { zonesById: await loadGeofenceZonesById(slugKey), locationsByDeviceId: await loadDeviceLocations(slugKey, [deviceId]) }
+      : undefined;
+
+    // A resumed chain (startStepId set) may run long after the launching
+    // human's session token expired, so it switches to the automation
+    // credential. A fresh/live chain still uses the launching request's own
+    // token, same as the in-memory engine always has. Port of main.py:7147-7155.
+    let credsAuthorization = authorization;
+    if (startStepId) {
+      const automationBearer = await getAutomationBearer(slugKey);
+      if (automationBearer) credsAuthorization = automationBearer;
+    }
+
+    const headers = { Authorization: credsAuthorization, "Content-Type": "application/json" };
+    const orgBase = await resolveOrgBase(headers, slugKey);
+
+    let currentId: string | null | undefined = startStepId || stepOrder[0];
+    let guard = log.length;
+
+    while (currentId && currentId !== "end" && guard < 50) {
+      guard++;
+      const step = stepsById.get(currentId);
+      if (!step) break;
+
+      if (recoveryPolicy) {
+        const deviceFull = await getFullDevice(credsAuthorization, slugKey, deviceId, true);
+        if (deviceFull) {
+          const conditions = (recoveryPolicy.conditions as any[]) ?? [];
+          if (conditions.some((c) => ["requiredAppList", "disallowedAppList"].includes(c?.field))) {
+            (deviceFull as any).installedApps = await readInstalledAppsFromStore(slugKey, deviceId);
+          }
+          const stillViolating = policyViolated(deviceFull as any, { conditions, conditionLogic: recoveryPolicy.conditionLogic }, appLists, geo).length > 0;
+          if (!stillViolating) {
+            const recoveryLog = await runRecoverySteps(headers, orgBase, credsAuthorization, slugKey, device, workflow as any, log, workspaceState as any);
+            log.push(...recoveryLog);
+            currentId = "end";
+            break;
+          }
         }
-        const stillViolating = policyViolated(deviceFull as any, { conditions, conditionLogic: recoveryPolicy.conditionLogic }, appLists, geo).length > 0;
-        if (!stillViolating) {
-          const recoveryLog = await runRecoverySteps(headers, orgBase, credsAuthorization, slugKey, device, workflow as any, log, workspaceState as any);
-          log.push(...recoveryLog);
-          currentId = "end";
-          break;
+      }
+
+      const context = { device };
+      const stepType = step.type;
+      const cfg = step.config ?? {};
+
+      if (stepType === "wait") {
+        const amountRaw = cfg.amount;
+        const unit = cfg.unit || "minutes";
+        const amount = typeof amountRaw === "number" ? amountRaw : Number(amountRaw);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          log.push({ stepId: step.id, name: step.name, type: stepType, ok: false, detail: "Invalid wait duration" });
+          currentId = step.onFailure || "end";
+          continue;
         }
-      }
-    }
-
-    const context = { device };
-    const stepType = step.type;
-    const cfg = step.config ?? {};
-
-    if (stepType === "wait") {
-      const amountRaw = cfg.amount;
-      const unit = cfg.unit || "minutes";
-      const amount = typeof amountRaw === "number" ? amountRaw : Number(amountRaw);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        log.push({ stepId: step.id, name: step.name, type: stepType, ok: false, detail: "Invalid wait duration" });
-        currentId = step.onFailure || "end";
-        continue;
-      }
-      const secondsPerUnit: Record<string, number> = { minutes: 60, hours: 3600, days: 86400 };
-      const seconds = amount * (secondsPerUnit[unit] ?? 60);
-      const resumeAt = new Date(Date.now() + seconds * 1000);
-      const idx = stepOrder.indexOf(currentId);
-      const nextStepId = step.onSuccess ?? (idx + 1 < stepOrder.length ? stepOrder[idx + 1] : "end");
-      log.push({ stepId: step.id, name: step.name, type: stepType, ok: true, detail: `Waiting ${amount} ${unit} — resumes at ${resumeAt.toISOString()}` });
-
-      await persistPendingStep(runId, device, workflow.id, slugKey, nextStepId, log, resumeAt);
-      await upsertRunResult(runId, deviceId, deviceName, log, "waiting", null);
-      return { deviceId, deviceName, steps: log, finalStatus: null, status: "waiting" };
-    }
-
-    if (stepType === "run_script_wait") {
-      const libraryId = cfg.libraryId;
-      let timeoutMinutes = Number(cfg.timeoutMinutes);
-      if (!timeoutMinutes || timeoutMinutes <= 0) timeoutMinutes = 30;
-
-      const idx = stepOrder.indexOf(currentId);
-      const nextStepId = step.onSuccess ?? (idx + 1 < stepOrder.length ? stepOrder[idx + 1] : "end");
-      const failureStepId = step.onFailure || "end";
-
-      if (!libraryId) {
-        log.push({ stepId: step.id, name: step.name, type: stepType, ok: false, detail: "No script selected from the Library" });
-        currentId = failureStepId;
-        continue;
-      }
-
-      const pendingToken = crypto.randomUUID();
-      const workflowResume: WorkflowResumeRef = { pendingToken, slugKey };
-      const { ok, detail } = await executeMdmAction(
-        headers, orgBase, slugKey, device.platform, device.platformDeviceId, "runScript",
-        workflow.targetDeploymentModel, { libraryId }, deviceId, context, workflowResume,
-      );
-      if (!ok) {
-        log.push({ stepId: step.id, name: step.name, type: stepType, ok: false, detail });
-        currentId = failureStepId;
-        continue;
-      }
-
-      const timeoutAt = new Date(Date.now() + timeoutMinutes * 60_000);
-      log.push({ stepId: step.id, name: step.name, type: stepType, ok: true, detail: `Dispatched — waiting up to ${timeoutMinutes} min for the script's actual result before continuing` });
-      await persistPendingStep(runId, device, workflow.id, slugKey, nextStepId, log, timeoutAt, "script", failureStepId, pendingToken);
-      await upsertRunResult(runId, deviceId, deviceName, log, "waiting", null);
-      return { deviceId, deviceName, steps: log, finalStatus: null, status: "waiting" };
-    }
-
-    let ok: boolean, detail: string;
-    if (stepType === "mdm_action") {
-      ({ ok, detail } = await executeMdmAction(headers, orgBase, slugKey, device.platform, device.platformDeviceId, cfg.action, workflow.targetDeploymentModel, cfg.params, deviceId, context));
-    } else if (stepType === "http_request") {
-      ({ ok, detail } = await executeHttpStep(cfg, context));
-    } else if (stepType === "notification") {
-      ({ ok, detail } = await executeNotificationStep(orgBase, headers, cfg, context, workspaceState as any));
-    } else if (stepType === "policy_replace") {
-      ({ ok, detail } = await executePolicyReplaceStep(credsAuthorization, slugKey, device, cfg, workflow.id));
-    } else if (stepType === "policy_add") {
-      ({ ok, detail } = await executePolicyAddStep(credsAuthorization, slugKey, device, cfg, workflow.id));
-    } else if (stepType === "policy_restore") {
-      ({ ok, detail } = await executePolicyRestoreStep(credsAuthorization, slugKey, device));
-    } else if (stepType === "monitor") {
-      ({ ok, detail } = await executeMonitorStep(credsAuthorization, slugKey, device, cfg));
-    } else {
-      ok = false;
-      detail = `Unknown step type '${stepType}'`;
-    }
-
-    log.push({ stepId: step.id, name: step.name, type: stepType, ok, detail });
-
-    let next: string | null | undefined;
-    if (ok) {
-      next = step.onSuccess;
-      if (next === null || next === undefined) {
+        const secondsPerUnit: Record<string, number> = { minutes: 60, hours: 3600, days: 86400 };
+        const seconds = amount * (secondsPerUnit[unit] ?? 60);
+        const resumeAt = new Date(Date.now() + seconds * 1000);
         const idx = stepOrder.indexOf(currentId);
-        next = idx + 1 < stepOrder.length ? stepOrder[idx + 1] : "end";
-      }
-    } else {
-      next = step.onFailure || "end";
-    }
-    currentId = next;
-  }
+        const nextStepId = step.onSuccess ?? (idx + 1 < stepOrder.length ? stepOrder[idx + 1] : "end");
+        log.push({ stepId: step.id, name: step.name, type: stepType, ok: true, detail: `Waiting ${amount} ${unit} — resumes at ${resumeAt.toISOString()}` });
 
-  const finalStatus: "success" | "partial" | "failed" = !log.length || log.every((s) => s.ok) ? "success" : log.some((s) => s.ok) ? "partial" : "failed";
-  await upsertRunResult(runId, deviceId, deviceName, log, "done", finalStatus);
-  await finalizeRunIfDone(runId);
-  return { deviceId, deviceName, steps: log, finalStatus, status: "done" };
+        await persistPendingStep(runId, device, workflow.id, slugKey, nextStepId, log, resumeAt);
+        await upsertRunResult(runId, deviceId, deviceName, log, "waiting", null);
+        return { deviceId, deviceName, steps: log, finalStatus: null, status: "waiting" };
+      }
+
+      if (stepType === "run_script_wait") {
+        const libraryId = cfg.libraryId;
+        let timeoutMinutes = Number(cfg.timeoutMinutes);
+        if (!timeoutMinutes || timeoutMinutes <= 0) timeoutMinutes = 30;
+
+        const idx = stepOrder.indexOf(currentId);
+        const nextStepId = step.onSuccess ?? (idx + 1 < stepOrder.length ? stepOrder[idx + 1] : "end");
+        const failureStepId = step.onFailure || "end";
+
+        if (!libraryId) {
+          log.push({ stepId: step.id, name: step.name, type: stepType, ok: false, detail: "No script selected from the Library" });
+          currentId = failureStepId;
+          continue;
+        }
+
+        const pendingToken = crypto.randomUUID();
+        const workflowResume: WorkflowResumeRef = { pendingToken, slugKey };
+        const { ok, detail } = await executeMdmAction(
+          headers, orgBase, slugKey, device.platform, device.platformDeviceId, "runScript",
+          workflow.targetDeploymentModel, { libraryId }, deviceId, context, workflowResume,
+        );
+        if (!ok) {
+          log.push({ stepId: step.id, name: step.name, type: stepType, ok: false, detail });
+          currentId = failureStepId;
+          continue;
+        }
+
+        const timeoutAt = new Date(Date.now() + timeoutMinutes * 60_000);
+        log.push({ stepId: step.id, name: step.name, type: stepType, ok: true, detail: `Dispatched — waiting up to ${timeoutMinutes} min for the script's actual result before continuing` });
+        await persistPendingStep(runId, device, workflow.id, slugKey, nextStepId, log, timeoutAt, "script", failureStepId, pendingToken);
+        await upsertRunResult(runId, deviceId, deviceName, log, "waiting", null);
+        return { deviceId, deviceName, steps: log, finalStatus: null, status: "waiting" };
+      }
+
+      let ok: boolean, detail: string;
+      if (stepType === "mdm_action") {
+        ({ ok, detail } = await executeMdmAction(headers, orgBase, slugKey, device.platform, device.platformDeviceId, cfg.action, workflow.targetDeploymentModel, cfg.params, deviceId, context));
+      } else if (stepType === "http_request") {
+        ({ ok, detail } = await executeHttpStep(cfg, context));
+      } else if (stepType === "notification") {
+        ({ ok, detail } = await executeNotificationStep(orgBase, headers, cfg, context, workspaceState as any));
+      } else if (stepType === "policy_replace") {
+        ({ ok, detail } = await executePolicyReplaceStep(credsAuthorization, slugKey, device, cfg, workflow.id));
+      } else if (stepType === "policy_add") {
+        ({ ok, detail } = await executePolicyAddStep(credsAuthorization, slugKey, device, cfg, workflow.id));
+      } else if (stepType === "policy_restore") {
+        ({ ok, detail } = await executePolicyRestoreStep(credsAuthorization, slugKey, device));
+      } else if (stepType === "monitor") {
+        ({ ok, detail } = await executeMonitorStep(credsAuthorization, slugKey, device, cfg));
+      } else {
+        ok = false;
+        detail = `Unknown step type '${stepType}'`;
+      }
+
+      log.push({ stepId: step.id, name: step.name, type: stepType, ok, detail });
+
+      let next: string | null | undefined;
+      if (ok) {
+        next = step.onSuccess;
+        if (next === null || next === undefined) {
+          const idx = stepOrder.indexOf(currentId);
+          next = idx + 1 < stepOrder.length ? stepOrder[idx + 1] : "end";
+        }
+      } else {
+        next = step.onFailure || "end";
+      }
+      currentId = next;
+    }
+
+    const finalStatus: "success" | "partial" | "failed" = !log.length || log.every((s) => s.ok) ? "success" : log.some((s) => s.ok) ? "partial" : "failed";
+    await upsertRunResult(runId, deviceId, deviceName, log, "done", finalStatus);
+    await finalizeRunIfDone(runId);
+    return { deviceId, deviceName, steps: log, finalStatus, status: "done" };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`[Workflow Engine] Unexpected error running device ${deviceId}'s step chain (run ${runId}): ${e}`);
+    log.push({ stepId: null as any, name: "Workflow engine error", type: "error", ok: false, detail: `Unexpected error — this device's chain was stopped and marked failed: ${message}`.slice(0, 500) });
+    await upsertRunResult(runId, deviceId, deviceName, log, "done", "failed").catch(() => undefined);
+    await finalizeRunIfDone(runId).catch(() => undefined);
+    return { deviceId, deviceName, steps: log, finalStatus: "failed", status: "done" };
+  }
 }
 
 /**
