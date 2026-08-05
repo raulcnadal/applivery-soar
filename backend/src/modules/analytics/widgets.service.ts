@@ -17,6 +17,7 @@ import { getSystemHealth } from "../systemHealth/systemHealth.service";
 import { listWorkflowRuns } from "../workflows/workflows.service";
 import { aggregateSnapshotsForRange, loadSnapshot, listSnapshotDates, saveSnapshot } from "./snapshotEngine";
 import { appliveryWebhookEventLabel } from "../settings/appliveryWebhookSettings.schemas";
+import { isPointInZone, type GeofenceZoneGeometry } from "../geofencing/geofence.service";
 
 /**
  * Analytics widget engine — port of `get_widget_data` (main.py:14386-15510),
@@ -304,6 +305,76 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
       }
       response.chartData = Object.entries(agg).map(([name, value]) => ({ name, value }));
       response.scorecardValue = agg["Blocked (safety)"] + agg["Capped (batch limit)"];
+      return response;
+    }
+  }
+
+  // ── 2.52 Geofencing (SOAR) — computed from our own zone/location store,
+  // no live Applivery call needed (mirrors the Compliance/Cases blocks
+  // above; the point-in-zone geometry math is pure in-process work, not a
+  // scaling concern — see geofence.service.ts's doc comment). Only
+  // DeviceLocation rows that ever got a real GPS fix count: a row still
+  // holding the "no_location_reported" placeholder (lat:0,lng:0, written
+  // the first time a newly-scoped device is checked and nothing has come
+  // back yet — see locationsRefresh.service.ts) is excluded from the
+  // inside/outside/freshness math and folded into its own "no location data
+  // yet" bucket instead, same fix just applied to loadDeviceLocations for
+  // the Compliance evaluator itself.
+  const geofenceSources = ["geofence_zones_summary", "geofence_devices_status", "geofence_location_freshness"];
+  if (geofenceSources.includes(source)) {
+    const [zones, locations] = await Promise.all([
+      prisma.geofenceZone.findMany({ where: { workspaceSlug: slugKey } }),
+      prisma.deviceLocation.findMany({ where: { workspaceSlug: slugKey } }),
+    ]);
+    const realLocations = locations.filter((l) => l.error !== "no_location_reported");
+    const neverLocated = locations.length - realLocations.length;
+    const insideZone = (loc: { lat: number; lng: number }, zone: { shape: string; geometry: unknown }) =>
+      isPointInZone(loc, { shape: zone.shape, geometry: zone.geometry as GeofenceZoneGeometry });
+
+    if (source === "geofence_zones_summary") {
+      const countByZone: Record<string, number> = {};
+      for (const zone of zones) countByZone[zone.name] = 0;
+      for (const loc of realLocations) {
+        for (const zone of zones) {
+          if (insideZone(loc, zone)) countByZone[zone.name] = (countByZone[zone.name] ?? 0) + 1;
+        }
+      }
+      response.scorecardValue = zones.length;
+      response.chartData = zones.map((z) => ({ name: z.name, value: countByZone[z.name] ?? 0 })).sort((a, b) => b.value - a.value);
+      response.items = zones;
+      return response;
+    }
+
+    if (source === "geofence_devices_status") {
+      let insideAny = 0;
+      let outsideAll = 0;
+      for (const loc of realLocations) {
+        if (zones.some((zone) => insideZone(loc, zone))) insideAny++;
+        else outsideAll++;
+      }
+      response.scorecardValue = locations.length;
+      response.chartData = [
+        { name: "Inside a zone", value: insideAny },
+        { name: "Outside all zones", value: outsideAll },
+        { name: "No location data yet", value: neverLocated },
+      ].filter((d) => d.value > 0);
+      response.items = locations;
+      return response;
+    }
+
+    if (source === "geofence_location_freshness") {
+      const now = Date.now();
+      const buckets: Record<string, number> = { "< 1 hour": 0, "1-6 hours": 0, "6-24 hours": 0, "> 24 hours": 0 };
+      for (const loc of realLocations) {
+        const ageHours = (now - loc.fetchedAt.getTime()) / 3_600_000;
+        if (ageHours < 1) buckets["< 1 hour"]++;
+        else if (ageHours < 6) buckets["1-6 hours"]++;
+        else if (ageHours < 24) buckets["6-24 hours"]++;
+        else buckets["> 24 hours"]++;
+      }
+      if (neverLocated > 0) buckets["No location data yet"] = neverLocated;
+      response.scorecardValue = locations.length;
+      response.chartData = Object.entries(buckets).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value }));
       return response;
     }
   }

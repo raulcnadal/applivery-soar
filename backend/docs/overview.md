@@ -6,7 +6,7 @@ A brand-new workspace doesn't start blank: it ships with four starter widgets (O
 
 ## What you can add — the full widget catalog
 
-Click **+ Add Widget** (top right) to open the widget builder. Widgets are organized into 17 groups:
+Click **+ Add Widget** (top right) to open the widget builder. Widgets are organized into 18 groups:
 
 | Group | Widgets |
 |---|---|
@@ -20,6 +20,7 @@ Click **+ Add Widget** (top right) to open the widget builder. Widgets are organ
 | Cases (SOAR) | Cases by status, Open cases by severity, Cases by source, Cases opened trend, Case SLA status, Case MTTR trend, Threat intel verdicts, Ticketing sync status, MITRE ATT&CK coverage |
 | Workflows & Risk (SOAR) | Workflow runs by outcome, Workflow runs trend, Device risk distribution, Device risk trend |
 | Applivery Events (SOAR) | Events by type, Events received trend, Automation outcomes |
+| Geofencing (SOAR) | Devices per geofence zone, Devices inside/outside zones, Geofence location freshness |
 | Operations (SOAR) | System health |
 | OS Updates (SOAR) | OS update catalog, OS update device status |
 | Vulnerability Intel (SOAR) | Apple/Android vulnerability catalog, Apple/Android vulnerability device status, Vulnerability Service device status |
@@ -27,13 +28,14 @@ Click **+ Add Widget** (top right) to open the widget builder. Widgets are organ
 | App Updates (SOAR) | Apple app updates |
 | 3rd-Party Events (SOAR) | Inbound trigger fires, Inbound trigger fires trend |
 
-That's roughly 55 selectable widgets in total. Every widget also has a built-in "what does this number mean" explanation — see [The widget info icon](#the-widget-info-icon) below.
+That's roughly 58 selectable widgets in total. Every widget also has a built-in "what does this number mean" explanation — see [The widget info icon](#the-widget-info-icon) below.
 
 Several widgets on this list depend on a Settings integration actually being turned on before they show real data:
 - **Vulnerability Service device status** needs [Settings → Vulnerability Service](settings.md#vulnerability-service) configured.
 - **OS update catalog / device status** and **OS lifecycle catalog / device status** need nothing configured — they run automatically — but only start showing device-level results once devices have reported in.
 - **Case SLA status**, **Ticketing sync status**, and **Threat intel verdicts** depend on [Settings → Case SLA Settings](settings.md#case-sla) and [Settings → Ticketing & Chat Integrations](settings.md#integrations) respectively.
 - **autoRun safety interventions** only has data once at least one [Compliance Policy](compliance.md#policy-builder) has auto-run enabled and something has actually been capped or blocked.
+- The three **Geofencing (SOAR)** widgets only have data once at least one [geofence zone](geofencing.md) exists and at least one enabled Compliance Policy uses a Geofence Zone condition — that's what puts devices into the background location refresher's scope in the first place. All three read the same `DeviceLocation` rows the geofence evaluator itself uses; a device whose location has never been successfully fetched counts as "no location data yet" rather than being silently dropped or plotted at a bogus position.
 
 ## Chart types
 
@@ -101,4 +103,5 @@ Overview widgets refresh automatically about once a minute while you're viewing 
 - [Compliance](compliance.md) — Compliance Policy and violation widgets.
 - [Cases](cases.md) — Case-related widgets, including SLA and ticketing sync.
 - [Workflows](workflows.md) — workflow run and Firewall/risk widgets.
+- [Geofencing](geofencing.md) — the zone/location data behind the Geofencing (SOAR) widgets.
 - [Settings](settings.md) — turn on the integrations several widgets depend on (Vulnerability Service, Ticketing & Chat, Threat Intel).

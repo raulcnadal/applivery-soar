@@ -69,7 +69,16 @@ function locationsMdmType(platform: string): string | null {
 export async function loadDeviceLocations(workspaceSlug: string, deviceIds: string[]): Promise<Map<string, { lat: number; lng: number; recordedAt: Date | null; fetchedAt: Date }>> {
   if (!deviceIds.length) return new Map();
   const rows = await prisma.deviceLocation.findMany({ where: { workspaceSlug, deviceId: { in: deviceIds } } });
-  return new Map(rows.map((r) => [r.deviceId, { lat: r.lat, lng: r.lng, recordedAt: r.recordedAt, fetchedAt: r.fetchedAt }]));
+  // Exclude the "no real GPS fix yet" placeholder row (lat:0,lng:0, written
+  // by fetchAndStoreDeviceLocation the first time a newly-scoped device is
+  // checked and nothing has come back — see the "no_location_reported"
+  // branch there). Letting it through here would make hasLocationData
+  // wrongly report true and would test geofenceZoneId conditions against a
+  // bogus (0,0) position instead of correctly matching neither inside nor
+  // outside (see complianceFields.ts's geofenceZoneId doc comment).
+  return new Map(
+    rows.filter((r) => r.error !== "no_location_reported").map((r) => [r.deviceId, { lat: r.lat, lng: r.lng, recordedAt: r.recordedAt, fetchedAt: r.fetchedAt }]),
+  );
 }
 
 /** Loads the whole per-device location store for a workspace — used by the refresher's oldest-first ranking. */

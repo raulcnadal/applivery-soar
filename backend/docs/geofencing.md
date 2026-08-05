@@ -71,7 +71,20 @@ This mirrors the same pattern already used for the installed-app inventory refre
 
 If coverage is low or the estimated cycle time is long, that's a signal to either raise the budget (if you have Applivery API headroom to spare) or narrow which policies use geofence conditions.
 
+## Widgets & Reports
+
+Three **Geofencing (SOAR)** data sources are selectable from both the [Overview](overview.md) widget builder and the [Reporting](reporting.md) builder (they share one catalog — anything addable as a widget is also reportable):
+
+| Data source | Shows |
+|---|---|
+| **Devices per geofence zone** | A scorecard (total zones defined) plus a per-zone breakdown of how many tracked devices currently fall inside each one, based on the latest stored position. |
+| **Devices inside/outside zones** | A three-way split: inside at least one zone, outside every zone, or no location data yet. |
+| **Geofence location freshness** | Tracked devices bucketed by how long ago their position was last confirmed (under 1 hour / 1–6 hours / 6–24 hours / over 24 hours), plus a "no location data yet" bucket. Useful for spotting when the background refresher (see above) is falling behind. |
+
+All three read the same `DeviceLocation` rows the geofence evaluator itself uses — no separate live Applivery call, no extra API budget spent. Their "universe" is whatever devices the background location refresher is currently tracking (i.e. devices scoped by at least one enabled policy's geofence condition) — draw a zone and add a policy condition first if these show empty. A device whose location has never been successfully fetched always lands in "no location data yet" rather than being tested against a bogus position, matching the same missing-location handling described above.
+
 ## Related guides
 
 - [Playground](playground.md) — where zones are drawn, on the Map View.
 - [Compliance](compliance.md) — where geofence conditions are built into policies, and where the App List inventory refresher this design mirrors lives.
+- [Overview](overview.md) and [Reporting](reporting.md) — where the Geofencing (SOAR) widgets/report sources above live.

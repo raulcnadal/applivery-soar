@@ -80,6 +80,10 @@ export const WIDGET_CATALOG: CatalogItem[] = [
   { id: "applivery_events_by_type", label: "Events by type", group: "Applivery Events (SOAR)" },
   { id: "applivery_events_trend", label: "Events received trend", group: "Applivery Events (SOAR)" },
   { id: "applivery_automation_outcomes", label: "Automation outcomes", group: "Applivery Events (SOAR)" },
+
+  { id: "geofence_zones_summary", label: "Devices per geofence zone", group: "Geofencing (SOAR)" },
+  { id: "geofence_devices_status", label: "Devices inside/outside zones", group: "Geofencing (SOAR)" },
+  { id: "geofence_location_freshness", label: "Geofence location freshness", group: "Geofencing (SOAR)" },
 ];
 
 export const WIDGET_LABEL_BY_ID: Record<string, string> = Object.fromEntries(WIDGET_CATALOG.map((w) => [w.id, w.label]));
@@ -174,6 +178,9 @@ export const SOURCE_SHAPES: Record<string, Shape> = {
   mitre_coverage: "analyticsDiscrete",
   threat_intel_summary: "analyticsKeyed",
   ticketing_summary: "analyticsDiscrete",
+  geofence_zones_summary: "analyticsKeyed",
+  geofence_devices_status: "analyticsDiscrete",
+  geofence_location_freshness: "analyticsKeyed",
 };
 
 export function chartTypesFor(stat: string): ChartType[] {
@@ -279,6 +286,9 @@ export const WIDGET_ICON_MAP: Record<string, WidgetIconDef> = {
   mitre_coverage: { icon: "Target", color: "#8B5CF6", bg: "#8B5CF615" },
   threat_intel_summary: { icon: "Radar", color: "#8B5CF6", bg: "#8B5CF615" },
   ticketing_summary: { icon: "ChatRound", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` },
+  geofence_zones_summary: { icon: "MapPoint", color: "#0EA5E9", bg: "#0EA5E915" },
+  geofence_devices_status: { icon: "MapPoint", color: "#8B5CF6", bg: "#8B5CF615" },
+  geofence_location_freshness: { icon: "ClockCircle", color: WARNING, bg: `${WARNING}15` },
 };
 export const DEFAULT_WIDGET_ICON: WidgetIconDef = { icon: "Chart2", color: PRIMARY_BLUE, bg: `${PRIMARY_BLUE}15` };
 

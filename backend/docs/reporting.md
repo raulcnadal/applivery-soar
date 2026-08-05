@@ -1,6 +1,6 @@
 # Reporting — Admin Guide
 
-**Reporting** builds, schedules, and templates **PDF reports** summarizing whatever the dashboard tracks — device fleet stats, compliance/framework status, cases, workflows, risk, vulnerabilities, OS lifecycle, App Distribution — using the same widget catalog as the [Overview](overview.md) dashboard. Reached via three sub-tabs: **Builder**, **Schedules**, and **Template**.
+**Reporting** builds, schedules, and templates **PDF reports** summarizing whatever the dashboard tracks — device fleet stats, compliance/framework status, cases, workflows, risk, vulnerabilities, OS lifecycle, App Distribution, geofencing — using the same widget catalog as the [Overview](overview.md) dashboard. Reached via three sub-tabs: **Builder**, **Schedules**, and **Template**.
 
 ## Builder tab
 
@@ -56,4 +56,5 @@ If a report fails to generate, you'll see a generic "Failed to generate report" 
 ## Related guides
 
 - [Overview](overview.md) — the widget catalog reports are built from, and where to check what a metric means before including it in a report.
+- [Geofencing](geofencing.md) — the Geofencing (SOAR) data sources selectable here.
 - [Settings](settings.md) — SMTP, webhook URL, and Automation Credential setup.
