@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "../../services/prisma";
+import { HttpError } from "../../utils/httpError";
 import { resolveOrgBase } from "../auth/rbac.service";
 import { getAutomationBearer } from "../settings/automationCredential.service";
 import { invalidateDevicesCache } from "../devices/devices.service";
@@ -401,6 +402,17 @@ export async function resumeDueWorkflowSteps(limit = 50): Promise<number> {
 
   const workflowsCache = new Map<string, WorkflowRow | null>();
 
+  // Pending device resumes blocked this tick — a missing/expired Automation
+  // Credential (each already recorded clearly on the specific run's own log
+  // below, so an admin looking at that one run understands why) or an
+  // unexpected error resuming the chain. Previously these never propagated
+  // past this function at all: resumeDueWorkflowSteps() always resolved
+  // once Promise.all(rows.map(resumeOne)) settled, so runJobOnce recorded a
+  // plain "ok" heartbeat for workflow_wait_resumer even on a tick where
+  // every single resume failed. Collected and thrown at the end so it
+  // surfaces in Settings > System Health too, not just the individual run.
+  const blocked: string[] = [];
+
   async function resumeOne(row: ClaimedPendingRow): Promise<void> {
     const { runId, slugKey, deviceSnapshot, workflowId } = row;
     const log = row.log ?? [];
@@ -431,6 +443,7 @@ export async function resumeDueWorkflowSteps(limit = 50): Promise<number> {
         log.push({ stepId: null as any, name: "Resume", type: stepLabel, ok: false, detail: "No automation credential is configured for this workspace — cannot resume without one. Configure one from Settings." });
         await upsertRunResult(runId, deviceSnapshot.id, deviceSnapshot.displayName ?? null, log, "done", "failed");
         await finalizeRunIfDone(runId);
+        blocked.push(`${slugKey} (run ${runId}: no Automation Credential configured)`);
       } else {
         if (isScriptKind) {
           log.push({ stepId: null as any, name: "Script result", type: stepLabel, ok: false, detail: "No script result received before the timeout — following the failure branch" });
@@ -440,12 +453,21 @@ export async function resumeDueWorkflowSteps(limit = 50): Promise<number> {
       }
     } catch (e) {
       console.error(`[Workflow Resumer] Error resuming run ${runId} / device ${deviceSnapshot.id}: ${e}`);
+      blocked.push(`${slugKey} (run ${runId}: ${e instanceof Error ? e.message : String(e)})`.slice(0, 150));
     } finally {
       await prisma.workflowPendingStep.delete({ where: { id: row.id } }).catch(() => undefined);
     }
   }
 
   await Promise.all(rows.map(resumeOne));
+
+  if (blocked.length) {
+    throw new HttpError(
+      502,
+      `${blocked.length} pending workflow step(s) could not resume this tick: ${blocked.join("; ")}`.slice(0, 500),
+    );
+  }
+
   return rows.length;
 }
 
