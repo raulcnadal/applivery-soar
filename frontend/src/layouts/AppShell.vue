@@ -12,6 +12,7 @@ import { useAuthStore, type FeatureArea } from "../stores/auth";
 import { useSegmentsStore } from "../stores/segments";
 import { useUiStore, type ThemeMode } from "../stores/ui";
 import { useDashboardStateStore } from "../stores/dashboardState";
+import { useSessionGuards } from "../composables/useSessionGuards";
 import { ICONS } from "../lib/solarIcons";
 import { api } from "../api/http";
 import WorkspaceOnboardingModal from "../components/onboarding/WorkspaceOnboardingModal.vue";
@@ -34,6 +35,12 @@ const auth = useAuthStore();
 const segmentsStore = useSegmentsStore();
 const uiStore = useUiStore();
 const dashboardStateStore = useDashboardStateStore();
+// Idle-timeout watcher + proactive Applivery token refresh (composables/
+// useSessionGuards.ts) — only relevant while signed in, and AppShell only
+// ever renders for an authenticated, non-standalone route (App.vue), so an
+// unconditional call here is the right lifetime: it starts when AppShell
+// mounts (login/workspace-switch) and stops when it unmounts (sign out).
+useSessionGuards();
 // Guarded defensively — AppShell is only ever supposed to mount for an
 // authenticated session (App.vue renders it unless the route is standalone),
 // but a brief router race on first paint could still get here unauthenticated

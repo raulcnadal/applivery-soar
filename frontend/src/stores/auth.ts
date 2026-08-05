@@ -191,6 +191,43 @@ export const useAuthStore = defineStore("auth", () => {
     return Boolean(access.value.role?.riskyActions?.[action]);
   }
 
+  // De-duped so several concurrent 401s (or the proactive expiry check in
+  // composables/useSessionGuards.ts racing a request that itself just
+  // triggered a refresh) only ever fire one real POST /api/auth/refresh.
+  // 1:1 port of the original App.jsx's refreshAppliverySession()
+  // (wow-dashboard/src/App.jsx ~89-111), which this Vue port never had at
+  // all -- without it, the Applivery access token (much shorter-lived than
+  // this app's own 30-day dashboard JWT) just expired on its own schedule
+  // with nothing renewing it.
+  let refreshInFlight: Promise<boolean> | null = null;
+  async function refreshAppliverySession(): Promise<boolean> {
+    if (refreshInFlight) return refreshInFlight;
+    refreshInFlight = (async () => {
+      if (!apiToken.value || !refreshToken.value) return false;
+      try {
+        const res = await axios.post("/api/auth/refresh", {
+          lastAccessToken: apiToken.value,
+          refreshToken: refreshToken.value,
+        });
+        apiToken.value = res.data.appliveryAccessToken;
+        apiTokenExpireAt.value = res.data.appliveryAccessTokenExpireAt ?? null;
+        refreshToken.value = res.data.appliveryRefreshToken ?? refreshToken.value;
+        refreshTokenExpireAt.value = res.data.appliveryRefreshTokenExpireAt ?? null;
+
+        localStorage.setItem("applivery_apiToken", apiToken.value as string);
+        if (apiTokenExpireAt.value) localStorage.setItem("applivery_apiTokenExpireAt", apiTokenExpireAt.value);
+        localStorage.setItem("applivery_refreshToken", refreshToken.value as string);
+        if (refreshTokenExpireAt.value) localStorage.setItem("applivery_refreshTokenExpireAt", refreshTokenExpireAt.value);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    const result = await refreshInFlight;
+    refreshInFlight = null;
+    return result;
+  }
+
   return {
     dashboardToken,
     apiToken,
@@ -211,5 +248,6 @@ export const useAuthStore = defineStore("auth", () => {
     switchWorkspace,
     hasFeatureAccess,
     hasRiskyAction,
+    refreshAppliverySession,
   };
 });

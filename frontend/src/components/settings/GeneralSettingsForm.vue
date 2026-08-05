@@ -17,7 +17,11 @@ const SESSION_TIMEOUT_OPTIONS = [
   { value: 480, label: "8 hours" },
 ];
 
-const form = reactive({ webhookUrl: "", timezone: "UTC", sessionTimeoutMinutes: 30 });
+// 60 -- not 30 -- matches App.jsx's own default (useState(60), ~line 2834):
+// a workspace that has never explicitly saved this value keeps whatever the
+// idle-timeout watcher's own fallback default already enforces (see
+// composables/useSessionGuards.ts's DEFAULT_SESSION_TIMEOUT_MINUTES).
+const form = reactive({ webhookUrl: "", timezone: "UTC", sessionTimeoutMinutes: 60 });
 const isSaving = ref(false);
 const saveError = ref<string | null>(null);
 const saved = ref(false);
@@ -37,7 +41,7 @@ watch(() => store.isLoaded, (loaded) => {
   if (!loaded) return;
   form.webhookUrl = store.webhookUrl;
   form.timezone = store.timezone;
-  form.sessionTimeoutMinutes = store.sessionTimeoutMinutes ?? 30;
+  form.sessionTimeoutMinutes = store.sessionTimeoutMinutes ?? 60;
 }, { immediate: true });
 
 async function save() {
