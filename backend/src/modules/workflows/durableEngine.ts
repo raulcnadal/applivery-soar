@@ -207,7 +207,13 @@ export async function runDeviceStepChain(
   // completed-with-a-failed-step outcome — matching how every *expected*
   // failure in this loop already behaves.
   try {
-    const workspaceState = await prisma.workspaceState.findUnique({ where: { workspaceSlug: slugKey } });
+    // "global", not slugKey — see workflows.service.ts's identical fix for
+    // the in-memory engine: Settings > General/SMTP/Notifications Webhook
+    // URL is a single deployment-wide config, always stored under the
+    // "global" WorkspaceState row regardless of which real workspace is
+    // active. A 'notification' step's email/webhook channel silently did
+    // nothing in any workspace not literally named "global" before this.
+    const workspaceState = await prisma.workspaceState.findUnique({ where: { workspaceSlug: "global" } });
 
     const recoveryCfg = (workflow.recovery as { enabled?: boolean; compliancePolicyId?: string | null }) ?? {};
     const recoveryPolicy = recoveryCfg.enabled && recoveryCfg.compliancePolicyId

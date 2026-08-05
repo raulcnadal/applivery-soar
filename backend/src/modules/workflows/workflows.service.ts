@@ -449,7 +449,16 @@ async function executeWorkflowRun(
   const stepsById = new Map(steps.map((s) => [s.id, s]));
   const stepOrder = steps.map((s) => s.id);
 
-  const workspaceState = await prisma.workspaceState.findUnique({ where: { workspaceSlug } });
+  // "global", not workspaceSlug — Settings > General/SMTP/Notifications
+  // Webhook URL is a single deployment-wide config (dashboardState.ts's
+  // GLOBAL_HEADERS convention: the frontend always saves it under the
+  // "global" WorkspaceState row, never per-workspace), which is what a
+  // 'notification' step's email/webhook channel reads below. Looking this
+  // up under the real workspaceSlug returned null for any workspace not
+  // literally named "global" — a notification step silently did nothing
+  // (no error, `ok:false` swallowed into "SMTP not configured") in every
+  // real multi-workspace deployment. Same fix as services/alertEmail.ts.
+  const workspaceState = await prisma.workspaceState.findUnique({ where: { workspaceSlug: "global" } });
 
   // The workflow's Recovery gate — resolved once per run, not per device.
   const recoveryCfg = (workflow.recovery as { enabled?: boolean; compliancePolicyId?: string | null }) ?? {};
