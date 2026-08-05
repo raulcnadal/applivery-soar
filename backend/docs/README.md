@@ -34,14 +34,13 @@ git clone <this repo>
 cd "Applivery SOAR"
 cp .env.example .env
 # edit .env and fill in DASHBOARD_SECRET / POSTGRES_PASSWORD — see below
-echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
 docker compose pull
 docker compose up -d
 ```
 
 `soar-frontend` and `soar-backend` both pull pre-built multi-arch images from GitHub Container Registry (`ghcr.io/raulcnadal/applivery-soar-frontend` and `ghcr.io/raulcnadal/applivery-soar`, published by `docker-publish.yml` on every push to `main`) — no local build or full repo checkout required to deploy, `docker-compose.yml` and `.env.example` are all you actually need.
 
-These packages are private, so the `docker login ghcr.io` step above is required once per deployment host, using a GitHub personal access token with `read:packages` scope as the password. Docker caches that login locally, so it isn't needed again on subsequent `docker compose pull`s from the same host.
+Both packages are public, even though this repo itself is private — GHCR decouples package visibility from repo visibility — so the deployment host pulls anonymously, no `docker login` needed.
 
 This runs four services: `soar-frontend` (Nginx, serving the built Vue app and reverse-proxying `/api/*` to the backend — published on host port `8080`), `soar-backend` (the Node/Express API, published on `8000` for direct access/debugging), `soar-db` (Postgres), and `soar-redis` (only used if you scale `soar-backend` to more than one replica — see [Background jobs at scale](#background-jobs-at-scale) below). Open `http://localhost:8080` once it's up.
 

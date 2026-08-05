@@ -13,13 +13,13 @@
 # layer docker-compose.build.yml on top: `docker compose -f
 # docker-compose.yml -f docker-compose.build.yml up --build`.
 #
-# These packages are private (inherited from the repo's own visibility), so
-# the deployment host needs a one-time login before its first pull:
-#   echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
-# where GHCR_PAT is a GitHub personal access token with at least
-# `read:packages` scope. Docker caches that login in the host's own
-# ~/.docker/config.json, so this is a one-time setup step per host, not
-# something needed on every `docker compose pull`.
+# These packages are set to public visibility (GHCR decouples package
+# visibility from repo visibility, so this repo itself can stay private
+# while its two published images are pulled anonymously) — no `docker
+# login` needed on the deployment host. Package visibility is a one-time
+# manual setting on GitHub (Package settings → Change visibility), not
+# something docker-publish.yml's GITHUB_TOKEN can set on its own, and it
+# persists across every future publish once set.
 #
 # soar-redis is optional-but-provisioned: only matters if soar-backend is
 # scaled to more than one replica (`docker compose up --scale soar-backend=3`),
