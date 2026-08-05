@@ -96,6 +96,40 @@ const CASES: Case[] = [
 
   // ── auditLogs.controller.ts — newly gated (same review) ──
   { label: "auditLogs: GET /api/audit-logs", method: "get", path: "/api/audit-logs", area: "auditLog", level: "read", insufficientAccess: roleWithAccess({ auditLog: "none" }) },
+
+  // ── triggers.controller.ts — newly gated (deep audit: previously only
+  // verifyDashboardToken, same gap as the Settings-adjacent controllers
+  // below — a Trigger secret fires an arbitrary Workflow from outside the
+  // app, so it now requires workflows RBAC like Workflows themselves) ──
+  { label: "triggers: GET /api/triggers", method: "get", path: "/api/triggers", area: "workflows", level: "read", insufficientAccess: roleWithAccess({ workflows: "none" }) },
+  { label: "triggers: POST /api/triggers", method: "post", path: "/api/triggers", area: "workflows", level: "manage", insufficientAccess: roleWithAccess({ workflows: "read" }) },
+
+  // ── settings.controller.ts — newly gated (deep audit) ──
+  { label: "settings: GET /api/settings/automation-credential", method: "get", path: "/api/settings/automation-credential", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "settings: POST /api/settings/automation-credential", method: "post", path: "/api/settings/automation-credential", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
+
+  // ── scriptRepos.controller.ts — newly gated (deep audit) ──
+  { label: "scriptRepos: GET /api/script-repos", method: "get", path: "/api/script-repos", area: "workflows", level: "read", insufficientAccess: roleWithAccess({ workflows: "none" }) },
+  { label: "scriptRepos: POST /api/script-repos", method: "post", path: "/api/script-repos", area: "workflows", level: "manage", insufficientAccess: roleWithAccess({ workflows: "read" }) },
+
+  // ── actionLibrary.controller.ts — newly gated (deep audit) ──
+  { label: "actionLibrary: GET /api/action-library", method: "get", path: "/api/action-library", area: "workflows", level: "read", insufficientAccess: roleWithAccess({ workflows: "none" }) },
+  { label: "actionLibrary: POST /api/action-library", method: "post", path: "/api/action-library", area: "workflows", level: "manage", insufficientAccess: roleWithAccess({ workflows: "read" }) },
+
+  // ── scriptAssets.controller.ts — newly gated (deep audit) ──
+  { label: "scriptAssets: GET /api/script-assets", method: "get", path: "/api/script-assets", area: "workflows", level: "read", insufficientAccess: roleWithAccess({ workflows: "none" }) },
+  { label: "scriptAssets: POST /api/script-assets", method: "post", path: "/api/script-assets", area: "workflows", level: "manage", insufficientAccess: roleWithAccess({ workflows: "read" }) },
+
+  // ── logExportDestinations.controller.ts — newly gated (deep audit) ──
+  { label: "logExportDestinations: GET /api/settings/log-export-destinations", method: "get", path: "/api/settings/log-export-destinations", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "logExportDestinations: POST /api/settings/log-export-destinations", method: "post", path: "/api/settings/log-export-destinations", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
+
+  // ── appliveryWebhookSettings.controller.ts — newly gated (deep audit) ──
+  { label: "appliveryWebhookSettings: GET /api/applivery-webhook", method: "get", path: "/api/applivery-webhook", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "appliveryWebhookSettings: PUT /api/applivery-webhook", method: "put", path: "/api/applivery-webhook", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
+
+  // ── deviceReportScripts.controller.ts — newly gated (deep audit) ──
+  { label: "deviceReportScripts: GET /api/settings/device-report-scripts/:platform", method: "get", path: "/api/settings/device-report-scripts/macos", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
 ];
 
 describe("RBAC boundary — insufficient access is denied, sufficient access clears the gate", () => {

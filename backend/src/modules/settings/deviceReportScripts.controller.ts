@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
 import { verifyDashboardToken } from "../../middleware/auth.middleware";
+import { requirePermission } from "../../middleware/rbac.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 
 /**
@@ -15,6 +16,8 @@ import { asyncHandler } from "../../utils/asyncHandler";
  */
 
 export const deviceReportScriptsRouter = Router();
+
+const readDeviceReportScripts = [verifyDashboardToken, requirePermission({ area: "settings", level: "read" })];
 
 const SCRIPTS_DIR = path.resolve(__dirname, "../../../scripts");
 
@@ -44,10 +47,10 @@ async function serveScript(res: import("express").Response, table: Record<string
   res.send(content);
 }
 
-deviceReportScriptsRouter.get("/api/settings/device-report-scripts/:platform", verifyDashboardToken, asyncHandler(async (req, res) => {
+deviceReportScriptsRouter.get("/api/settings/device-report-scripts/:platform", ...readDeviceReportScripts, asyncHandler(async (req, res) => {
   await serveScript(res, APP_INVENTORY_SCRIPT_FILES, req.params.platform, "Unknown platform — expected 'macos' or 'windows'");
 }));
 
-deviceReportScriptsRouter.get("/api/settings/device-report-scripts-security/:platform", verifyDashboardToken, asyncHandler(async (req, res) => {
+deviceReportScriptsRouter.get("/api/settings/device-report-scripts-security/:platform", ...readDeviceReportScripts, asyncHandler(async (req, res) => {
   await serveScript(res, SECURITY_REPORT_SCRIPT_FILES, req.params.platform, "Unknown platform — expected 'windows' or 'macos'");
 }));

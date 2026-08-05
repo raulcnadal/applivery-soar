@@ -1,13 +1,24 @@
 import { Router } from "express";
 import { verifyDashboardToken } from "../../middleware/auth.middleware";
+import { requirePermission } from "../../middleware/rbac.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { appliveryWebhookConfigPayloadSchema } from "./appliveryWebhookSettings.schemas";
 import { getAppliveryWebhookConfig, rotateAppliveryWebhookSecret, updateAppliveryWebhookConfig } from "./appliveryWebhookSettings.service";
 import { receiveAppliveryWebhook } from "./appliveryWebhookReceive.service";
 
-/** Port of main.py:13040-13096 — /api/applivery-webhook (config CRUD) and main.py:13098-13243 — POST /api/applivery-webhook/receive/:secret. */
+/**
+ * Port of main.py:13040-13096 — /api/applivery-webhook (config CRUD) and
+ * main.py:13098-13243 — POST /api/applivery-webhook/receive/:secret.
+ * Config CRUD gated by the settings feature area (see
+ * settings.controller.ts's doc comment) — the receive endpoint stays
+ * public, it's authenticated by the secret in its own path, not a
+ * dashboard session.
+ */
 
 export const appliveryWebhookSettingsRouter = Router();
+
+const readAppliveryWebhook = [verifyDashboardToken, requirePermission({ area: "settings", level: "read" })];
+const manageAppliveryWebhook = [verifyDashboardToken, requirePermission({ area: "settings", level: "manage" })];
 
 function workspaceOf(req: { header(name: string): string | undefined }): string {
   return req.header("X-Workspace-Slug") || "global";
@@ -16,16 +27,16 @@ function actorOf(req: { dashboardUser?: { sub?: string } }): string {
   return req.dashboardUser?.sub ?? "unknown";
 }
 
-appliveryWebhookSettingsRouter.get("/api/applivery-webhook", verifyDashboardToken, asyncHandler(async (req, res) => {
+appliveryWebhookSettingsRouter.get("/api/applivery-webhook", ...readAppliveryWebhook, asyncHandler(async (req, res) => {
   res.json(await getAppliveryWebhookConfig(workspaceOf(req)));
 }));
 
-appliveryWebhookSettingsRouter.put("/api/applivery-webhook", verifyDashboardToken, asyncHandler(async (req, res) => {
+appliveryWebhookSettingsRouter.put("/api/applivery-webhook", ...manageAppliveryWebhook, asyncHandler(async (req, res) => {
   const payload = appliveryWebhookConfigPayloadSchema.parse(req.body);
   res.json(await updateAppliveryWebhookConfig(workspaceOf(req), payload, actorOf(req)));
 }));
 
-appliveryWebhookSettingsRouter.post("/api/applivery-webhook/rotate-secret", verifyDashboardToken, asyncHandler(async (req, res) => {
+appliveryWebhookSettingsRouter.post("/api/applivery-webhook/rotate-secret", ...manageAppliveryWebhook, asyncHandler(async (req, res) => {
   res.json(await rotateAppliveryWebhookSecret(workspaceOf(req), actorOf(req)));
 }));
 
