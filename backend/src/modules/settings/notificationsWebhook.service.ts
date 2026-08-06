@@ -16,6 +16,22 @@ import { HttpError } from "../../utils/httpError";
  */
 export async function sendChatText(webhookUrl: string, text: string): Promise<void> {
   const res = await axios.post(webhookUrl, { text }, { headers: { "Content-Type": "application/json" }, validateStatus: () => true });
+  // Logged unconditionally (not just on failure) — this is the only way to
+  // see what the remote endpoint actually returned, since a webhook that
+  // replies HTTP 200 with an unexpected body (or that silently redirects,
+  // or that returns a body we don't yet recognize as an error) wouldn't
+  // otherwise leave any trace. Host-only, no token/path, to avoid leaking
+  // the webhook secret into logs.
+  try {
+    const u = new URL(webhookUrl);
+    console.log(
+      `[notificationsWebhook] POST ${u.host} -> HTTP ${res.status}` +
+        `${res.request?.res?.responseUrl && res.request.res.responseUrl !== webhookUrl ? ` (redirected to ${new URL(res.request.res.responseUrl).host})` : ""}` +
+        ` content-type=${res.headers?.["content-type"] || "?"} body=${JSON.stringify(res.data).slice(0, 300)}`,
+    );
+  } catch {
+    // best-effort diagnostic logging only — never let it block delivery
+  }
   if (res.status < 200 || res.status >= 300) {
     throw new Error(`webhook returned ${res.status}${res.data ? `: ${JSON.stringify(res.data).slice(0, 200)}` : ""}`);
   }
