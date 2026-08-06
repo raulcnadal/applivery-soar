@@ -266,14 +266,40 @@ function activePolicyNames(): string[] {
               <p class="text-[10px] font-bold uppercase tracking-widest mb-2 text-gray-400">Last Location</p>
               <div v-if="loadingExtras" class="p-4 rounded-xl border border-gray-100 dark:border-gray-800 animate-pulse h-16" />
               <template v-else-if="locations.length">
+                <!--
+                  Applivery's mdm/locations API returns `address` as a nested
+                  object ({ address, number, postalCode, city, country }),
+                  not a flat string — confirmed against both the original
+                  frontend (App.jsx's DeviceInsightCard, App.jsx:2454-2455,
+                  which reads locations[0].address?.address/.city/.country)
+                  and Applivery's own OpenAPI schema for GET
+                  /mdm/locations/:type/:identifier. This used to read
+                  `locations[0].address` directly, which — since the object
+                  is truthy — always won the `||` fallback and rendered as
+                  "[object Object]" instead of a real address. Likewise the
+                  API's timestamp field for a location ping is `date`, not
+                  `createdAt` (a separate record-creation metadata field);
+                  the original's history list explicitly reads `.date`.
+                -->
                 <div class="p-4 rounded-xl border border-gray-100 dark:border-gray-800 space-y-2 text-sm mb-2">
-                  <div class="flex items-center gap-2 text-gray-900 dark:text-white">
-                    <component :is="ICONS.MapPoint" :size="14" weight="Linear" class="text-gray-400" />
-                    {{ locations[0].address || `${locations[0].city || ""} ${locations[0].country || ""}`.trim() || "Unknown address" }}
+                  <div class="flex items-start gap-2 text-gray-900 dark:text-white">
+                    <component :is="ICONS.MapPoint" :size="14" weight="Linear" class="text-gray-400 mt-0.5 shrink-0" />
+                    <div class="min-w-0">
+                      <p class="font-semibold">
+                        {{ locations[0].address?.address || `${locations[0].city || ""} ${locations[0].country || ""}`.trim() || "Unknown address" }}
+                        {{ locations[0].address?.number || "" }}
+                      </p>
+                      <p v-if="[locations[0].address?.postalCode, locations[0].address?.city, locations[0].address?.country].filter(Boolean).length" class="text-xs text-gray-400">
+                        {{ [locations[0].address?.postalCode, locations[0].address?.city, locations[0].address?.country].filter(Boolean).join(", ") }}
+                      </p>
+                    </div>
                   </div>
+                  <p v-if="locations[0].date" class="text-xs text-gray-400 flex items-center gap-1.5">
+                    <component :is="ICONS.ClockCircle" :size="12" weight="Linear" /> {{ new Date(locations[0].date).toLocaleString() }}
+                  </p>
                   <a
-                    v-if="locations[0].lat || locations[0].latitude"
-                    :href="`https://www.google.com/maps/search/?api=1&query=${locations[0].lat ?? locations[0].latitude},${locations[0].lng ?? locations[0].longitude}`"
+                    v-if="locations[0].latitude || locations[0].lat"
+                    :href="`https://www.google.com/maps/search/?api=1&query=${locations[0].latitude ?? locations[0].lat},${locations[0].longitude ?? locations[0].lng}`"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1.5 text-xs font-medium"
@@ -283,17 +309,17 @@ function activePolicyNames(): string[] {
                   </a>
                 </div>
                 <iframe
-                  v-if="locations[0].lat || locations[0].latitude"
+                  v-if="locations[0].latitude || locations[0].lat"
                   class="w-full h-72 rounded-xl border border-gray-100 dark:border-gray-800"
-                  :src="`https://www.openstreetmap.org/export/embed.html?bbox=${(locations[0].lng ?? locations[0].longitude) - 0.005}%2C${(locations[0].lat ?? locations[0].latitude) - 0.005}%2C${(locations[0].lng ?? locations[0].longitude) + 0.005}%2C${(locations[0].lat ?? locations[0].latitude) + 0.005}&marker=${locations[0].lat ?? locations[0].latitude}%2C${locations[0].lng ?? locations[0].longitude}`"
+                  :src="`https://www.openstreetmap.org/export/embed.html?bbox=${(locations[0].longitude ?? locations[0].lng) - 0.005}%2C${(locations[0].latitude ?? locations[0].lat) - 0.005}%2C${(locations[0].longitude ?? locations[0].lng) + 0.005}%2C${(locations[0].latitude ?? locations[0].lat) + 0.005}&marker=${locations[0].latitude ?? locations[0].lat}%2C${locations[0].longitude ?? locations[0].lng}`"
                 />
                 <button v-if="locations.length > 1" class="mt-2 flex items-center gap-1.5 text-xs font-medium" :style="{ color: PRIMARY_BLUE }" @click="showLocationHistory = !showLocationHistory">
                   <component :is="ICONS.ClockCircle" :size="12" weight="Linear" /> {{ showLocationHistory ? "Hide history" : `View location history (${locations.length - 1})` }}
                 </button>
                 <div v-if="showLocationHistory" class="mt-2 space-y-1.5">
                   <div v-for="(loc, i) in locations.slice(1)" :key="i" class="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50 text-xs">
-                    <span class="text-gray-700 dark:text-gray-200">{{ loc.address || `${loc.city || ""} ${loc.country || ""}`.trim() || "Unknown address" }}</span>
-                    <span class="text-gray-400 shrink-0 ml-2">{{ loc.createdAt ? new Date(loc.createdAt).toLocaleString() : "" }}</span>
+                    <span class="text-gray-700 dark:text-gray-200">{{ loc.address?.address || `${loc.city || ""} ${loc.country || ""}`.trim() || "Unknown address" }}</span>
+                    <span class="text-gray-400 shrink-0 ml-2">{{ loc.date ? new Date(loc.date).toLocaleString() : "" }}</span>
                   </div>
                 </div>
               </template>
