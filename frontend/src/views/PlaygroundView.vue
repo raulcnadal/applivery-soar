@@ -11,7 +11,7 @@ import HelpIcon from "../components/shared/HelpIcon.vue";
 import OsIcon from "../components/shared/OsIcon.vue";
 import PlaygroundGlobe from "../components/playground/PlaygroundGlobe.vue";
 import PlaygroundMapView from "../components/playground/PlaygroundMapView.vue";
-import DeviceInsightModal from "../components/playground/DeviceInsightModal.vue";
+import DeviceDetailDrawer from "../components/devices/DeviceDetailDrawer.vue";
 import { fetchWidgetData } from "../lib/widgetData";
 
 // Camera altitude (globe radii) below which the view auto-switches from the
@@ -223,6 +223,6 @@ onMounted(async () => {
       </div>
     </div>
 
-    <DeviceInsightModal :device="selectedDevice" @close="selectedDevice = null" />
+    <DeviceDetailDrawer :device="selectedDevice" @close="selectedDevice = null" />
   </main>
 </template>

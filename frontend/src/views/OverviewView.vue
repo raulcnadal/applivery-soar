@@ -15,7 +15,7 @@ import WidgetInfoModal from "../components/overview/WidgetInfoModal.vue";
 import OrgProfileModal from "../components/overview/OrgProfileModal.vue";
 import WidgetResultsModal from "../components/overview/WidgetResultsModal.vue";
 import InsightDetailModal from "../components/overview/InsightDetailModal.vue";
-import DeviceInsightModal from "../components/playground/DeviceInsightModal.vue";
+import DeviceDetailDrawer from "../components/devices/DeviceDetailDrawer.vue";
 import DateRangePicker, { type DateRangeValue } from "../components/overview/DateRangePicker.vue";
 import OsIcon from "../components/shared/OsIcon.vue";
 import { useDashboardStateStore } from "../stores/dashboardState";
@@ -265,9 +265,10 @@ function openOrgProfile(id: string) {
 // gauge/line/radar/list/progress/scorecard widget filters that widget's raw
 // `items` down to the clicked slice (lib/widgetVisuals.ts's
 // filterWidgetItemsForClick) and opens a results list; clicking one of
-// those results opens its own detail modal (device-shaped items reuse the
-// existing playground DeviceInsightModal.vue; everything else renders via
-// the new InsightDetailModal.vue). ──
+// those results opens its own detail modal (device-shaped items open the
+// merged devices/DeviceDetailDrawer.vue, resolving this widget's lighter
+// raw item into a full device the same way Playground's globe/map pins do;
+// everything else renders via InsightDetailModal.vue). ──
 const selectedWidgetItems = ref<{ title: string; items: any[]; stat: string } | null>(null);
 const activeInsight = ref<Record<string, any> | null>(null);
 const activeInsightIsDevice = computed(() => !!activeInsight.value && insightKind(activeInsight.value) === "device");
@@ -495,7 +496,7 @@ async function saveWidgetForm(w: DashboardWidget) {
     />
     <OrgProfileModal :profile="selectedOrgProfile" @close="selectedOrgProfile = null" />
     <WidgetResultsModal :results="selectedWidgetItems" @close="selectedWidgetItems = null" @select-item="openInsight" />
-    <DeviceInsightModal v-if="activeInsightIsDevice" :device="activeInsight" @close="activeInsight = null" />
+    <DeviceDetailDrawer v-if="activeInsightIsDevice" :device="activeInsight" @close="activeInsight = null" />
     <InsightDetailModal v-else :insight="activeInsight" :widget-stat="selectedWidgetItems?.stat ?? ''" @close="activeInsight = null" />
   </div>
 </template>

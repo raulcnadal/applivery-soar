@@ -133,6 +133,15 @@ export interface NormalizedDevice {
   manufacturer: string;
   osVersion: string;
   battery: number | null;
+  // Added for the merged device modal (Devices view + Playground/Dashboard
+  // "insight" entry points) — previously only read off the raw Applivery
+  // item by DeviceInsightModal.vue directly (summary.macAddress/ipAddress/
+  // managementMode with a handful of top-level fallbacks); pulled into the
+  // normalized shape here so both entry points show the same fields from
+  // the same source once resolved to a full NormalizedDevice.
+  macAddress: string;
+  ipAddress: string;
+  managementMode: string;
   state: string;
   lastSeen: unknown;
   enrolledAt: unknown;
@@ -276,6 +285,9 @@ export function normalizeDeviceFull(
     manufacturer: summary.manufacturer || raw.manufacturer || raw.brand || "",
     osVersion: summary.osVersion || raw.osVersion || "",
     battery,
+    macAddress: summary.macAddress || raw.macAddress || raw.networkInfo?.mac || "",
+    ipAddress: summary.ipAddress || raw.ipAddress || "",
+    managementMode: raw.managementMode || summary.managementMode || "",
     state: String(raw.state || raw.status || "unknown").toLowerCase(),
     lastSeen: raw.lastStatusReportTime ?? raw.lastSeen ?? raw.updatedAt ?? null,
     enrolledAt: raw.enrolledDate ?? raw.createdAt ?? null,

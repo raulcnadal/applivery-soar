@@ -27,6 +27,12 @@ export interface NormalizedDevice {
   manufacturer: string;
   osVersion: string;
   battery: number | null;
+  // Populated for the merged device modal (Devices view + Playground/
+  // Dashboard-widget entry points) — see backend/deviceNormalize.ts's
+  // matching comment.
+  macAddress: string;
+  ipAddress: string;
+  managementMode: string;
   state: string;
   lastSeen: string | null;
   enrolledAt: string | null;

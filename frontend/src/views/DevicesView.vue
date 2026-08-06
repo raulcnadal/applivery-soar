@@ -179,6 +179,6 @@ onMounted(async () => {
     </div>
     <DeviceFleetTable v-else :devices="segmentScopedDevices" :segments="store.segments as any" :is-loading="store.isLoading" @open-device="openDevice" />
 
-    <DeviceDetailDrawer :device="selectedDevice" :segments="store.segments as any" @close="closeDrawer" />
+    <DeviceDetailDrawer :device="selectedDevice" @close="closeDrawer" />
   </main>
 </template>

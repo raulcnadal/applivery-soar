@@ -347,10 +347,27 @@ export async function getDevicesFull(
 }
 
 /**
- * Single-device compliance/risk detail — port of `get_device_compliance`
- * (main.py:3589). Deliberately reuses getDevicesFull's own cached-or-live
- * fleet computation rather than duplicating risk-scoring/violation-lookup
- * logic in a second place.
+ * Single-device detail — port of `get_device_compliance` (main.py:3589),
+ * widened beyond the original's own deliberately-curated subset (id/
+ * isCompliant/policyCompliant/riskScore/riskTier/riskFactors/
+ * policyViolations/activeViolations/openCases). That subset existed because
+ * the original app's Playground device modal (DeviceInsightCard) only ever
+ * needed the compliance/risk fields it didn't already carry — it had its
+ * own separate Overview tab fed straight from the lighter mdm_devices
+ * widget item, and never showed the Devices view's own vulnStatus/
+ * osUpdateStatus/tags/segmentId/activePolicies/etc.
+ *
+ * Since the merged device modal (Devices view + Playground/Dashboard-widget
+ * entry points, one component) now needs the ENTIRE NormalizedDevice
+ * whenever it's opened from a "lighter" caller that doesn't already have
+ * one, this returns the full matched record instead. Still reuses
+ * getDevicesFull's own cached-or-live fleet computation rather than
+ * duplicating any lookup logic — the existing 5-minute live cache
+ * (DEVICES_CACHE_TTL_SECONDS) keeps repeat calls cheap, and guarantees this
+ * can never drift out of sync with the Devices view/detail drawer's own
+ * numbers, which read from the exact same computation. Backward compatible
+ * with any caller written against the old narrower shape: every field that
+ * shape returned is still present, just alongside everything else now too.
  */
 export async function getDeviceCompliance(authorization: string, workspaceSlug: string, deviceId: string) {
   const full = await getDevicesFull(authorization, workspaceSlug, false);
@@ -358,17 +375,7 @@ export async function getDeviceCompliance(authorization: string, workspaceSlug: 
   if (!match) {
     throw new HttpError(404, "Device not found in the current fleet snapshot");
   }
-  return {
-    id: match.id,
-    isCompliant: match.isCompliant,
-    policyCompliant: match.policyCompliant,
-    riskScore: match.riskScore,
-    riskTier: match.riskTier,
-    riskFactors: match.riskFactors,
-    policyViolations: match.policyViolations,
-    activeViolations: match.activeViolations,
-    openCases: match.openCases,
-  };
+  return match;
 }
 
 /**

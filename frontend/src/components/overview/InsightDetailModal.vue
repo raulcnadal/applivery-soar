@@ -3,8 +3,8 @@
 // AREN'T device-shaped — App.jsx's renderInsightContent (~3988-4270),
 // dispatched by insightKind() (lib/widgetVisuals.ts's 1:1 port of the same
 // shape-sniffing renderInsightContent does inline). Device-shaped items
-// instead reuse the existing, richer playground/DeviceInsightModal.vue
-// (already a full port of DeviceInsightCard, App.jsx:2228-2699) — see
+// instead reuse devices/DeviceDetailDrawer.vue — the same merged device
+// modal the Devices view and Playground globe/map pins also open — see
 // OverviewView.vue's activeInsight wiring for the branch.
 import { computed } from "vue";
 import { ICONS } from "../../lib/solarIcons";
