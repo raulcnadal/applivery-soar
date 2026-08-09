@@ -105,30 +105,55 @@ function parseEuvdItems(items: Array<Record<string, any>>, platform: "apple" | "
   return entries;
 }
 
-/** Port of `_refresh_vuln_catalog` (main.py:16655). */
+/**
+ * Port of `_refresh_vuln_catalog` (main.py:16655) — with one correction on
+ * top of the original's own logic (present in both main.py and this file's
+ * first port of it): the original replaced the ENTIRE catalog whenever
+ * EITHER vendor/product fetch returned anything, keyed off one shared
+ * `had_success`/`hadSuccess` flag. That means a day where Apple's EUVD
+ * fetch succeeds but Android's happens to return zero items (rate limit,
+ * transient network blip, or a day with genuinely no new Android CVEs in
+ * the rolling window) silently wipes out every previously-cached Android
+ * entry too, since `hadSuccess` was already true from Apple alone. Found
+ * while investigating a user report of the Android Vulnerability Catalog
+ * (Settings) reading "Entries: 0" with a same-day "Last fetched" timestamp,
+ * while Apple's catalog was clearly populated (devices showing real
+ * pending-CVE counts). Fixed by tracking success per platform and only
+ * touching a platform's slice of the catalog when its own fetch actually
+ * returned data — an unrelated (or itself-empty) platform's cycle no
+ * longer erases the other's last-known-good entries.
+ */
 export async function refreshVulnCatalog(): Promise<VulnCatalog> {
   const catalog = await loadVulnCatalog();
   const now = new Date();
   const fromDate = new Date(now.getTime() - 30 * MONTHS_BACK * 86_400_000).toISOString().slice(0, 10);
   const toDate = now.toISOString().slice(0, 10);
 
-  let allEntries: Array<Record<string, any>> = [];
-  let hadSuccess = false;
+  let appleEntries: Array<Record<string, any>> | null = null;
+  let androidEntries: Array<Record<string, any>> | null = null;
 
   const appleRaw = await fetchEuvd("apple", "ios", fromDate, toDate);
   if (appleRaw.length) {
-    hadSuccess = true;
     const appleProducts = new Set(["ios and ipados", "macos", "ipados"]);
-    allEntries = allEntries.concat(parseEuvdItems(appleRaw, "apple", (n) => appleProducts.has(n.toLowerCase())));
+    appleEntries = parseEuvdItems(appleRaw, "apple", (n) => appleProducts.has(n.toLowerCase()));
   }
 
   const androidRaw = await fetchEuvd("google", "android", fromDate, toDate);
   if (androidRaw.length) {
-    hadSuccess = true;
-    allEntries = allEntries.concat(parseEuvdItems(androidRaw, "android", (n) => n.toLowerCase() === "android"));
+    androidEntries = parseEuvdItems(androidRaw, "android", (n) => n.toLowerCase() === "android");
   }
 
+  const hadSuccess = appleEntries !== null || androidEntries !== null;
+
   if (hadSuccess) {
+    // Keep whatever we already had for a platform that didn't get fresh
+    // data this cycle (including any platform besides apple/android that
+    // might exist here in the future); only the platform(s) that actually
+    // returned new raw items this round get replaced below.
+    const preserved = (catalog.entries ?? []).filter(
+      (e) => (e.platform !== "apple" || appleEntries === null) && (e.platform !== "android" || androidEntries === null),
+    );
+    const allEntries = [...preserved, ...(appleEntries ?? []), ...(androidEntries ?? [])];
     const dedup = new Map<string, Record<string, any>>();
     for (const e of allEntries) {
       const key = `${e.cveId}:${e.platform}:${e.productLabel}:${e.fixedVersion ?? ""}:${e.androidMajorVersion ?? ""}`;
@@ -138,6 +163,14 @@ export async function refreshVulnCatalog(): Promise<VulnCatalog> {
     catalog.lastFetchedAt = now.toISOString();
     catalog.lastError = null;
     catalog.windowFrom = fromDate;
+    // Diagnostic for the "Android catalog reads 0 entries" class of report —
+    // distinguishes "EUVD returned raw items but our product-name filter
+    // matched none of them" (a taxonomy/naming drift on ENISA's end worth
+    // knowing about) from "EUVD returned nothing at all for this window"
+    // (rate limit or a transient blip, self-heals next refresh).
+    console.log(
+      `[Vuln Catalog] refresh: apple raw=${appleRaw.length} parsed=${appleEntries?.length ?? 0}, android raw=${androidRaw.length} parsed=${androidEntries?.length ?? 0}, catalog now ${catalog.entries.length} total entries`,
+    );
   } else if (!catalog.entries?.length) {
     catalog.lastError = "No EUVD data fetched yet — check network access to euvdservices.enisa.europa.eu";
   }
