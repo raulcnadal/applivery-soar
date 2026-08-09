@@ -296,6 +296,25 @@ function formatDate(value: string | null): string {
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
 }
+
+// Agent-log field fallbacks — content/contentError/file/createdAt are the
+// fields confirmed on Applivery's official agent-logs schema, but a
+// reference third-party app consuming the same API (device_profile_sheet.dart
+// :4514-4519) defensively also reads type/eventType, status/result,
+// message/output/description/detail, and scriptName/name — implying
+// Applivery's real production payloads carry more than the documented
+// minimum. These helpers read the same fallback chains so the tab still
+// shows something useful if a given org's logs use those fields instead of
+// (or alongside) content.
+function logTitle(l: Record<string, any>): string {
+  return l.scriptName || l.name || l.type || l.eventType || "Agent event";
+}
+function logStatus(l: Record<string, any>): string {
+  return (l.status || l.result || "").toString();
+}
+function logBody(l: Record<string, any>): string {
+  return l.content || l.message || l.output || l.description || l.detail || "";
+}
 </script>
 
 <template>
@@ -853,17 +872,34 @@ function formatDate(value: string | null): string {
             </template>
             <div v-else-if="logs.length" class="space-y-1.5">
               <div v-for="(l, i) in logs" :key="i" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                <div class="flex items-center justify-between mb-1 gap-2">
+                  <span class="text-xs font-semibold truncate text-gray-700 dark:text-gray-200">{{ logTitle(l) }}</span>
+                  <span
+                    v-if="logStatus(l)"
+                    class="text-[10px] font-bold uppercase shrink-0 px-1.5 py-0.5 rounded"
+                    :style="{
+                      backgroundColor: `${/ERROR|FAIL|CRITICAL/i.test(logStatus(l)) ? DANGER : /WARN/i.test(logStatus(l)) ? WARNING : SUCCESS}15`,
+                      color: /ERROR|FAIL|CRITICAL/i.test(logStatus(l)) ? DANGER : /WARN/i.test(logStatus(l)) ? WARNING : SUCCESS,
+                    }"
+                  >
+                    {{ logStatus(l) }}
+                  </span>
+                </div>
                 <div class="flex items-center justify-between mb-1">
                   <span class="text-[10px] font-medium px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}10`, color: PRIMARY_BLUE }">{{ device.platformLabel }} Agent</span>
                   <span class="text-[10px] font-mono text-gray-400">{{ l.createdAt ? formatDate(l.createdAt) : "" }}</span>
                 </div>
-                <!-- contentError/file are per the official Applivery agent-logs
-                     schema (GET /mdm/agent-logs) — content is the log body,
-                     contentError surfaces a parse/agent-side failure distinct
-                     from the log itself, file is an optional attached log
-                     blob (e.g. a full crash dump) stored in Applivery's file
-                     store. -->
-                <p class="text-xs font-mono break-all whitespace-pre-wrap text-gray-700 dark:text-gray-200">{{ l.content || l.message || JSON.stringify(l) }}</p>
+                <!-- content/contentError/file are per the official Applivery
+                     agent-logs schema (GET /mdm/agent-logs); logBody() also
+                     falls back to message/output/description/detail, seen
+                     in a reference third-party app's handling of the same
+                     API (device_profile_sheet.dart) — some orgs' log
+                     payloads apparently carry those instead of/alongside
+                     content. contentError surfaces a parse/agent-side
+                     failure distinct from the log itself; file is an
+                     optional attached log blob (e.g. a full crash dump)
+                     stored in Applivery's file store. -->
+                <p v-if="logBody(l)" class="text-xs font-mono break-all whitespace-pre-wrap text-gray-700 dark:text-gray-200">{{ logBody(l) }}</p>
                 <p v-if="l.contentError" class="text-xs font-mono break-all whitespace-pre-wrap mt-1.5" :style="{ color: DANGER }">{{ l.contentError }}</p>
                 <a
                   v-if="l.file?.location"
