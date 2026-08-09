@@ -78,7 +78,15 @@ A unified, chronological, filterable log of every policy evaluation, violation, 
 
 **Value**: this is the evidentiary backbone behind every other claim the platform makes — every automated decision it takes is independently reconstructable after the fact.
 
-### 3.9 Settings — administration, integrations, and intelligence feeds
+### 3.9 On-device telemetry & the native agent — data Applivery's own API doesn't expose
+
+A lightweight native background service (a Windows Service / macOS LaunchDaemon, distributed as a signed installer) runs on managed endpoints and reports the security signals Applivery's own MDM API doesn't surface — disk encryption, firewall state, Secure Boot/TPM/FileVault/XProtect status, and installed-application inventory — directly into the compliance engine on a schedule. Beyond that fixed set, **Custom Device Checks** let an admin define an arbitrary additional probe with no code and no new agent release — is a named process or service running, does a registry value or config file hold an expected value, is a specific application installed at a required version, or (for teams that need it) run an arbitrary command and evaluate its output — and have the result available as a Compliance Policy condition on the very next device check-in.
+
+The agent itself is distributed with the same zero-friction model as the platform's own container images: no separate download portal, no manual credential exchange — a fresh build is available directly from Settings the moment it's published, and can be pushed into Applivery's own App Distribution for fleet-wide deployment with one click, from an admin's own already-authenticated session.
+
+**Value**: closes the gap between "what Applivery's MDM API reports" and "what a security team actually needs to verify" — without waiting on a platform release for every new check an auditor or a threat asks for.
+
+### 3.10 Settings — administration, integrations, and intelligence feeds
 
 The control plane for the entire platform: role-based access control, every third-party integration (below), and a set of security-intelligence catalogs — Windows patch status, Apple/Android CVE tracking, OS end-of-life status, Apple's own build-signing data, and an optional richer per-app vulnerability service — most of which need zero configuration beyond being switched on; they run themselves on a schedule and simply feed data into Compliance and Devices.
 
@@ -97,7 +105,7 @@ SOAR's relationship to Applivery UEM/MDM isn't an integration in the sense of th
 | Email | Any SMTP server | Outbound | Scheduled report delivery, Case SLA breach alerts, System Health alerts, and test-email verification. |
 | SIEM / log shipping | Syslog (RFC 5424), generic webhook, Amazon S3 (or S3-compatible), NFS, SFTP | Outbound | Real-time or daily-batch export of the full Audit Log, in JSON or CEF format (ArcSight/Splunk/QRadar/Sentinel-compatible), to an organization's existing security data lake or SIEM. |
 | Inbound automation triggers | Any system that can POST JSON (EDR, firewall, SIEM, IDS), plus Applivery's own native event webhook | Inbound | Lets external security tooling fire a Workflow directly — a detection in a third-party EDR or firewall can trigger automated containment here without a human in the loop, if the organization chooses to configure it that way. |
-| On-device telemetry | A lightweight, optional self-report script (macOS `.sh` / Windows `.ps1`) | Inbound | Reports attributes Applivery itself doesn't expose — disk encryption, screen lock, antivirus status, Secure Boot/BitLocker/TPM/FileVault/XProtect state, and installed-app inventory — back into the compliance engine via a dedicated webhook. |
+| On-device telemetry | The native Applivery SOAR Agent (Windows Service / macOS LaunchDaemon), or a lighter-weight optional self-report script (macOS `.sh` / Windows `.ps1`) for teams that prefer scheduling it themselves | Inbound | Reports attributes Applivery itself doesn't expose — disk encryption, screen lock, antivirus status, Secure Boot/BitLocker/TPM/FileVault/XProtect state, installed-app inventory, and any admin-defined Custom Device Check — back into the compliance engine via a dedicated webhook. |
 | Public vulnerability/lifecycle intelligence | ENISA EU Vulnerability Database, Microsoft MSRC, endoflife.date, Apple GDMF (Software Lookup Service) | Inbound (automatic, no configuration) | Free, no-signup data feeds refreshed on a background schedule, powering the CVE, patch-gap, and OS-lifecycle signals used throughout Devices and Compliance. |
 | Optional richer vulnerability intelligence | Applivery's own hosted Vulnerability Service | Bidirectional (opt-in) | A deeper, cross-platform (including Windows) CVE-matching service with confirmed fix versions and CISA KEV/FIRST EPSS exploit-likelihood scoring, for organizations that want more than the free public feeds provide. |
 

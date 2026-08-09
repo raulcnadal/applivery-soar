@@ -58,6 +58,7 @@ Each condition is Field → Operator → Value. Choose **Match ANY condition** (
 | Custom device field (advanced) | free-text dot-path into the full device record, e.g. `nativeSecurity.isEncrypted` — used for things like Android disk-encryption/screen-lock checks where there's no dedicated field |
 | Self-Reported Attribute (agent) | from the optional self-report script — e.g. `diskEncryptionEnabled`, `screenLockEnabled`, `antivirusEnabled`. Needs [Settings → Device Data Webhook](settings.md#device-data-webhook) set up and the matching script deployed |
 | Days since last self-report / Has ever self-reported | |
+| Custom Device Check result | pick one of the checks defined in [Settings → Custom Device Checks](settings.md#custom-device-checks) — any admin-defined process/service/registry-or-plist/app-version/command check the native agent runs locally on each device. Windows-authored checks only ever appear as options on a Windows-scoped policy, and macOS-authored checks only on a macOS-scoped one |
 | **Missing a required app** (App List) | pick an existing App List — only matches devices on that list's platform |
 | **Has a disallowed app** (App List) | same, inverse |
 | Device Risk Score / Risk Tier | |
@@ -116,6 +117,7 @@ Each list shows its app count and which Compliance Policies currently reference 
 - **[OS Updates](settings.md#os-updates)** — powers the pending-update conditions; needs at least one catalog refresh to have happened.
 - **[Vulnerability Service](settings.md#vulnerability-service)** — opt-in, needs an API token configured before its conditions produce real data.
 - **[Device Data Webhook](settings.md#device-data-webhook)** — required for Self-Reported Attribute conditions (disk encryption, screen lock, antivirus on Windows/macOS).
+- **[Custom Device Checks](settings.md#custom-device-checks)** — required for Custom Device Check result conditions; a check must exist (and be enabled) before it shows up as a pickable condition.
 - **App List inventory** — populated either via the self-report script or the paced background Applivery-API refresher; a brand-new App List condition won't match anything until coverage catches up.
 - **[Roles](settings.md#roles)** — `canBulkTriage` gates bulk approve/dismiss on the violations queue; `canDeletePolicyOrWorkflow` gates policy deletion.
 

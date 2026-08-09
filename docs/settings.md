@@ -56,14 +56,48 @@ No permission gate — any signed-in admin can set the automation credential to 
 
 ## Device Data Webhook
 
-Lets a scheduled script running **on managed devices** push extra attributes (disk encryption, firewall status, patch level, etc.) that aren't available from Applivery's own data. Devices are matched by serial number. Once reported, these become usable as **Self-Reported Attribute** conditions in [Compliance Policies](compliance.md#conditions--the-full-field-catalog).
+The receiving end of every piece of data a Windows or macOS device pushes to SOAR itself, rather than SOAR pulling it from Applivery's own MDM API. Devices are matched by serial number. Once reported, this data becomes usable as **Self-Reported Attribute** and **Custom Device Check result** conditions in [Compliance Policies](compliance.md#conditions--the-full-field-catalog), and as App List inventory.
 
 - Shows the webhook URL (`POST {your-url}/api/device-data/report`) with the exact headers and an example JSON body, once a secret exists.
-- **Generate webhook secret** / **Rotate secret** (confirm-gated — rotating immediately breaks any script still using the old secret) / **Remove** (confirm-gated).
-- **App Inventory Reporting** sub-section — downloads ready-to-run macOS (`.sh`) / Windows (`.ps1`) scripts, pre-filled with your URL/workspace/secret, that push installed-app inventory (bundle IDs/versions, or winget package IDs/versions) — feeds [App List](compliance.md#app-lists-sub-view) conditions and [Vulnerability Service](#vulnerability-service) per-app CVE matching.
-- **Security Attestation Reporting** sub-section — downloads scripts reporting hardware/OS security posture: Secure Boot, VBS, Credential Guard, HVCI, BitLocker, TPM (Windows); FileVault, firewall, XProtect, Secure Token, screen lock (macOS). No Android/iOS equivalent exists — there's no way to run an unattended privileged script on those platforms.
+- **Generate webhook secret** / **Rotate secret** (confirm-gated — rotating immediately breaks anything still using the old secret, including the native agent below) / **Remove** (confirm-gated).
 
-Both script sections stay disabled until the webhook secret above exists. No permission gate.
+### Applivery SOAR Agent
+
+The primary, recommended way to get data flowing: a small native background service (Windows Service / macOS LaunchDaemon) that reports the same telemetry as the legacy scripts below, on a schedule, plus whatever [Custom Device Checks](#custom-device-checks) are defined — no cron job or Task Scheduler entry to manage yourself.
+
+- **Download** (per platform) — the compiled binary (`.msi` for Windows, `.pkg` for macOS), served directly by this app's own backend with **no GitHub token or login required**, the same way this project's own Docker images are public. The two agent repos' CI publishes a fresh build here automatically on every push to `main`; Settings shows the filename/size and, once you've clicked Publish at least once, when it was last published to Applivery.
+- **Publish to Applivery** (per platform, requires `canEditIntegrationSecrets`) — uploads that same binary into your Applivery organization's App Distribution as a real asset-backed application, using your own live Applivery session. Once published, assign it to a Policy in Applivery the same way you'd deploy any other managed app. Re-clicking updates the existing App Distribution entry in place rather than creating a duplicate.
+- **Managed Configuration** — the agent takes no secret at build time; deploy it with a config snippet (ready-made `.reg` for Windows, `.json` for macOS, both pre-filled with your URL/workspace/webhook secret) pushed via your UEM's Custom Configuration mechanism, or installed by hand. See each agent repo's own README for the full field reference: [Windows agent](https://github.com/raulcnadal/applivery-soar-agent-windows), [macOS agent](https://github.com/raulcnadal/applivery-soar-agent-macos) (both private repos — request access from whoever administers this deployment).
+- **Advanced: download via GitHub token (optional)** — collapsed by default. An older path that proxies the two agent repos' own private GitHub Releases directly, for anyone who'd rather not rely on this app's own build mirror, or who needs an architecture the zero-config path doesn't carry (currently ARM64 Windows). Requires a repo-read-scoped GitHub Personal Access Token, configured once here.
+
+### App Inventory Reporting / Security Attestation Reporting
+
+Two older, still-supported script-based paths that predate the native agent — kept for anyone who'd rather deploy a script via existing cron/Task Scheduler infrastructure than roll out a new background service.
+
+- **App Inventory Reporting** — downloads ready-to-run macOS (`.sh`) / Windows (`.ps1`) scripts, pre-filled with your URL/workspace/secret, that push installed-app inventory (bundle IDs/versions, or winget package IDs/versions) — feeds [App List](compliance.md#app-lists-sub-view) conditions and [Vulnerability Service](#vulnerability-service) per-app CVE matching.
+- **Security Attestation Reporting** — downloads scripts reporting hardware/OS security posture: Secure Boot, VBS, Credential Guard, HVCI, BitLocker, TPM (Windows); FileVault, firewall, XProtect, Secure Token, screen lock (macOS). No Android/iOS equivalent exists — there's no way to run an unattended privileged script on those platforms.
+
+Both script sections stay disabled until the webhook secret above exists. No permission gate on the webhook/scripts themselves; the agent's Publish to Applivery button is gated by `canEditIntegrationSecrets`.
+
+## Custom Device Checks
+
+Lets an admin define **any** check the native agent should run locally on a Windows or macOS device and report back — not limited to the fixed attribute set above. This is what turns the agent into a general-purpose compliance probe rather than a fixed telemetry collector: define a check once, and its result shows up as a pickable **Custom Device Check result** condition in [Compliance Policies](compliance.md#conditions--the-full-field-catalog), scoped to whichever platform it was authored for.
+
+Each check has:
+
+- **Platform** — Windows or macOS (checks are platform-specific; a Windows check never appears as an option on a macOS-scoped policy and vice versa).
+- **Name** and an auto-derived stable **key** (what Compliance Policy conditions actually reference).
+- **Checker type**:
+  - **Process running** — is a named process currently running?
+  - **Service / launchd job running** — is a named Windows service (or macOS launchd job) currently running?
+  - **Registry or file/plist value** — read a specific `HKLM`/`HKCU` registry value (Windows) or a plist key / file existence check (macOS).
+  - **App installed** — is a specific app installed, and what version?
+  - **Command (advanced)** — run an arbitrary shell command (`powershell.exe` on Windows, `/bin/bash` on macOS) and report its output. Runs with the agent's own elevated privileges and no sandboxing — the UI surfaces an explicit warning; use deliberately, only for checks you trust.
+- **Enabled** toggle — disabled checks aren't sent to agents and aren't evaluated.
+
+Checks are polled fresh by every agent once per report cycle (`GET /api/device-data/custom-checks?platform=...`), so creating or editing one takes effect on a device's very next report — no agent restart or redeploy needed. A check that fails to *run* (service not found, registry key missing, command timeout) reports as an error, which Compliance Policies treat the same as "no data yet" — a legitimately negative result (e.g. a process simply not running) is a normal value, not an error.
+
+No permission gate beyond the general Settings `read`/`manage` levels.
 
 ## Log Export
 
@@ -215,8 +249,9 @@ Quick reference for which Settings section unblocks which feature elsewhere:
 | Feature | Depends on |
 |---|---|
 | [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service |
-| [Compliance](compliance.md) Self-Reported Attribute conditions | Device Data Webhook + a deployed self-report script |
-| [Compliance](compliance.md) App List conditions | App List inventory sync (Device Data Webhook script, or the paced background refresher) |
+| [Compliance](compliance.md) Self-Reported Attribute conditions | Device Data Webhook + a deployed self-report script or the native agent |
+| [Compliance](compliance.md) Custom Device Check result conditions | Custom Device Checks + the native agent deployed |
+| [Compliance](compliance.md) App List conditions | App List inventory sync (Device Data Webhook script/agent, or the paced background refresher) |
 | [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service |
 | [Devices](devices.md) Firewall Rule Sets section | A [Firewall Policy Library](workflows.md#firewall-policy-library) rule set actually applied via a workflow |
 | [Cases](cases.md) ticketing chips/sync | Integrations (Jira/ServiceNow) |
