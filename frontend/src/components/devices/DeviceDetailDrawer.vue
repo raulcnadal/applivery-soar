@@ -496,7 +496,7 @@ function logBody(l: Record<string, any>): string {
                     <template v-for="(cve, idx) in kb.cveIds.slice(0, 4)" :key="cve">
                       <a v-if="msrcUrl(cve)" :href="msrcUrl(cve)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ cve }}</a>
                       <template v-else>{{ cve }}</template>
-                      <template v-if="idx < Math.min(kb.cveIds.length, 4) - 1">, </template>
+                      <template v-if="(idx as number) < Math.min(kb.cveIds.length, 4) - 1">, </template>
                     </template>
                     {{ kb.cveIds.length > 4 ? ` +${kb.cveIds.length - 4} more` : "" }}
                   </p>
@@ -549,7 +549,7 @@ function logBody(l: Record<string, any>): string {
                   <template v-for="(cve, idx) in (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds" :key="cve">
                     <a v-if="nvdUrl(cve)" :href="nvdUrl(cve)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: WARNING }">{{ cve }}</a>
                     <template v-else>{{ cve }}</template>
-                    <template v-if="idx < (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds.length - 1">, </template>
+                    <template v-if="(idx as number) < (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds.length - 1">, </template>
                   </template>
                 </p>
               </div>
