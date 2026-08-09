@@ -434,7 +434,14 @@ export async function getDeviceLocations(authorization: string, workspaceSlug: s
   try {
     const orgBase = await resolveOrgBase(headers, workspaceSlug);
     const mdmType = mdmTypeSegment(platform);
-    const res = await appliveryClient.get<any>(`${orgBase}/mdm/locations/${mdmType}/${deviceId}`, { headers, params: { limit: 50, sort: "createdAt:desc" } });
+    // The double slash before `${mdmType}` is not a typo — Applivery's own
+    // OpenAPI schema documents this endpoint's path as literally
+    // `/mdm/locations//:type/:identifier` (confirmed against
+    // docs.applivery.com directly), and independent third-party client code
+    // hitting this same endpoint confirms a single slash here 401s. Found
+    // while cross-checking a reference Flutter app's own Applivery
+    // integration against this one.
+    const res = await appliveryClient.get<any>(`${orgBase}/mdm/locations//${mdmType}/${deviceId}`, { headers, params: { limit: 50, sort: "createdAt:desc" } });
     return { items: extractItems(res.data) };
   } catch (e) {
     console.warn(`[Devices] getDeviceLocations(${deviceId}) failed: ${e}`);
@@ -447,7 +454,10 @@ export async function getDeviceNetworkStatus(authorization: string, workspaceSlu
   try {
     const orgBase = await resolveOrgBase(headers, workspaceSlug);
     const mdmType = mdmTypeSegment(platform);
-    const res = await appliveryClient.get<any>(`${orgBase}/mdm/network-status/${mdmType}/${deviceId}`, { headers, params: { limit: 1, sort: "createdAt:desc" } });
+    // Same double-slash requirement as getDeviceLocations above — also
+    // documented that way in Applivery's own OpenAPI schema for this
+    // endpoint (`/mdm/network-status//:type/:identifier`).
+    const res = await appliveryClient.get<any>(`${orgBase}/mdm/network-status//${mdmType}/${deviceId}`, { headers, params: { limit: 1, sort: "createdAt:desc" } });
     return { items: extractItems(res.data) };
   } catch (e) {
     console.warn(`[Devices] getDeviceNetworkStatus(${deviceId}) failed: ${e}`);

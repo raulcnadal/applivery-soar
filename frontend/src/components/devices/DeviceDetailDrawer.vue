@@ -14,9 +14,11 @@
 // but adding the missing details and tabs that the other Device modal type
 // has."
 //
-// Base style/tabs are this file's own (Overview/Compliance/Location);
-// Assets and Agent tabs, the richer per-device Location History block, and
-// the Network Status section are ported over from DeviceInsightModal.vue.
+// Base style/tabs are this file's own (Overview/Compliance/Location); the
+// Agent tab, the richer per-device Location History block, and the Network
+// Status section are ported over from DeviceInsightModal.vue. That source
+// also had an Assets tab (segment-level file assets) — dropped per user
+// request, this modal covers device state, not segment file assets.
 // Whichever "lighter" shape a caller hands in gets resolved into the same
 // full NormalizedDevice the Devices view already had, via
 // GET /api/devices/{id}/compliance — widened server-side to return the
@@ -65,7 +67,7 @@ const store = useDevicesStore();
 const workflowsStore = useWorkflowsStore();
 const router = useRouter();
 
-const tab = ref<"overview" | "compliance" | "location" | "assets" | "agent">("overview");
+const tab = ref<"overview" | "compliance" | "location" | "agent">("overview");
 const activePicker = ref<null | "segment" | "policy" | "tags">(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
@@ -91,34 +93,37 @@ function rawDeviceId(d: Record<string, any>): string {
 
 const platform = computed(() => (device.value ? PLATFORM_PATH[device.value.platform] : ""));
 
-// ── Extras (locations/network-status/agent-logs/assets) — ported over from
+// ── Extras (locations/network-status/agent-logs) — ported over from
 // playground/DeviceInsightModal.vue's own loadExtras(), proxied through
 // this app's own backend the same way (devices.service.ts). Fetched for
 // every entry point now, not just Playground — the Devices view's drawer
-// never had these tabs before. ──
+// never had these tabs before. No Assets tab/fetch (removed per user
+// request — this modal covers device state, not segment-level file
+// assets).
 const loadingExtras = ref(true);
 const locations = ref<any[]>([]);
 const network = ref<any | null>(null);
 const logs = ref<any[]>([]);
-const assets = ref<any[]>([]);
 const showLocationHistory = ref(false);
 
-async function loadExtras(id: string, plat: string, segmentId: unknown) {
+async function loadExtras(id: string, plat: string) {
   loadingExtras.value = true;
   const { api } = await import("../../api/http");
-  const [locRes, netRes, logsRes, assetsRes] = await Promise.all([
+  const [locRes, netRes, logsRes] = await Promise.all([
     api.get(`/devices/${id}/locations`, { params: { platform: plat } }).catch(() => null),
     api.get(`/devices/${id}/network-status`, { params: { platform: plat } }).catch(() => null),
     api.get(`/devices/${id}/agent-logs`, { params: { platform: plat } }).catch(() => null),
-    api.get(`/devices/${id}/assets`, { params: { segmentId: segmentId ?? "" } }).catch(() => null),
   ]);
   locations.value = locRes?.data?.items ?? [];
   network.value = netRes?.data?.items?.[0] ?? null;
   logs.value = logsRes?.data?.items ?? [];
-  assets.value = assetsRes?.data?.items ?? [];
   loadingExtras.value = false;
 }
 
+// Port of App.jsx's DeviceInsightCard signal-strength normalizer
+// (App.jsx:2334-2339) — Applivery's mdmNetworkStatus.strength isn't
+// consistently 0-100 vs 0-4 bars across platforms, so anything above 4 is
+// treated as already-a-percentage.
 function signalPct(strength: number | null | undefined): number | null {
   if (strength === null || strength === undefined) return null;
   const pct = strength > 4 ? strength / 100 : strength / 4;
@@ -136,7 +141,6 @@ watch(
     locations.value = [];
     network.value = null;
     logs.value = [];
-    assets.value = [];
     showLocationHistory.value = false;
     if (!d) return;
 
@@ -169,7 +173,7 @@ watch(
         .then((res) => (firewallState.value = res || { active: [] }))
         .catch(() => (firewallState.value = { active: [] }));
     }
-    loadExtras(resolved.id, resolved.platform, resolved.segmentId);
+    loadExtras(resolved.id, resolved.platform);
   },
   { immediate: true },
 );
@@ -364,7 +368,6 @@ function formatDate(value: string | null): string {
               { key: 'overview', label: 'Overview' },
               { key: 'compliance', label: 'Compliance' },
               { key: 'location', label: 'Location' },
-              { key: 'assets', label: 'Assets' },
               { key: 'agent', label: 'Agent' },
             ]"
             :key="t.key"
@@ -424,19 +427,31 @@ function formatDate(value: string | null): string {
 
             <!-- Network Status — moved over from the Playground modal's
                  own Overview tab (DeviceInsightModal.vue), same
-                 /devices/:id/network-status extras fetch. -->
+                 /devices/:id/network-status extras fetch. Field names
+                 (networkType/strength/carrierInfo.*/point.address.*/date)
+                 match Applivery's official mdmNetworkStatus schema and the
+                 original App.jsx's DeviceInsightCard (App.jsx:2324-2346) —
+                 the earlier Vue port had drifted to made-up field names
+                 (type/signalStrength/carrier/simState/city) that don't
+                 exist on the real API response, so Network Status silently
+                 rendered as empty/"Unknown" for every device. -->
             <div v-if="!loadingExtras && network" class="mb-6">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Network Status</p>
               <div class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50 text-sm space-y-1.5">
                 <div class="flex items-center justify-between">
-                  <span class="inline-flex items-center gap-1.5 font-semibold" :style="{ color: String(network.type || '').toLowerCase().includes('wifi') ? PRIMARY_BLUE : SUCCESS }">
-                    <component :is="String(network.type || '').toLowerCase().includes('wifi') ? ICONS.WiFiRouter : ICONS.Radio" :size="13" weight="Linear" />
-                    {{ network.type || "Unknown" }}
+                  <span class="inline-flex items-center gap-1.5 font-semibold" :style="{ color: String(network.networkType || '').toLowerCase().includes('wifi') ? PRIMARY_BLUE : SUCCESS }">
+                    <component :is="String(network.networkType || '').toLowerCase().includes('wifi') ? ICONS.WiFiRouter : ICONS.Radio" :size="13" weight="Linear" />
+                    {{ network.networkType || "Unknown" }}
                   </span>
-                  <span v-if="signalPct(network.signalStrength) !== null" class="text-xs text-gray-400">{{ Math.round(signalPct(network.signalStrength)! * 100) }}%</span>
+                  <span v-if="signalPct(network.strength) !== null" class="text-xs text-gray-400">{{ Math.round(signalPct(network.strength)! * 100) }}%</span>
                 </div>
-                <p v-if="network.carrier || network.simState" class="text-xs text-gray-400">{{ [network.carrier, network.simState].filter(Boolean).join(" · ") }}</p>
-                <p v-if="network.city" class="text-xs text-gray-400">{{ network.city }}</p>
+                <p v-if="network.carrierInfo?.carrierName || network.carrierInfo?.simState" class="text-xs text-gray-400">
+                  {{ [network.carrierInfo?.carrierName, network.carrierInfo?.simState].filter(Boolean).join(" · ") }}
+                </p>
+                <p v-if="network.point?.address?.city || network.point?.address?.country" class="text-xs text-gray-400">
+                  {{ [network.point?.address?.city, network.point?.address?.country].filter(Boolean).join(", ") }}
+                </p>
+                <p v-if="network.date" class="text-xs text-gray-400">Updated {{ formatDate(network.date) }}</p>
               </div>
             </div>
 
@@ -831,26 +846,6 @@ function formatDate(value: string | null): string {
             </div>
           </template>
 
-          <template v-else-if="tab === 'assets'">
-            <template v-if="loadingExtras">
-              <div class="h-12 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse mb-2" />
-              <div class="h-12 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
-            </template>
-            <div v-else-if="assets.length" class="space-y-1.5">
-              <div v-for="a in assets" :key="a.id" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
-                <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: `${PRIMARY_BLUE}10` }">
-                  <component :is="ICONS.Case" :size="14" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm truncate text-gray-900 dark:text-white">{{ a.name }}</p>
-                  <p class="text-xs text-gray-400">{{ a.type || "—" }}{{ a.extension ? ` · ${a.extension}` : "" }}</p>
-                </div>
-                <span class="text-xs shrink-0 text-gray-400">{{ a.size ? `${(a.size / 1024 / 1024).toFixed(1)} MB` : "" }}</span>
-              </div>
-            </div>
-            <p v-else class="text-xs text-gray-400">No assets found for this device's segment.</p>
-          </template>
-
           <template v-else-if="tab === 'agent'">
             <template v-if="loadingExtras">
               <div class="h-16 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse mb-2" />
@@ -862,7 +857,25 @@ function formatDate(value: string | null): string {
                   <span class="text-[10px] font-medium px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}10`, color: PRIMARY_BLUE }">{{ device.platformLabel }} Agent</span>
                   <span class="text-[10px] font-mono text-gray-400">{{ l.createdAt ? formatDate(l.createdAt) : "" }}</span>
                 </div>
+                <!-- contentError/file are per the official Applivery agent-logs
+                     schema (GET /mdm/agent-logs) — content is the log body,
+                     contentError surfaces a parse/agent-side failure distinct
+                     from the log itself, file is an optional attached log
+                     blob (e.g. a full crash dump) stored in Applivery's file
+                     store. -->
                 <p class="text-xs font-mono break-all whitespace-pre-wrap text-gray-700 dark:text-gray-200">{{ l.content || l.message || JSON.stringify(l) }}</p>
+                <p v-if="l.contentError" class="text-xs font-mono break-all whitespace-pre-wrap mt-1.5" :style="{ color: DANGER }">{{ l.contentError }}</p>
+                <a
+                  v-if="l.file?.location"
+                  :href="l.file.location"
+                  target="_blank"
+                  rel="noopener"
+                  class="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-medium"
+                  :style="{ color: PRIMARY_BLUE }"
+                >
+                  <component :is="ICONS.Case" :size="11" weight="Linear" />
+                  {{ l.file.originalName || "Attachment" }}{{ l.file.size ? ` · ${(l.file.size / 1024).toFixed(0)} KB` : "" }}
+                </a>
               </div>
             </div>
             <p v-else class="text-xs text-gray-400">No agent logs available for this device.</p>
