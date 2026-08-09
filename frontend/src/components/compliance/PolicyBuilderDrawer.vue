@@ -235,6 +235,7 @@ onMounted(async () => {
     store.mitreTechniques.length === 0 ? store.fetchMitreTechniques() : Promise.resolve(),
     store.smartAttributeNames.length === 0 ? store.fetchSmartAttributeNames() : Promise.resolve(),
     store.selfReportedAttributeNames.length === 0 ? store.fetchSelfReportedAttributeNames() : Promise.resolve(),
+    store.customCheckNames.length === 0 ? store.fetchCustomCheckNames() : Promise.resolve(),
     store.smartAttributes.length === 0 ? store.fetchSmartAttributes() : Promise.resolve(),
     store.appLists.length === 0 ? store.fetchAppLists() : Promise.resolve(),
     devicesStore.deviceTags.length === 0 ? devicesStore.fetchPickers() : Promise.resolve(),
@@ -262,6 +263,14 @@ const availableFields = computed(() => {
   });
 });
 
+// Custom Device Checks are admin-defined and already carry their own
+// platform tag (unlike selfReportedAttributeNames' free-text observed
+// strings, which need a server-side re-fetch per platform -- see
+// pickPlatform below) -- filtering client-side against the single
+// unfiltered fetch from onMounted is enough, and stays correct if the
+// admin flips between platforms on screen 1 without extra round trips.
+const filteredCustomCheckNames = computed(() => store.customCheckNames.filter((c) => !form.targetPlatform || c.platform === form.targetPlatform));
+
 function reconcileConditionsForTarget() {
   const allowed = new Set(availableFields.value.map((f) => f.key));
   form.conditions = form.conditions.map((c) => {
@@ -277,6 +286,12 @@ function pickPlatform(value: string) {
   form.targetPlatform = value;
   form.targetDeploymentModel = "";
   reconcileConditionsForTarget();
+  // Re-fetch platform-scoped -- selfReportedAttributeNames' underlying
+  // endpoint supports ?platform= filtering, but the names it returns carry
+  // no platform tag of their own, so (unlike customCheckNames above)
+  // narrowing correctly requires asking the server again rather than
+  // filtering client-side.
+  void store.fetchSelfReportedAttributeNames(value || undefined);
 }
 function pickDeploymentModel(value: string) {
   form.targetDeploymentModel = value;
@@ -663,6 +678,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         :fields-catalog="availableFields"
         :smart-attribute-names="store.smartAttributeNames"
         :self-reported-attribute-names="store.selfReportedAttributeNames"
+        :custom-check-names="filteredCustomCheckNames"
         :app-lists="store.appLists"
         :device-audiences="devicesStore.deviceAudiences as any"
         :device-tags="devicesStore.deviceTags"

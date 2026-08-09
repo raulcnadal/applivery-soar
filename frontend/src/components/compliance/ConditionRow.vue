@@ -8,7 +8,7 @@
 // builder.
 import { computed, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
-import type { AppList, ComplianceFieldDef, ConditionRule } from "../../stores/compliance";
+import type { AppList, ComplianceFieldDef, ConditionRule, CustomCheckName } from "../../stores/compliance";
 import type { GeofenceZone } from "../../stores/geofencing";
 import PolicyPickerModal from "../devices/PolicyPickerModal.vue";
 import AudiencePickerField from "./AudiencePickerField.vue";
@@ -28,6 +28,12 @@ const props = defineProps<{
   fieldsCatalog: ComplianceFieldDef[];
   smartAttributeNames: string[];
   selfReportedAttributeNames: string[];
+  // Disclosed new feature — customChecks.service.ts's module doc. Already
+  // pre-filtered by the caller (PolicyBuilderDrawer.vue) to the policy's
+  // own targetPlatform, since these ARE a finite, admin-defined vocabulary
+  // (unlike selfReportedAttributeNames' free-text observed strings) — a
+  // real dropdown, not a datalist.
+  customCheckNames: CustomCheckName[];
   appLists: AppList[];
   deviceAudiences: Array<{ id: string; name: string }>;
   deviceTags: string[];
@@ -55,6 +61,7 @@ function defaultValueForType(type: string | undefined, options: string[] | undef
   if (type === "policy") return null;
   if (type === "smart_attribute") return { name: "", compareValue: "" };
   if (type === "self_reported_attribute") return { name: "", compareValue: "" };
+  if (type === "custom_check_result") return { key: "", compareValue: "" };
   if (type === "custom_field") return { path: "", compareValue: "" };
   if (type === "app_list") return "";
   return "";
@@ -204,6 +211,27 @@ function setPolicyPlatform(platform: string) {
           @input="setValuePatch({ compareValue: ($event.target as HTMLInputElement).value })"
         />
         <p v-if="selfReportedAttributeNames.length === 0" class="text-[10px] w-full text-gray-400">No devices have reported yet — once one does, its field names appear here automatically.</p>
+      </div>
+
+      <div v-else-if="fieldDef?.type === 'custom_check_result'" class="flex items-center gap-2 flex-wrap">
+        <select
+          :value="condition.value?.key || ''"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+          @change="setValuePatch({ key: ($event.target as HTMLSelectElement).value })"
+        >
+          <option value="">{{ customCheckNames.length ? "Select a check…" : "No custom checks for this platform yet" }}</option>
+          <option v-for="c in customCheckNames" :key="c.key" :value="c.key">{{ c.name }}</option>
+        </select>
+        <input
+          v-if="needsCompareValue"
+          :value="condition.value?.compareValue ?? ''"
+          placeholder="Expected value…"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+          @input="setValuePatch({ compareValue: ($event.target as HTMLInputElement).value })"
+        />
+        <p v-if="customCheckNames.length === 0" class="text-[10px] w-full text-gray-400">
+          No custom checks defined for this platform yet — add one from Settings &gt; Custom Device Checks.
+        </p>
       </div>
 
       <div v-else-if="fieldDef?.type === 'custom_field'" class="flex items-center gap-2 flex-wrap">

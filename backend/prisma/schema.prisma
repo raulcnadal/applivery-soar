@@ -606,6 +606,34 @@ model DevicePushData {
   @@unique([workspaceSlug, deviceId, kind])
 }
 
+// Admin-defined custom device checks — disclosed new feature (no main.py
+// equivalent), see customChecks.service.ts's module doc for the full design.
+// One row per check; `key` is the stable identifier a Compliance Policy
+// condition references (COMPLIANCE_FIELDS' "customCheckResult" field),
+// scoped to one platform since a Windows registry check and a macOS plist
+// check are never the same query. `params` shape depends on `checkerType`
+// + `platform` together (validated in customChecks.service.ts, not at the
+// Prisma layer — same "loose Json, app-code-validated" convention as
+// CompliancePolicy.conditions).
+model CustomCheckDefinition {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  platform      String   // "windows" | "macos"
+  key           String   // stable slug, unique per (workspaceSlug, platform)
+  name          String
+  description   String?
+  checkerType   String   // "processRunning" | "serviceStatus" | "registryOrFileValue" | "appInstalled" | "command"
+  params        Json
+  enabled       Boolean  @default(true)
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedBy     String?
+  updatedAt     DateTime @updatedAt
+
+  @@unique([workspaceSlug, platform, key])
+  @@index([workspaceSlug])
+}
+
 model InstalledAppInventory {
   id            String   @id @default(uuid())
   workspaceSlug String

@@ -66,10 +66,30 @@ export function normalizePushedAttributes(platform: string, attributes: Record<s
   return out;
 }
 
+/**
+ * One custom check's result — reported inline alongside the fixed
+ * `attributes` set below, on the SAME /api/device-data/report call the
+ * agent already makes every cycle (customChecks.service.ts's module doc has
+ * the full design). `value` is whatever the checker produced (a boolean for
+ * processRunning/serviceStatus, a string for registryOrFileValue/
+ * appInstalled/command's stdout); `error` is set instead when the check
+ * itself failed to run (e.g. registry path not found, command timed out) —
+ * the compliance evaluator treats an errored result the same as "missing"
+ * (complianceEvaluate.ts's customCheckResult branch).
+ */
+const customCheckResultSchema = z.object({
+  value: z.any().nullish(),
+  error: z.string().nullish(),
+});
+
 export const deviceReportPayloadSchema = z.object({
   platform: z.string(), // "windows" | "macos"
   serialNumber: z.string(),
   attributes: z.record(z.any()).default({}),
+  // Keyed by CustomCheckDefinition.key. Optional — an older agent build that
+  // predates this feature simply omits it, and reportDeviceData() carries
+  // the previously-stored results forward rather than wiping them.
+  customCheckResults: z.record(customCheckResultSchema).nullish(),
   agentVersion: z.string().nullish(),
   reportedAt: z.string().nullish(),
 });

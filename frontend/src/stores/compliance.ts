@@ -91,6 +91,32 @@ export interface SmartAttributeDef {
   name: string;
 }
 
+// Disclosed new feature — see backend's customChecks.service.ts module doc.
+export const CHECKER_TYPES = ["processRunning", "serviceStatus", "registryOrFileValue", "appInstalled", "command"] as const;
+export type CheckerType = (typeof CHECKER_TYPES)[number];
+
+export interface CustomCheckDefinition {
+  id: string;
+  workspaceSlug: string;
+  platform: "windows" | "macos";
+  key: string;
+  name: string;
+  description?: string | null;
+  checkerType: CheckerType;
+  params: Record<string, any>;
+  enabled: boolean;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedBy?: string | null;
+  updatedAt: string;
+}
+
+export interface CustomCheckName {
+  key: string;
+  name: string;
+  platform: string;
+}
+
 export interface MatchedDevice {
   id: string;
   displayName?: string | null;
@@ -204,6 +230,11 @@ export const useComplianceStore = defineStore("compliance", () => {
   const smartAttributes = ref<SmartAttributeDef[]>([]);
   // policyId -> live violator device count, for the policy grid cards.
   const violatorCounts = ref<Record<string, number | null>>({});
+
+  const customChecks = ref<CustomCheckDefinition[]>([]);
+  const isLoadingCustomChecks = ref(false);
+  const customChecksError = ref<string | null>(null);
+  const customCheckNames = ref<CustomCheckName[]>([]);
 
   async function fetchPolicies() {
     isLoadingPolicies.value = true;
@@ -474,6 +505,51 @@ export const useComplianceStore = defineStore("compliance", () => {
     await fetchInstalledAppsStatus();
   }
 
+  // ── Custom Device Checks — Settings > Device Data Webhook. See backend's
+  // customChecks.service.ts module doc for the full design. ──
+
+  async function fetchCustomChecks(platform?: string) {
+    isLoadingCustomChecks.value = true;
+    customChecksError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/compliance/custom-checks", { params: platform ? { platform } : {} });
+      customChecks.value = res.data.items ?? [];
+    } catch (err: any) {
+      customChecksError.value = err?.response?.data?.detail || "Failed to load custom device checks.";
+    } finally {
+      isLoadingCustomChecks.value = false;
+    }
+  }
+
+  async function createCustomCheck(payload: Partial<CustomCheckDefinition>) {
+    const { api } = await import("../api/http");
+    await api.post("/compliance/custom-checks", payload);
+    await fetchCustomChecks();
+    await fetchCustomCheckNames();
+  }
+
+  async function updateCustomCheck(id: string, payload: Partial<CustomCheckDefinition>) {
+    const { api } = await import("../api/http");
+    await api.put(`/compliance/custom-checks/${id}`, payload);
+    await fetchCustomChecks();
+    await fetchCustomCheckNames();
+  }
+
+  async function deleteCustomCheck(id: string) {
+    const { api } = await import("../api/http");
+    await api.delete(`/compliance/custom-checks/${id}`);
+    await fetchCustomChecks();
+    await fetchCustomCheckNames();
+  }
+
+  /** Policy Builder's condition picker — available immediately at check creation, see backend's getCustomCheckNames doc comment. */
+  async function fetchCustomCheckNames(platform?: string) {
+    const { api } = await import("../api/http");
+    const res = await api.get("/compliance/custom-check-names", { params: platform ? { platform } : {} });
+    customCheckNames.value = res.data.items ?? [];
+  }
+
   return {
     policies,
     isLoadingPolicies,
@@ -532,5 +608,14 @@ export const useComplianceStore = defineStore("compliance", () => {
     fetchInstalledAppsStatus,
     refreshInstalledAppsNow,
     setInstalledAppsBudget,
+    customChecks,
+    isLoadingCustomChecks,
+    customChecksError,
+    customCheckNames,
+    fetchCustomChecks,
+    createCustomCheck,
+    updateCustomCheck,
+    deleteCustomCheck,
+    fetchCustomCheckNames,
   };
 });

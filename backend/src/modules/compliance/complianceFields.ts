@@ -69,6 +69,15 @@ export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   { key: "smartAttribute", label: "Smart Attribute", type: "smart_attribute", operators: ["equals", "notEquals", "contains", "greaterThan", "lessThan", "exists", "missing"] },
   { key: "customField", label: "Custom device field (advanced)", type: "custom_field", operators: ["equals", "notEquals", "contains", "greaterThan", "lessThan", "exists", "missing"] },
   { key: "selfReportedAttribute", label: "Self-Reported Attribute (agent)", type: "self_reported_attribute", operators: ["equals", "notEquals", "contains", "greaterThan", "lessThan", "exists", "missing"] },
+  // Disclosed new feature (customChecks.service.ts) — an admin-defined check
+  // (process running, service status, registry/plist/file value, app
+  // installed, or a raw command) the matching agent runs locally and
+  // reports back. `platforms` is intentionally omitted here (the field
+  // itself is universal in the catalog) — the Policy Builder narrows which
+  // individual CHECK KEYS are offered to the policy's own targetPlatform
+  // via GET /api/compliance/custom-check-names?platform=, same reasoning as
+  // selfReportedAttribute's `name` being free-text rather than an enum.
+  { key: "customCheckResult", label: "Custom Check Result (agent)", type: "custom_check_result", operators: ["equals", "notEquals", "contains", "greaterThan", "lessThan", "exists", "missing"] },
   { key: "selfReportDaysAgo", label: "Days since last self-report", type: "number", operators: ["greaterThan", "lessThan"] },
   { key: "hasSelfReported", label: "Has ever self-reported (agent installed)", type: "boolean", operators: ["equals"] },
   { key: "requiredAppList", label: "Missing a required app (from an App List)", type: "app_list", operators: ["equals"] },

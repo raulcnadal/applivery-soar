@@ -67,6 +67,14 @@ export async function reportDeviceData(workspaceSlug: string, payload: DeviceRep
   const record = {
     platform: payload.platform,
     attributes: normalized,
+    // Custom check results (customChecks.service.ts) ride along on this same
+    // row/call rather than a separate table — a device's "latest known
+    // state from its agent" is one concept. Only overwritten when the agent
+    // actually sends a customCheckResults block this cycle; an older agent
+    // build that predates this feature (or a cycle where the agent's poll
+    // for check definitions failed) leaves the previous results in place
+    // instead of silently wiping them.
+    customCheckResults: payload.customCheckResults ?? existingPayload.customCheckResults ?? null,
     agentVersion: payload.agentVersion ?? null,
     clientReportedAt: payload.reportedAt ?? null,
     reportCount: (existingPayload.reportCount ?? 0) + 1,

@@ -28,6 +28,7 @@ import {
 import { COMPLIANCE_FIELDS, suggestMitreTechniquesForConditions, getComplianceTemplates } from "./complianceFields";
 import { getMitreTechniques, refreshMitreCatalog } from "../catalogs/mitreCatalog";
 import { getSelfReportedAttributeNames } from "../devices/deviceData.service";
+import { createCustomCheck, deleteCustomCheck, getCustomCheckNames, listCustomChecks, updateCustomCheck } from "./customChecks.service";
 
 /**
  * CompliancePolicy CRUD + evaluation + violations review queue + MITRE/
@@ -100,6 +101,33 @@ complianceRouter.get("/api/compliance/smart-attribute-names", ...readCompliance,
 complianceRouter.get("/api/compliance/self-reported-attribute-names", ...readCompliance, asyncHandler(async (req, res) => {
   const platform = typeof req.query.platform === "string" ? req.query.platform : undefined;
   res.json({ items: await getSelfReportedAttributeNames(workspaceOf(req), platform) });
+}));
+
+// ── Custom Device Checks (Settings > Device Data Webhook) — disclosed new
+// feature, no main.py equivalent. See customChecks.service.ts's module doc. ──
+
+complianceRouter.get("/api/compliance/custom-checks", ...readCompliance, asyncHandler(async (req, res) => {
+  const platform = typeof req.query.platform === "string" ? req.query.platform : undefined;
+  res.json({ items: await listCustomChecks(workspaceOf(req), platform) });
+}));
+
+complianceRouter.post("/api/compliance/custom-checks", ...manageCompliance, asyncHandler(async (req, res) => {
+  res.json(await createCustomCheck(workspaceOf(req), req.body, actorOf(req)));
+}));
+
+complianceRouter.put("/api/compliance/custom-checks/:id", ...manageCompliance, asyncHandler(async (req, res) => {
+  res.json(await updateCustomCheck(workspaceOf(req), req.params.id, req.body, actorOf(req)));
+}));
+
+complianceRouter.delete("/api/compliance/custom-checks/:id", ...manageCompliance, asyncHandler(async (req, res) => {
+  await deleteCustomCheck(workspaceOf(req), req.params.id, actorOf(req));
+  res.json({ status: "ok" });
+}));
+
+/** Policy Builder's condition picker — see customChecks.service.ts's getCustomCheckNames doc comment for why this is sourced from the catalog, not observed report history. */
+complianceRouter.get("/api/compliance/custom-check-names", ...readCompliance, asyncHandler(async (req, res) => {
+  const platform = typeof req.query.platform === "string" ? req.query.platform : undefined;
+  res.json({ items: await getCustomCheckNames(workspaceOf(req), platform) });
 }));
 
 // ── Policy CRUD (main.py:10828-10957) ──

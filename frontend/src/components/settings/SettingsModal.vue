@@ -21,6 +21,7 @@ import BackupRestorePanel from "./BackupRestorePanel.vue";
 import AuditLogRetentionPanel from "./AuditLogRetentionPanel.vue";
 import WorkspaceAutomationPanel from "./WorkspaceAutomationPanel.vue";
 import DeviceDataWebhookPanel from "./DeviceDataWebhookPanel.vue";
+import CustomDeviceChecksPanel from "./CustomDeviceChecksPanel.vue";
 import LogExportDestinationsPanel from "./LogExportDestinationsPanel.vue";
 import TriggersPanel from "./TriggersPanel.vue";
 import CaseAutoRunRulesPanel from "./CaseAutoRunRulesPanel.vue";
@@ -53,6 +54,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   { id: "auditlog", label: "Audit Log", icon: ICONS.DocumentText },
   { id: "workspace-automation", label: "Workspace Automation", icon: ICONS.Refresh },
   { id: "device-webhook", label: "Device Data Webhook", icon: ICONS.PlugCircle },
+  { id: "custom-checks", label: "Custom Device Checks", icon: ICONS.Checklist },
   { id: "logexport", label: "Log Export", icon: ICONS.Database },
   { id: "triggers", label: "Inbound Webhooks", icon: ICONS.Bolt },
   { id: "case-autorun", label: "Case Auto-Run Rules", icon: ICONS.Target },
@@ -91,7 +93,7 @@ const CONTENT_HEADING: Record<string, string> = {
 // card-list pattern (docs/settings.md) — each is now a single self-contained
 // component that renders its own heading + intro paragraph + "New X" button,
 // same reasoning as backup/device-webhook above.
-const SELF_HEADED_TABS = new Set(["backup", "device-webhook", "integrations", "threat-intel", "case-autorun", "triggers"]);
+const SELF_HEADED_TABS = new Set(["backup", "device-webhook", "custom-checks", "integrations", "threat-intel", "case-autorun", "triggers"]);
 
 const activeTab = ref("general");
 // Port of SETTINGS_TAB_ANCHORS (App.jsx:288-309) — maps this modal's tab
@@ -174,6 +176,7 @@ function selectTab(tabId: string) {
           <AuditLogRetentionPanel v-else-if="activeTab === 'auditlog'" />
           <WorkspaceAutomationPanel v-else-if="activeTab === 'workspace-automation'" />
           <DeviceDataWebhookPanel v-else-if="activeTab === 'device-webhook'" />
+          <CustomDeviceChecksPanel v-else-if="activeTab === 'custom-checks'" />
           <LogExportDestinationsPanel v-else-if="activeTab === 'logexport'" />
           <TriggersPanel v-else-if="activeTab === 'triggers'" />
           <CaseAutoRunRulesPanel v-else-if="activeTab === 'case-autorun'" />

@@ -59,6 +59,8 @@ const CASES: Case[] = [
   { label: "compliance: POST /api/compliance/policies", method: "post", path: "/api/compliance/policies", area: "compliance", level: "manage", insufficientAccess: roleWithAccess({ compliance: "read" }) },
   { label: "compliance: DELETE /api/compliance/policies/:policyId", method: "delete", path: "/api/compliance/policies/pol-1", area: "compliance", level: "manage", action: "canDeletePolicyOrWorkflow", insufficientAccess: roleWithAccess({ compliance: "manage" }, { canDeletePolicyOrWorkflow: false }) },
   { label: "compliance: POST /api/compliance/violations/bulk-approve", method: "post", path: "/api/compliance/violations/bulk-approve", area: "compliance", level: "manage", action: "canBulkTriage", insufficientAccess: roleWithAccess({ compliance: "manage" }, { canBulkTriage: false }) },
+  { label: "compliance: GET /api/compliance/custom-checks", method: "get", path: "/api/compliance/custom-checks", area: "compliance", level: "read", insufficientAccess: roleWithAccess({ compliance: "none" }) },
+  { label: "compliance: POST /api/compliance/custom-checks", method: "post", path: "/api/compliance/custom-checks", area: "compliance", level: "manage", insufficientAccess: roleWithAccess({ compliance: "read" }) },
 
   // ── integrations.controller.ts ──
   { label: "integrations: GET /api/integrations", method: "get", path: "/api/integrations", area: "integrations", level: "read", insufficientAccess: roleWithAccess({ integrations: "none" }) },

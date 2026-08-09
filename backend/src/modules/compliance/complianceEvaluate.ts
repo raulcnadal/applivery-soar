@@ -212,6 +212,25 @@ export function evaluateCondition(
       if (!(attrName in attrs)) return false;
       return compareScalar(attrs[attrName], operator, target.compareValue);
     }
+    if (field === "customCheckResult") {
+      // customChecks.service.ts's module doc has the full design. Results
+      // ride on the same DevicePushData row/kind as attributes (see
+      // deviceData.service.ts's reportDeviceData), keyed by
+      // CustomCheckDefinition.key. A result with `error` set (the check
+      // itself failed to run on the device — e.g. registry path not found)
+      // is treated exactly like "missing", not like a false/empty value —
+      // an admin comparing against "false" shouldn't get a false-positive
+      // compliance pass just because the agent couldn't run the check.
+      const target = value ?? {};
+      const results = ((device.selfReported as any)?.customCheckResults as Record<string, { value?: unknown; error?: string | null }>) ?? {};
+      const key = target.key;
+      const entry = results[key];
+      const present = Boolean(entry) && !entry!.error;
+      if (operator === "exists") return present;
+      if (operator === "missing") return !present;
+      if (!present) return false;
+      return compareScalar(entry!.value, operator, target.compareValue);
+    }
     if (field === "hasSelfReported") {
       return Boolean(device.selfReported) === Boolean(value);
     }
