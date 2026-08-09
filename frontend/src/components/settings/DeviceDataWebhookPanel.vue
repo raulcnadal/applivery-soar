@@ -4,17 +4,25 @@
 // 7799-7897. The actual receiver endpoints (POST /api/device-data/report,
 // /report-apps) are backend's deviceData.controller.ts (Phase 8) — this
 // panel covers the secret lifecycle + script downloads.
-import { Alert, Button } from "@applivery/bluesky-vue";
+import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { computed, onMounted, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
 import { useDeviceReportSecretStore } from "../../stores/deviceReportSecret";
+import { useAgentDownloadsStore, type AgentAsset } from "../../stores/agentDownloads";
 
 const store = useDeviceReportSecretStore();
 const auth = useAuthStore();
+const agentStore = useAgentDownloadsStore();
 const busy = ref(false);
 const downloading = ref<string | null>(null);
 const downloadingSecurity = ref<string | null>(null);
+
+const canEdit = () => auth.hasRiskyAction("canEditIntegrationSecrets");
+const githubTokenInput = ref("");
+const tokenBusy = ref(false);
+const tokenSaved = ref(false);
+const downloadingAsset = ref<number | null>(null);
 
 const webhookUrl = computed(() => `${window.location.origin}/api/device-data/report`);
 const exampleJsonBody = `{
@@ -53,8 +61,98 @@ function copyHeaders() {
   navigator.clipboard.writeText(`X-Workspace-Slug: ${auth.orgSlug}\nX-Device-Report-Secret: ${secret}`);
 }
 
+// Managed Configuration snippets for the native agents — generated entirely
+// client-side, same trust model as downloadScript() above: the plaintext
+// secret is already sitting in store.status.secret, nothing new to fetch.
+// The agent binaries themselves carry no workspace-specific data (see each
+// repo's fix for the hardcoded-secret issue) — only these snippets do.
+const windowsRegSnippet = computed(() => {
+  const secret = store.status?.secret ?? "";
+  return `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Applivery\\SOAR]
+"BaseURL"="${window.location.origin}"
+"WorkspaceSlug"="${auth.orgSlug}"
+"ReportSecret"="${secret}"
+"ReportBitLocker"=dword:00000001
+"ReportFirewall"=dword:00000001
+"ReportApps"=dword:00000001
+"IntervalSec"=dword:00000e10
+`;
+});
+const macosConfigSnippet = computed(() => {
+  const secret = store.status?.secret ?? "";
+  return JSON.stringify(
+    {
+      base_url: window.location.origin,
+      workspace_slug: auth.orgSlug,
+      report_secret: secret,
+      interval_sec: 3600,
+      report_bitlocker: true,
+      report_firewall: true,
+      report_apps: true,
+    },
+    null,
+    2,
+  );
+});
+function downloadSnippet(platform: "windows" | "macos") {
+  const content = platform === "windows" ? windowsRegSnippet.value : macosConfigSnippet.value;
+  const filename = platform === "windows" ? "applivery-soar-agent.reg" : "es.mi-labs.soar.agent.json";
+  const blob = new Blob([content], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function copySnippet(platform: "windows" | "macos") {
+  navigator.clipboard.writeText(platform === "windows" ? windowsRegSnippet.value : macosConfigSnippet.value);
+}
+
+async function saveGithubToken() {
+  if (!githubTokenInput.value.trim()) return;
+  tokenBusy.value = true;
+  tokenSaved.value = false;
+  try {
+    await agentStore.setToken(githubTokenInput.value.trim());
+    githubTokenInput.value = "";
+    tokenSaved.value = true;
+  } finally {
+    tokenBusy.value = false;
+  }
+}
+async function clearGithubToken() {
+  tokenBusy.value = true;
+  try {
+    await agentStore.clearToken();
+  } finally {
+    tokenBusy.value = false;
+  }
+}
+async function downloadAgentAsset(asset: AgentAsset) {
+  downloadingAsset.value = asset.assetId;
+  try {
+    await agentStore.downloadAsset(asset);
+  } finally {
+    downloadingAsset.value = null;
+  }
+}
+function formatBytes(bytes: number): string {
+  if (!bytes) return "";
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(1)} MB`;
+}
+const platformLabels: Record<string, string> = {
+  windows: "Windows",
+  macos: "macOS",
+};
+
 onMounted(async () => {
   await store.fetchStatus();
+  await agentStore.fetchConfig();
+  await agentStore.fetchAssets();
 });
 </script>
 
@@ -119,6 +217,99 @@ X-Device-Report-Secret: {{ store.status.secret }}</code>
             <Button v-if="store.status.configured" variant="ghost" :loading="busy" @click="clear">Remove</Button>
             <Button variant="secondary" :loading="busy" @click="rotate">{{ store.status.configured ? "Rotate secret" : "Generate webhook secret" }}</Button>
           </div>
+        </template>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Applivery SOAR Agent</h3>
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
+        <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          The dedicated native agent (Windows Service / macOS LaunchDaemon) that supersedes the App Inventory and Security
+          Attestation scripts below — one persistent, scheduled process instead of two cron/Task Scheduler jobs. Binaries are
+          built and published as GitHub Releases from their own repos; configure a read-scoped GitHub token here to list and
+          download them. The workspace secret is never baked into the binary — it's delivered separately via the Managed
+          Configuration snippet, pushed by your UEM/MDM or installed by hand.
+        </p>
+        <Alert v-if="agentStore.error" type="danger">{{ agentStore.error }}</Alert>
+        <Alert v-if="tokenSaved" type="success">GitHub token saved.</Alert>
+        <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — every control below is disabled.</Alert>
+
+        <p v-if="!agentStore.config" class="text-xs text-gray-500 dark:text-gray-400">Checking status…</p>
+        <template v-else>
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full shrink-0" :class="agentStore.config.configured ? 'bg-emerald-500' : 'bg-amber-500'" />
+            <span class="text-xs font-semibold text-gray-900 dark:text-white">
+              <template v-if="agentStore.config.configured">GitHub token configured ({{ agentStore.config.tokenMasked }})</template>
+              <template v-else>No GitHub token configured yet</template>
+            </span>
+          </div>
+          <p v-if="agentStore.config.configuredBy" class="text-[10px] text-gray-500 dark:text-gray-400">
+            Set by {{ agentStore.config.configuredBy }} on {{ new Date(agentStore.config.configuredAt!).toLocaleString() }}
+          </p>
+
+          <div class="flex items-center gap-2">
+            <Input
+              v-model="githubTokenInput"
+              type="password"
+              :placeholder="agentStore.config.configured ? 'New token — leave blank to keep current' : 'GitHub personal access token (repo read scope)'"
+              :disabled="!canEdit()"
+              class="flex-1"
+            />
+            <Button size="sm" :loading="tokenBusy" :disabled="!canEdit() || !githubTokenInput.trim()" @click="saveGithubToken">
+              {{ agentStore.config.configured ? "Rotate" : "Save" }}
+            </Button>
+            <Button v-if="agentStore.config.configured" size="sm" variant="ghost" :loading="tokenBusy" :disabled="!canEdit()" @click="clearGithubToken">Remove</Button>
+          </div>
+
+          <template v-if="agentStore.config.configured">
+            <div class="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">Downloads (latest release)</p>
+                <Button size="sm" variant="ghost" :loading="agentStore.isLoadingAssets" @click="agentStore.fetchAssets()">Refresh</Button>
+              </div>
+              <Alert v-if="agentStore.assetsError" type="danger">{{ agentStore.assetsError }}</Alert>
+              <p v-if="!agentStore.isLoadingAssets && agentStore.assets.length === 0" class="text-xs text-gray-500 dark:text-gray-400">
+                No release assets yet — the agent repos publish one automatically on push to main.
+              </p>
+              <div v-for="asset in agentStore.assets" :key="`${asset.platform}-${asset.assetId}`" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <div class="min-w-0">
+                  <p class="text-xs font-mono truncate text-gray-900 dark:text-white">{{ asset.filename }}</p>
+                  <p class="text-[10px] text-gray-500 dark:text-gray-400">
+                    {{ platformLabels[asset.platform] }} · {{ formatBytes(asset.sizeBytes) }} · {{ new Date(asset.publishedAt).toLocaleDateString() }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  :disabled="downloadingAsset === asset.assetId"
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold shrink-0 transition-colors border hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-500 disabled:opacity-50 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
+                  @click="downloadAgentAsset(asset)"
+                >
+                  <component :is="ICONS.Download" :size="12" weight="Linear" /> {{ downloadingAsset === asset.assetId ? "Preparing…" : "Download" }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="store.status?.configured" class="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-2">
+              <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">Managed Configuration</p>
+              <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                Push this with your webhook URL, workspace, and secret already filled in. Windows: import the .reg file (or push the
+                same values via your UEM to <span class="font-mono">HKLM\SOFTWARE\Policies\Applivery\SOAR</span>). macOS: deploy as
+                <span class="font-mono">/Library/Preferences/es.mi-labs.soar.agent.json</span> via MDM Custom Settings.
+              </p>
+              <div class="grid grid-cols-2 gap-2">
+                <div class="flex gap-1.5">
+                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows')">Windows .reg</Button>
+                  <Button size="sm" variant="ghost" @click="copySnippet('windows')">Copy</Button>
+                </div>
+                <div class="flex gap-1.5">
+                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('macos')">macOS .json</Button>
+                  <Button size="sm" variant="ghost" @click="copySnippet('macos')">Copy</Button>
+                </div>
+              </div>
+            </div>
+            <p v-else class="text-xs text-gray-500 dark:text-gray-400">Generate a webhook secret above first — the Managed Configuration snippet reuses it.</p>
+          </template>
         </template>
       </div>
     </div>

@@ -7,6 +7,7 @@ import { clearAutomationCredential, getAutomationCredentialStatus, setAutomation
 import { clearDeviceReportSecret, getDeviceReportSecretStatus, rotateDeviceReportSecret } from "./deviceReportSecret.service";
 import { testSmtp } from "./smtp.service";
 import { testNotificationsWebhook } from "./notificationsWebhook.service";
+import { clearAgentDownloadsToken, getAgentDownloadsConfigStatus, listAgentDownloads, setAgentDownloadsToken, streamAgentAsset, type AgentPlatform } from "./agentDownloads.service";
 
 /**
  * Port of main.py:1550-1594 — GET/POST/DELETE /api/settings/automation-credential.
@@ -72,6 +73,51 @@ settingsRouter.delete("/api/settings/device-report-secret", ...manageSettings, a
   await clearDeviceReportSecret(workspaceOf(req), actorOf(req));
   res.json({ status: "ok" });
 }));
+
+// ── Applivery SOAR Agent downloads (Settings > Device Data Webhook) — the
+// GitHub token below is GLOBAL (not per-workspace), unlike the
+// device-report secret above: it grants read access to two specific
+// private repos (the Windows/macOS agent source), not tenant data. Any
+// workspace's admin who can manage Settings can configure/use it. ──
+
+const agentDownloadsTokenPayloadSchema = z.object({ token: z.string().min(1) });
+
+settingsRouter.get("/api/settings/agent-downloads/config", ...readSettings, asyncHandler(async (_req, res) => {
+  res.json(await getAgentDownloadsConfigStatus());
+}));
+
+settingsRouter.put("/api/settings/agent-downloads/config", ...manageSettings, asyncHandler(async (req, res) => {
+  const payload = agentDownloadsTokenPayloadSchema.parse(req.body);
+  await setAgentDownloadsToken(payload.token, actorOf(req));
+  res.json(await getAgentDownloadsConfigStatus());
+}));
+
+settingsRouter.delete("/api/settings/agent-downloads/config", ...manageSettings, asyncHandler(async (req, res) => {
+  await clearAgentDownloadsToken(actorOf(req));
+  res.json({ status: "ok" });
+}));
+
+settingsRouter.get("/api/settings/agent-downloads/releases", ...readSettings, asyncHandler(async (_req, res) => {
+  res.json({ assets: await listAgentDownloads() });
+}));
+
+settingsRouter.get(
+  "/api/settings/agent-downloads/download/:platform/:assetId",
+  ...readSettings,
+  asyncHandler(async (req, res) => {
+    const platform = req.params.platform as AgentPlatform;
+    const assetId = Number(req.params.assetId);
+    if (!Number.isFinite(assetId)) {
+      res.status(400).json({ detail: "Invalid assetId" });
+      return;
+    }
+    const { stream, filename, contentType, contentLength } = await streamAgentAsset(platform, assetId);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    stream.pipe(res);
+  }),
+);
 
 // ── SMTP test send (main.py:1909-1937) ──
 
