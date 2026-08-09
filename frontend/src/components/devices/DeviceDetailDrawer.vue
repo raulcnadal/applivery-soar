@@ -545,68 +545,6 @@ function logBody(l: Record<string, any>): string {
               </div>
             </div>
 
-            <!-- Vulnerabilities -->
-            <div v-if="device.vulnStatus" class="mb-6">
-              <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Vulnerabilities</p>
-              <p v-if="(device.vulnStatus as any).confidence === 'unknown'" class="text-xs text-gray-400">
-                No confirmed vulnerability comparison available yet for this OS version — the EUVD catalog hasn't published a parseable fixed-version match for it.
-              </p>
-              <div v-else-if="(device.vulnStatus as any).pendingCount > 0" class="space-y-1.5">
-                <p class="text-xs font-medium" :style="{ color: WARNING }">{{ (device.vulnStatus as any).pendingCount }} known CVE{{ (device.vulnStatus as any).pendingCount === 1 ? "" : "s" }} fixed in a newer version</p>
-                <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
-                  <span class="text-gray-900 dark:text-white">{{ c.cveId }} <span class="text-gray-400">· fixed in {{ c.fixedVersion || c.fixedInMajor }}</span></span>
-                  <span class="font-semibold shrink-0" :style="{ color: c.exploited || c.baseSeverity === 'Critical' ? DANGER : WARNING }">
-                    {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}{{ typeof c.epss === "number" ? ` · EPSS ${(c.epss * 100).toFixed(0)}%` : "" }}
-                  </span>
-                </div>
-              </div>
-              <p v-else class="text-xs" :style="{ color: SUCCESS }">No known pending CVEs against this device's OS version.</p>
-            </div>
-
-            <!-- Vulnerability Service -->
-            <div v-if="device.vulnServiceStatus" class="mb-6">
-              <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Vulnerability Service</p>
-              <template v-if="!(device.vulnServiceStatus as any).checked">
-                <p class="text-xs text-gray-400">
-                  {{
-                    (device.vulnServiceStatus as any).lastCheckedAt
-                      ? `Last checked ${new Date((device.vulnServiceStatus as any).lastCheckedAt).toLocaleString()} — nothing conclusive was found then, and it hasn't been refreshed since. If this device is still active, check Settings > Vulnerability Service for refresh errors.`
-                      : "Not checked yet — waiting on the next scheduled refresh (Settings > Vulnerability Service)."
-                  }}
-                </p>
-              </template>
-              <template v-else>
-                <div
-                  v-if="((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0) > 0"
-                  class="space-y-1.5"
-                >
-                  <p class="text-xs font-medium" :style="{ color: (device.vulnServiceStatus as any).hasKev ? DANGER : WARNING }">
-                    {{ ((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0) }}
-                    known CVE{{ (((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0)) === 1 ? "" : "s" }}
-                    across the OS and {{ (device.vulnServiceStatus as any).appsCheckedCount }} checked app{{ (device.vulnServiceStatus as any).appsCheckedCount === 1 ? "" : "s" }}
-                    {{ (device.vulnServiceStatus as any).hasKev ? " — includes a known-exploited (CISA KEV) CVE" : "" }}
-                  </p>
-                  <div v-for="c in (device.vulnServiceStatus as any).topCves" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
-                    <span class="text-gray-900 dark:text-white">
-                      {{ c.id }} <span v-if="c.fixed_in" class="text-gray-400">· fixed in {{ c.fixed_in }}</span>
-                    </span>
-                    <span class="font-semibold shrink-0" :style="{ color: c.is_kev || c.severity === 'CRITICAL' ? DANGER : WARNING }">
-                      {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}{{ typeof c.epss_score === "number" ? ` · EPSS ${(c.epss_score * 100).toFixed(0)}%` : "" }}
-                    </span>
-                  </div>
-                  <p v-if="(device.vulnServiceStatus as any).uncertain > 0" class="text-[10px] text-gray-400">
-                    {{ (device.vulnServiceStatus as any).uncertain }} additional match{{ (device.vulnServiceStatus as any).uncertain === 1 ? "" : "es" }} couldn't be confirmed against a fixed version.
-                  </p>
-                </div>
-                <p v-else class="text-xs" :style="{ color: SUCCESS }">
-                  No known CVEs against this device's OS or {{ (device.vulnServiceStatus as any).appsCheckedCount }} checked app{{ (device.vulnServiceStatus as any).appsCheckedCount === 1 ? "" : "s" }}.
-                </p>
-              </template>
-              <p class="text-[10px] mt-2 text-gray-400">
-                From your org's Vulnerability Service integration — an independent signal alongside the Vulnerability Catalog above, covering all platforms and both the OS and individual apps.
-              </p>
-            </div>
-
             <!-- Firewall Rule Sets (Windows only) -->
             <div v-if="device.platform === 'windows' && firewallState" class="mb-6">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Firewall Rule Sets</p>
@@ -724,6 +662,72 @@ function logBody(l: Record<string, any>): string {
                   <span class="text-xs font-semibold" :style="{ color: riskMeta(device.riskTier).color }">+{{ f.points }}</span>
                 </div>
               </div>
+            </div>
+
+            <!-- Vulnerabilities — moved here from the Overview tab per user
+                 request: the original Devices-view modal (DeviceDetailDrawer
+                 .jsx) placed this under Overview, but grouping it with the
+                 other risk signals in Compliance reads better and is what
+                 the user asked for after seeing it live. -->
+            <div v-if="device.vulnStatus" class="mb-6">
+              <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Vulnerabilities</p>
+              <p v-if="(device.vulnStatus as any).confidence === 'unknown'" class="text-xs text-gray-400">
+                No confirmed vulnerability comparison available yet for this OS version — the EUVD catalog hasn't published a parseable fixed-version match for it.
+              </p>
+              <div v-else-if="(device.vulnStatus as any).pendingCount > 0" class="space-y-1.5">
+                <p class="text-xs font-medium" :style="{ color: WARNING }">{{ (device.vulnStatus as any).pendingCount }} known CVE{{ (device.vulnStatus as any).pendingCount === 1 ? "" : "s" }} fixed in a newer version</p>
+                <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                  <span class="text-gray-900 dark:text-white">{{ c.cveId }} <span class="text-gray-400">· fixed in {{ c.fixedVersion || c.fixedInMajor }}</span></span>
+                  <span class="font-semibold shrink-0" :style="{ color: c.exploited || c.baseSeverity === 'Critical' ? DANGER : WARNING }">
+                    {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}{{ typeof c.epss === "number" ? ` · EPSS ${(c.epss * 100).toFixed(0)}%` : "" }}
+                  </span>
+                </div>
+              </div>
+              <p v-else class="text-xs" :style="{ color: SUCCESS }">No known pending CVEs against this device's OS version.</p>
+            </div>
+
+            <!-- Vulnerability Service -->
+            <div v-if="device.vulnServiceStatus" class="mb-6">
+              <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Vulnerability Service</p>
+              <template v-if="!(device.vulnServiceStatus as any).checked">
+                <p class="text-xs text-gray-400">
+                  {{
+                    (device.vulnServiceStatus as any).lastCheckedAt
+                      ? `Last checked ${new Date((device.vulnServiceStatus as any).lastCheckedAt).toLocaleString()} — nothing conclusive was found then, and it hasn't been refreshed since. If this device is still active, check Settings > Vulnerability Service for refresh errors.`
+                      : "Not checked yet — waiting on the next scheduled refresh (Settings > Vulnerability Service)."
+                  }}
+                </p>
+              </template>
+              <template v-else>
+                <div
+                  v-if="((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0) > 0"
+                  class="space-y-1.5"
+                >
+                  <p class="text-xs font-medium" :style="{ color: (device.vulnServiceStatus as any).hasKev ? DANGER : WARNING }">
+                    {{ ((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0) }}
+                    known CVE{{ (((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0)) === 1 ? "" : "s" }}
+                    across the OS and {{ (device.vulnServiceStatus as any).appsCheckedCount }} checked app{{ (device.vulnServiceStatus as any).appsCheckedCount === 1 ? "" : "s" }}
+                    {{ (device.vulnServiceStatus as any).hasKev ? " — includes a known-exploited (CISA KEV) CVE" : "" }}
+                  </p>
+                  <div v-for="c in (device.vulnServiceStatus as any).topCves" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                    <span class="text-gray-900 dark:text-white">
+                      {{ c.id }} <span v-if="c.fixed_in" class="text-gray-400">· fixed in {{ c.fixed_in }}</span>
+                    </span>
+                    <span class="font-semibold shrink-0" :style="{ color: c.is_kev || c.severity === 'CRITICAL' ? DANGER : WARNING }">
+                      {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}{{ typeof c.epss_score === "number" ? ` · EPSS ${(c.epss_score * 100).toFixed(0)}%` : "" }}
+                    </span>
+                  </div>
+                  <p v-if="(device.vulnServiceStatus as any).uncertain > 0" class="text-[10px] text-gray-400">
+                    {{ (device.vulnServiceStatus as any).uncertain }} additional match{{ (device.vulnServiceStatus as any).uncertain === 1 ? "" : "es" }} couldn't be confirmed against a fixed version.
+                  </p>
+                </div>
+                <p v-else class="text-xs" :style="{ color: SUCCESS }">
+                  No known CVEs against this device's OS or {{ (device.vulnServiceStatus as any).appsCheckedCount }} checked app{{ (device.vulnServiceStatus as any).appsCheckedCount === 1 ? "" : "s" }}.
+                </p>
+              </template>
+              <p class="text-[10px] mt-2 text-gray-400">
+                From your org's Vulnerability Service integration — an independent signal alongside the Vulnerability Catalog above, covering all platforms and both the OS and individual apps.
+              </p>
             </div>
 
             <div class="mb-6">
