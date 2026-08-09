@@ -33,6 +33,7 @@ import { useDevicesStore, type NormalizedDevice } from "../../stores/devices";
 import type { Workflow } from "../../stores/workflows";
 import { useWorkflowsStore } from "../../stores/workflows";
 import { flattenSegments } from "../../lib/segments";
+import { msrcUrl, nvdUrl, vulnLink } from "../../utils/vulnLinks";
 import PolicyPickerModal from "./PolicyPickerModal.vue";
 import SegmentPickerModal from "./SegmentPickerModal.vue";
 import TagEditorModal from "./TagEditorModal.vue";
@@ -491,8 +492,13 @@ function logBody(l: Record<string, any>): string {
                       {{ kb.maxSeverity || "Unknown" }}{{ kb.cveCount ? ` · ${kb.cveCount} CVE${kb.cveCount === 1 ? "" : "s"}` : "" }}
                     </span>
                   </div>
-                  <p v-if="(kb.cveIds || []).length > 0" class="text-[10px] mt-0.5 truncate text-gray-400" :title="kb.cveIds.join(', ')">
-                    {{ kb.cveIds.slice(0, 4).join(", ") }}{{ kb.cveIds.length > 4 ? ` +${kb.cveIds.length - 4} more` : "" }}
+                  <p v-if="(kb.cveIds || []).length > 0" class="text-[10px] mt-0.5 text-gray-400" :title="kb.cveIds.join(', ')">
+                    <template v-for="(cve, idx) in kb.cveIds.slice(0, 4)" :key="cve">
+                      <a v-if="msrcUrl(cve)" :href="msrcUrl(cve)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ cve }}</a>
+                      <template v-else>{{ cve }}</template>
+                      <template v-if="idx < Math.min(kb.cveIds.length, 4) - 1">, </template>
+                    </template>
+                    {{ kb.cveIds.length > 4 ? ` +${kb.cveIds.length - 4} more` : "" }}
                   </p>
                 </div>
                 <p class="text-[10px] text-gray-400">
@@ -540,7 +546,11 @@ function logBody(l: Record<string, any>): string {
                   Rapid Security Response available{{ (device.osLifecycleStatus as any).rapidSecurityResponse.supplementalBuildVersion ? ` (${(device.osLifecycleStatus as any).rapidSecurityResponse.supplementalBuildVersion})` : "" }}
                 </p>
                 <p v-if="((device.osLifecycleStatus as any).rapidSecurityResponse.cveIds || []).length > 0" class="mt-0.5 text-gray-400">
-                  {{ (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds.join(", ") }}
+                  <template v-for="(cve, idx) in (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds" :key="cve">
+                    <a v-if="nvdUrl(cve)" :href="nvdUrl(cve)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: WARNING }">{{ cve }}</a>
+                    <template v-else>{{ cve }}</template>
+                    <template v-if="idx < (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds.length - 1">, </template>
+                  </template>
                 </p>
               </div>
             </div>
@@ -677,7 +687,11 @@ function logBody(l: Record<string, any>): string {
               <div v-else-if="(device.vulnStatus as any).pendingCount > 0" class="space-y-1.5">
                 <p class="text-xs font-medium" :style="{ color: WARNING }">{{ (device.vulnStatus as any).pendingCount }} known CVE{{ (device.vulnStatus as any).pendingCount === 1 ? "" : "s" }} fixed in a newer version</p>
                 <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
-                  <span class="text-gray-900 dark:text-white">{{ c.cveId }} <span class="text-gray-400">· fixed in {{ c.fixedVersion || c.fixedInMajor }}</span></span>
+                  <span class="text-gray-900 dark:text-white">
+                    <a v-if="vulnLink(c.cveId)" :href="vulnLink(c.cveId)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.cveId }}</a>
+                    <template v-else>{{ c.cveId }}</template>
+                    <span class="text-gray-400">· fixed in {{ c.fixedVersion || c.fixedInMajor }}</span>
+                  </span>
                   <span class="font-semibold shrink-0" :style="{ color: c.exploited || c.baseSeverity === 'Critical' ? DANGER : WARNING }">
                     {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}{{ typeof c.epss === "number" ? ` · EPSS ${(c.epss * 100).toFixed(0)}%` : "" }}
                   </span>
@@ -711,7 +725,9 @@ function logBody(l: Record<string, any>): string {
                   </p>
                   <div v-for="c in (device.vulnServiceStatus as any).topCves" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
                     <span class="text-gray-900 dark:text-white">
-                      {{ c.id }} <span v-if="c.fixed_in" class="text-gray-400">· fixed in {{ c.fixed_in }}</span>
+                      <a v-if="nvdUrl(c.id)" :href="nvdUrl(c.id)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.id }}</a>
+                      <template v-else>{{ c.id }}</template>
+                      <span v-if="c.fixed_in" class="text-gray-400">· fixed in {{ c.fixed_in }}</span>
                     </span>
                     <span class="font-semibold shrink-0" :style="{ color: c.is_kev || c.severity === 'CRITICAL' ? DANGER : WARNING }">
                       {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}{{ typeof c.epss_score === "number" ? ` · EPSS ${(c.epss_score * 100).toFixed(0)}%` : "" }}
