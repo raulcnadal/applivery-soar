@@ -81,10 +81,16 @@ export async function receiveAgentBuild(platform: string, filename: string, cont
   assertPlatform(platform);
   if (!data.length) throw new HttpError(400, "Empty request body — no binary data received.");
   const sha256 = createHash("sha256").update(data).digest("hex");
+  // Prisma's generated client types the Bytes field as Uint8Array<ArrayBuffer>
+  // — Node's own Buffer type (Buffer<ArrayBufferLike>) isn't directly
+  // assignable to that under current TS lib settings, even though a Buffer
+  // IS a Uint8Array at runtime. Uint8Array.from() produces a fresh,
+  // correctly-typed copy.
+  const bytes = Uint8Array.from(data);
   const row = await prisma.agentBuild.upsert({
     where: { platform },
-    create: { platform, filename, contentType, sizeBytes: data.length, sha256, data, version },
-    update: { filename, contentType, sizeBytes: data.length, sha256, data, version, publishedAt: new Date() },
+    create: { platform, filename, contentType, sizeBytes: data.length, sha256, data: bytes, version },
+    update: { filename, contentType, sizeBytes: data.length, sha256, data: bytes, version, publishedAt: new Date() },
   });
   await recordAuditEvent("global", {
     category: "system", action: "agent_build_received", actor: "ci",
