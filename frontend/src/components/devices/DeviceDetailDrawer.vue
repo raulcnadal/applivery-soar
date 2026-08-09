@@ -33,7 +33,7 @@ import { useDevicesStore, type NormalizedDevice } from "../../stores/devices";
 import type { Workflow } from "../../stores/workflows";
 import { useWorkflowsStore } from "../../stores/workflows";
 import { flattenSegments } from "../../lib/segments";
-import { msrcUrl, nvdUrl, vulnLink } from "../../utils/vulnLinks";
+import { msrcUrl, vulnLink } from "../../utils/vulnLinks";
 import PolicyPickerModal from "./PolicyPickerModal.vue";
 import SegmentPickerModal from "./SegmentPickerModal.vue";
 import TagEditorModal from "./TagEditorModal.vue";
@@ -547,7 +547,7 @@ function logBody(l: Record<string, any>): string {
                 </p>
                 <p v-if="((device.osLifecycleStatus as any).rapidSecurityResponse.cveIds || []).length > 0" class="mt-0.5 text-gray-400">
                   <template v-for="(cve, idx) in (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds" :key="cve">
-                    <a v-if="nvdUrl(cve)" :href="nvdUrl(cve)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: WARNING }">{{ cve }}</a>
+                    <a v-if="vulnLink(cve)" :href="vulnLink(cve)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: WARNING }">{{ cve }}</a>
                     <template v-else>{{ cve }}</template>
                     <template v-if="(idx as number) < (device.osLifecycleStatus as any).rapidSecurityResponse.cveIds.length - 1">, </template>
                   </template>
@@ -725,7 +725,7 @@ function logBody(l: Record<string, any>): string {
                   </p>
                   <div v-for="c in (device.vulnServiceStatus as any).topCves" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
                     <span class="text-gray-900 dark:text-white">
-                      <a v-if="nvdUrl(c.id)" :href="nvdUrl(c.id)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.id }}</a>
+                      <a v-if="vulnLink(c.id)" :href="vulnLink(c.id)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.id }}</a>
                       <template v-else>{{ c.id }}</template>
                       <span v-if="c.fixed_in" class="text-gray-400">· fixed in {{ c.fixed_in }}</span>
                     </span>
