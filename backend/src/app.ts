@@ -16,6 +16,7 @@ import { catalogsRouter } from "./modules/catalogs/catalogs.controller";
 import { complianceRouter } from "./modules/compliance/compliance.controller";
 import { workflowsRouter } from "./modules/workflows/workflows.controller";
 import { settingsRouter } from "./modules/settings/settings.controller";
+import { agentBuildsRouter } from "./modules/settings/agentBuilds.controller";
 import { actionLibraryRouter } from "./modules/workflows/actionLibrary.controller";
 import { scriptAssetsRouter } from "./modules/workflows/scriptAssets.controller";
 import { scriptReposRouter } from "./modules/workflows/scriptRepos.controller";
@@ -58,6 +59,7 @@ export function createApp() {
   app.use(complianceRouter);
   app.use(workflowsRouter);
   app.use(settingsRouter);
+  app.use(agentBuildsRouter);
   app.use(actionLibraryRouter);
   app.use(scriptAssetsRouter);
   app.use(scriptReposRouter);

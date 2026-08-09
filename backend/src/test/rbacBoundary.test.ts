@@ -111,6 +111,10 @@ const CASES: Case[] = [
   { label: "settings: POST /api/settings/automation-credential", method: "post", path: "/api/settings/automation-credential", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
   { label: "settings: POST /api/settings/test-webhook", method: "post", path: "/api/settings/test-webhook", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
 
+  // ── agentBuilds.controller.ts — Publish to Applivery (dashboard-gated half; the ingest/download routes are deliberately public, see authRequired.test.ts) ──
+  { label: "agentBuilds: GET /api/settings/agent-downloads/publish-status", method: "get", path: "/api/settings/agent-downloads/publish-status", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "agentBuilds: POST /api/settings/agent-downloads/publish/:platform", method: "post", path: "/api/settings/agent-downloads/publish/windows", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
+
   // ── scriptRepos.controller.ts — newly gated (deep audit) ──
   { label: "scriptRepos: GET /api/script-repos", method: "get", path: "/api/script-repos", area: "workflows", level: "read", insufficientAccess: roleWithAccess({ workflows: "none" }) },
   { label: "scriptRepos: POST /api/script-repos", method: "post", path: "/api/script-repos", area: "workflows", level: "manage", insufficientAccess: roleWithAccess({ workflows: "read" }) },

@@ -79,6 +79,20 @@ model WorkspaceState {
   // that file's doc comment for why location refresh needs its own,
   // separately-tunable budget rather than sharing the installed-apps one.
   locationRefreshBudgetPerHour       Int?
+  // Tracks the Applivery App Distribution "application" id this workspace's
+  // own "Publish to Applivery" click created for each agent platform
+  // (agentBuilds.service.ts) — required because, unlike Windows, Apple's
+  // enterprise-application API has no settable info.name to upsert-by-name
+  // against (confirmed against Applivery's own OpenAPI schema), so the only
+  // reliable way to update-in-place on a later republish (instead of
+  // creating a duplicate App every time) is remembering the id ourselves.
+  // Per-workspace, not global, since each workspace's Applivery org is
+  // independent — publishing from workspace A never touches workspace B's
+  // App Distribution catalog.
+  windowsAgentApplicationId         String?
+  macosAgentApplicationId           String?
+  windowsAgentPublishedAt           DateTime?
+  macosAgentPublishedAt             DateTime?
   updatedAt                         DateTime @updatedAt
 }
 
@@ -604,6 +618,28 @@ model DevicePushData {
   createdAt     DateTime @default(now())
 
   @@unique([workspaceSlug, deviceId, kind])
+}
+
+// The latest compiled Applivery SOAR Agent binary per platform — pushed here
+// directly by each agent repo's own GitHub Actions CI (see
+// agentBuilds.service.ts's module doc) on every push to main. One row per
+// platform, upserted in place (mirrors DevicePushData's own "payload always
+// holds the latest" convention) — this is a rolling "latest build" store,
+// not a version history. Global (no workspaceSlug): the binary itself is
+// identical for every workspace, same reasoning as the GitHub-token-based
+// agentDownloads.service.ts config being global. `data` holds the raw
+// binary (~5-10MB) directly in Postgres — small enough that a dedicated
+// object-storage layer isn't worth the added infrastructure.
+model AgentBuild {
+  id          String   @id @default(uuid())
+  platform    String   @unique
+  filename    String
+  contentType String
+  sizeBytes   Int
+  sha256      String
+  data        Bytes
+  version     String?
+  publishedAt DateTime @default(now())
 }
 
 // Admin-defined custom device checks — disclosed new feature (no main.py

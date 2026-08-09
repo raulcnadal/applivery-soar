@@ -58,4 +58,13 @@ export const env = {
   // original single-process setInterval behavior, which is fine for a
   // single-replica deployment and needs no extra infrastructure.
   redisUrl: process.env.REDIS_URL ?? "",
+
+  // Shared secret the two native agent repos' own GitHub Actions CI POSTs a
+  // freshly-built binary to (POST /api/internal/agent-builds/:platform) —
+  // a single operator-held secret, not a per-workspace/per-customer one
+  // (agentBuilds.service.ts's module doc has the full design: this is what
+  // lets Settings > Device Data Webhook offer a zero-configuration agent
+  // download to every workspace, no GitHub PAT required). Same
+  // optional/fail-closed-if-unset shape as TRIGGER_SECRET above.
+  agentBuildIngestSecret: process.env.AGENT_BUILD_INGEST_SECRET ?? "",
 };

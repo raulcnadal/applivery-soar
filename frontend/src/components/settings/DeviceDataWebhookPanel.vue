@@ -9,7 +9,7 @@ import { ICONS } from "../../lib/solarIcons";
 import { computed, onMounted, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
 import { useDeviceReportSecretStore } from "../../stores/deviceReportSecret";
-import { useAgentDownloadsStore, type AgentAsset } from "../../stores/agentDownloads";
+import { useAgentDownloadsStore, type AgentAsset, type AgentPlatform } from "../../stores/agentDownloads";
 
 const store = useDeviceReportSecretStore();
 const auth = useAuthStore();
@@ -139,6 +139,13 @@ async function downloadAgentAsset(asset: AgentAsset) {
     downloadingAsset.value = null;
   }
 }
+async function publishAgent(platform: AgentPlatform) {
+  try {
+    await agentStore.publishToApplivery(platform);
+  } catch {
+    // Surfaced via agentStore.publishError in the template — nothing else to do here.
+  }
+}
 function formatBytes(bytes: number): string {
   if (!bytes) return "";
   const mb = bytes / (1024 * 1024);
@@ -151,6 +158,8 @@ const platformLabels: Record<string, string> = {
 
 onMounted(async () => {
   await store.fetchStatus();
+  await agentStore.fetchBuildMeta();
+  await agentStore.fetchPublishStatus();
   await agentStore.fetchConfig();
   await agentStore.fetchAssets();
 });
@@ -226,17 +235,58 @@ X-Device-Report-Secret: {{ store.status.secret }}</code>
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
         <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
           The dedicated native agent (Windows Service / macOS LaunchDaemon) that supersedes the App Inventory and Security
-          Attestation scripts below — one persistent, scheduled process instead of two cron/Task Scheduler jobs. Binaries are
-          built and published as GitHub Releases from their own repos; configure a read-scoped GitHub token here to list and
-          download them. The workspace secret is never baked into the binary — it's delivered separately via the Managed
-          Configuration snippet, pushed by your UEM/MDM or installed by hand.
+          Attestation scripts below — one persistent, scheduled process instead of two cron/Task Scheduler jobs. Every build
+          is downloadable below with no token or login required, same as pulling a public Docker image. The workspace secret
+          is never baked into the binary — it's delivered separately via the Managed Configuration snippet, pushed by your
+          UEM/MDM or installed by hand.
         </p>
-        <Alert v-if="agentStore.error" type="danger">{{ agentStore.error }}</Alert>
-        <Alert v-if="tokenSaved" type="success">GitHub token saved.</Alert>
-        <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — every control below is disabled.</Alert>
+        <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — publishing to Applivery is disabled.</Alert>
+        <Alert v-if="agentStore.buildsError" type="danger">{{ agentStore.buildsError }}</Alert>
+        <Alert v-if="agentStore.publishError" type="danger">{{ agentStore.publishError }}</Alert>
 
-        <p v-if="!agentStore.config" class="text-xs text-gray-500 dark:text-gray-400">Checking status…</p>
-        <template v-else>
+        <div v-if="agentStore.isLoadingBuilds" class="text-xs text-gray-500 dark:text-gray-400">Checking for published builds…</div>
+        <div v-else class="space-y-2">
+          <div
+            v-for="platform in (['windows', 'macos'] as const)"
+            :key="platform"
+            class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"
+          >
+            <div class="min-w-0">
+              <p class="text-xs font-bold text-gray-900 dark:text-white">{{ platformLabels[platform] }}</p>
+              <template v-if="agentStore.builds[platform]">
+                <p class="text-[10px] font-mono truncate text-gray-500 dark:text-gray-400">{{ agentStore.builds[platform]!.filename }} · {{ formatBytes(agentStore.builds[platform]!.sizeBytes) }}</p>
+                <p v-if="agentStore.publishStatus?.[platform]?.applicationId" class="text-[10px] text-emerald-600 dark:text-emerald-400">
+                  Published to Applivery {{ agentStore.publishStatus![platform].publishedAt ? `on ${new Date(agentStore.publishStatus![platform].publishedAt!).toLocaleDateString()}` : "" }}
+                </p>
+              </template>
+              <p v-else class="text-[10px] text-gray-500 dark:text-gray-400">No build published yet — the agent repo's CI publishes one automatically on push to main.</p>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <Button size="sm" variant="ghost" :disabled="!agentStore.builds[platform]" :loading="agentStore.downloadingBuild === platform" @click="agentStore.downloadBuild(platform)">Download</Button>
+              <Button
+                size="sm"
+                :disabled="!agentStore.builds[platform] || !canEdit()"
+                :loading="agentStore.isPublishing === platform"
+                @click="publishAgent(platform)"
+              >
+                {{ agentStore.publishStatus?.[platform]?.applicationId ? "Republish" : "Publish to Applivery" }}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <details class="pt-2">
+          <summary class="cursor-pointer text-[10px] font-medium text-gray-500 dark:text-gray-400 select-none">Advanced: download via GitHub token instead (optional)</summary>
+          <div class="pt-3 space-y-3">
+            <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+              An older, still-supported path that proxies the agent repos' own GitHub Releases directly — only useful if you'd rather not rely on this
+              app's own build mirror above. Requires a read-scoped GitHub token most customers won't have.
+            </p>
+            <Alert v-if="agentStore.error" type="danger">{{ agentStore.error }}</Alert>
+            <Alert v-if="tokenSaved" type="success">GitHub token saved.</Alert>
+
+            <p v-if="!agentStore.config" class="text-xs text-gray-500 dark:text-gray-400">Checking status…</p>
+            <template v-else>
           <div class="flex items-center gap-2">
             <div class="w-2 h-2 rounded-full shrink-0" :class="agentStore.config.configured ? 'bg-emerald-500' : 'bg-amber-500'" />
             <span class="text-xs font-semibold text-gray-900 dark:text-white">
@@ -310,7 +360,9 @@ X-Device-Report-Secret: {{ store.status.secret }}</code>
             </div>
             <p v-else class="text-xs text-gray-500 dark:text-gray-400">Generate a webhook secret above first — the Managed Configuration snippet reuses it.</p>
           </template>
-        </template>
+            </template>
+          </div>
+        </details>
       </div>
     </div>
 
