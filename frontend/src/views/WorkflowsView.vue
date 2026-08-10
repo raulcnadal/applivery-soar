@@ -116,8 +116,8 @@ onMounted(async () => {
           Chained actions — MDM commands, API calls, and notifications. Run manually, auto-fired by Compliance Policies on violation, or launched directly from a Case.
         </p>
       </div>
-      <div class="flex items-center gap-2 shrink-0 ml-auto">
-        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
+      <div class="flex flex-wrap items-center gap-2 shrink-0 ml-auto">
+        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0 max-w-full overflow-x-auto">
           <button
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
             :class="tab === 'workflows' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"

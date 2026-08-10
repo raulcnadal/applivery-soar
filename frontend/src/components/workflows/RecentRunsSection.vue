@@ -62,7 +62,7 @@ async function exportCsv() {
         <component :is="ICONS.History" :size="14" weight="Linear" class="text-gray-400" />
         <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Recent runs</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
         <input v-model="dateFrom" type="date" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500" @change="refresh()" />
         <span class="text-xs text-gray-400">to</span>
         <input v-model="dateTo" type="date" class="px-2 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500" @change="refresh()" />

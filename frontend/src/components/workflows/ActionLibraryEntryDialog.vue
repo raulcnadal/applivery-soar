@@ -327,7 +327,7 @@ async function save() {
       <template v-else>
         <p class="text-xs text-gray-500 dark:text-gray-400">A direct, one-off Windows CSP command (not part of a Policy). The Value field supports {{ deviceXTemplateExample }} variables, resolved right before the command is sent.</p>
         <Input v-model="form.path" label="OMA-URI / CSP path" placeholder="./Vendor/MSFT/Policy/Config/..." />
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Input
             :model-value="form.action"
             type="select"

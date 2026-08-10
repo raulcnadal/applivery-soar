@@ -90,7 +90,7 @@ async function save() {
             <span class="text-gray-400">Turn this off for devices with a 3rd-party EDR — EDR agents commonly require Windows Firewall to stay off to avoid conflicting with their own driver-level rules. When off, this rule set only adds/removes its own rules and never touches the firewall's on/off state.</span>
           </span>
         </label>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input
             :model-value="form.defaultInboundAction"
             type="select"
@@ -120,7 +120,7 @@ async function save() {
               <Input v-model="rule.name" placeholder="Rule name" class="flex-1" />
               <Button size="sm" variant="ghost" @click="removeRule(idx)">✕</Button>
             </div>
-            <div class="grid grid-cols-4 gap-2">
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
               <Input
                 :model-value="rule.direction"
                 type="select"
@@ -144,7 +144,7 @@ async function save() {
               />
               <Input v-model="rule.localPorts" :disabled="rule.protocol === 'Any'" label="Local ports" placeholder="Any / 445 / 5985-5986" />
             </div>
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <Input v-model="rule.remoteAddresses" label="Remote addresses" placeholder="Any / CIDR / comma-separated" />
               <Input
                 :model-value="rule.profile"

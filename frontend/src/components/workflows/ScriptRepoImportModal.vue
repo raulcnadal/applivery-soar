@@ -139,7 +139,7 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
           </div>
         </div>
 
-        <div v-else class="grid grid-cols-[160px_1fr] gap-3">
+        <div v-else class="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3">
           <div class="space-y-1.5">
             <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Connected repos</p>
             <p v-if="store.repos.length === 0" class="text-[10px] text-gray-400">None yet.</p>

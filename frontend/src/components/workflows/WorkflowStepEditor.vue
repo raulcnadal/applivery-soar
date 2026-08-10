@@ -223,13 +223,15 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
 
 <template>
   <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3 bg-gray-50/50">
-    <div class="flex items-center gap-2">
-      <span class="text-xs font-semibold text-gray-400 w-6">#{{ stepIndex + 1 }}</span>
-      <Input v-model="step.name" placeholder="Step name" class="flex-1" />
-      <Input :model-value="step.type" type="select" :options="availableStepTypes" class="w-56" @update:model-value="changeType($event as string)" />
-      <Button size="sm" variant="ghost" @click="emit('moveUp')">↑</Button>
-      <Button size="sm" variant="ghost" @click="emit('moveDown')">↓</Button>
-      <Button size="sm" variant="ghost" @click="emit('remove')">✕</Button>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs font-semibold text-gray-400 w-6 shrink-0">#{{ stepIndex + 1 }}</span>
+      <Input v-model="step.name" placeholder="Step name" class="flex-1 min-w-[140px]" />
+      <Input :model-value="step.type" type="select" :options="availableStepTypes" class="w-full sm:w-56" @update:model-value="changeType($event as string)" />
+      <div class="flex items-center gap-2 ml-auto sm:ml-0">
+        <Button size="sm" variant="ghost" @click="emit('moveUp')">↑</Button>
+        <Button size="sm" variant="ghost" @click="emit('moveDown')">↓</Button>
+        <Button size="sm" variant="ghost" @click="emit('remove')">✕</Button>
+      </div>
     </div>
 
     <!-- mdm_action -->
@@ -257,7 +259,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
         @update:model-value="loadOmaUriEntry($event as string)"
       />
 
-      <div v-if="selectedAction?.fields?.length" class="grid grid-cols-2 gap-2">
+      <div v-if="selectedAction?.fields?.length" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <template v-for="f in selectedAction.fields" :key="f.key">
           <Input
             v-if="f.type === 'select'"
@@ -327,7 +329,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
 
     <!-- http_request -->
     <div v-else-if="step.type === 'http_request'" class="space-y-2 pl-8">
-      <div class="grid grid-cols-4 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
         <Input
           :model-value="step.config.method || 'POST'"
           type="select"
@@ -336,7 +338,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
           class="col-span-1"
           @update:model-value="step.config.method = $event"
         />
-        <Input v-model="step.config.url" label="URL" placeholder="https://example.com/hook — supports {{ device.x }}" class="col-span-3" />
+        <Input v-model="step.config.url" label="URL" placeholder="https://example.com/hook — supports {{ device.x }}" class="col-span-1 sm:col-span-3" />
       </div>
       <Input type="textarea" :rows="2" :model-value="headersText" label="Headers (JSON, optional)" placeholder='{"Authorization": "Bearer ..."}' @update:model-value="setHeaders($event as string)" />
       <Input v-model="step.config.body" type="textarea" :rows="3" label="Body (optional — JSON or raw text)" placeholder='{"deviceId": "{{ device.id }}"}' />
@@ -344,7 +346,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
 
     <!-- notification -->
     <div v-else-if="step.type === 'notification'" class="space-y-2 pl-8">
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Input
           :model-value="step.config.channel || 'webhook'"
           type="select"
@@ -432,7 +434,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
 
     <!-- wait -->
     <div v-else-if="step.type === 'wait'" class="space-y-2 pl-8">
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Input v-model.number="step.config.amount" type="number" label="Amount" />
         <Input
           :model-value="step.config.unit || 'minutes'"
@@ -451,7 +453,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
       </p>
     </div>
 
-    <div v-if="showBranching" class="grid grid-cols-2 gap-2 pl-8 pt-1 border-t border-gray-200 dark:border-gray-700">
+    <div v-if="showBranching" class="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-8 pt-1 border-t border-gray-200 dark:border-gray-700">
       <Input
         :model-value="step.onSuccess || ''"
         type="select"
