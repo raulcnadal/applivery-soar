@@ -327,7 +327,7 @@ async function saveBudget() {
         </Button>
       </div>
 
-      <div class="grid grid-cols-5 gap-3 mb-2">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-2">
         <div>
           <div class="text-lg font-bold" :style="{ color: coverageColor }">{{ coveragePct }}%</div>
           <div class="text-[10px] text-gray-400">{{ store.installedAppsStatus.syncedCount }}/{{ store.installedAppsStatus.targetDeviceCount }} devices synced</div>

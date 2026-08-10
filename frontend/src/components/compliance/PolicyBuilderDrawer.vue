@@ -568,7 +568,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3 mb-5">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
         <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700">
           <input v-model="form.enabled" type="checkbox" /> <span class="text-gray-900 dark:text-white">Enabled</span>
         </label>
@@ -612,7 +612,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
           <p class="text-[11px] font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Escalate on high-risk devices (optional)</p>
           <p class="text-[11px] mb-2 leading-relaxed text-gray-400">Run a different, tougher workflow instead of the one above when the violating device's own risk tier is already at or above the threshold.</p>
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <select v-model="form.escalatedWorkflowId" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500">
               <option value="">No escalation — always run the default workflow</option>
               <option v-for="w in workflowsStore.workflows.filter((w) => w.id !== form.workflowId)" :key="w.id" :value="w.id">{{ w.name }}</option>
