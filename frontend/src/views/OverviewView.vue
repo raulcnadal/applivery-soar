@@ -326,7 +326,7 @@ async function saveWidgetForm(w: DashboardWidget) {
 </script>
 
 <template>
-  <div class="p-8 pb-16 space-y-6 animate-page-enter">
+  <div class="p-4 md:p-8 pb-16 space-y-6 animate-page-enter">
     <!-- 1:1 port of the Overview header (App.jsx ~4514-4562): title + help
          icon + subtitle on the left, Add Widget (text-only) + date-range
          (solid brand-600) + conditional Save Changes on the right. No

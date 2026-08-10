@@ -119,7 +119,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="p-8 pb-16">
+  <main class="p-4 md:p-8 pb-16">
     <header class="flex justify-between items-start mb-8 gap-4 flex-wrap">
       <div>
         <div class="flex items-center gap-2">

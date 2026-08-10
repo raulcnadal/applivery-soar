@@ -73,7 +73,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="p-8 pb-16">
+  <main class="p-4 md:p-8 pb-16">
     <header class="flex justify-between items-start mb-8 flex-wrap gap-3">
       <div>
         <div class="flex items-center gap-2">
@@ -91,7 +91,7 @@ onMounted(async () => {
           {{ store.isLoading ? "Loading device fleet…" : `${segmentScopedDevices.length} device${segmentScopedDevices.length !== 1 ? "s" : ""}${nonCompliant ? ` · ${nonCompliant} non-compliant` : ""}` }}
         </p>
       </div>
-      <div class="flex items-center gap-3 shrink-0 ml-auto">
+      <div class="flex items-center gap-3 shrink-0 ml-auto flex-wrap">
         <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
           <span class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm">
             <component :is="ICONS.Smartphone" :size="14" weight="Linear" /> Devices
@@ -149,7 +149,7 @@ onMounted(async () => {
     </div>
 
     <!-- Fleet risk trend sparkline -->
-    <div v-if="store.riskTrend.length >= 2" class="flex items-center gap-3 mb-6 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+    <div v-if="store.riskTrend.length >= 2" class="flex items-center gap-3 mb-6 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-wrap">
       <component :is="ICONS.GraphUp" :size="14" weight="Linear" class="shrink-0 text-gray-400" />
       <span class="text-xs font-semibold shrink-0 text-gray-400">Fleet risk trend</span>
       <div class="flex items-end gap-0.5 h-6 shrink-0">

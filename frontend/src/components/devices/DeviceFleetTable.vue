@@ -8,6 +8,7 @@
 import { EmptyState } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
+import { useBreakpoint } from "../../composables/useBreakpoint";
 import { useDevicesStore, type NormalizedDevice } from "../../stores/devices";
 import type { Workflow } from "../../stores/workflows";
 import { useWorkflowsStore } from "../../stores/workflows";
@@ -34,6 +35,7 @@ const emit = defineEmits<{
 
 const store = useDevicesStore();
 const workflowsStore = useWorkflowsStore();
+const { isMobile } = useBreakpoint();
 
 // ── Filter/sort/selection state (all local — matches DeviceFleetTable.jsx) ──
 const search = ref("");
@@ -492,6 +494,63 @@ onMounted(() => {
 
     <!-- Table -->
     <EmptyState v-if="filtered.length === 0 && !isLoading" title="No devices match your filters" description="Try adjusting your search or filter criteria" />
+
+    <!-- Mobile (<768px): a 7-column table with an absolutely-positioned
+         risk popover doesn't work on a touch/phone-width screen — replaced
+         with a stacked card list, one card per device, tap-to-open same as
+         a row click. Bulk-select checkbox and the risk "what's driving
+         this" popover are kept (same handlers), OS-update/vuln/lifecycle/
+         app-update badges and the Employee/Hardware columns are dropped
+         from the compact card — all of that detail is one tap away in the
+         device drawer, which is what this card is a shortcut into. -->
+    <div v-else-if="isMobile" class="divide-y divide-gray-100 dark:divide-gray-800">
+      <div v-for="d in sorted" :key="d.id" class="flex items-start gap-3 px-4 py-3 active:bg-gray-50 dark:active:bg-white/5" @click="emit('open-device', d.id)">
+        <input type="checkbox" class="mt-1 shrink-0" :checked="selectedIds.has(d.id)" @click.stop @change="toggleSelect(d.id)" />
+        <DeviceMockup :platform="d.platform" class="shrink-0" />
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between gap-2">
+            <p class="font-semibold truncate text-gray-900 dark:text-white">{{ d.displayName }}</p>
+            <component :is="ICONS.AltArrowRight" :size="14" weight="Linear" class="text-gray-400 shrink-0" />
+          </div>
+          <p class="text-[11px] text-gray-400">{{ d.platformLabel }}<template v-if="getUserDisplayName(d.mdmUser)"> · {{ getUserDisplayName(d.mdmUser) }}</template></p>
+
+          <div class="flex items-center gap-1.5 flex-wrap mt-2">
+            <span
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
+              :style="{ backgroundColor: d.isCompliant ? `${SUCCESS}15` : `${DANGER}15`, color: d.isCompliant ? SUCCESS : DANGER }"
+            >
+              <component :is="d.isCompliant ? ICONS.ShieldCheck : ICONS.ShieldWarning" :size="12" weight="Linear" />
+              {{ d.isCompliant ? "Compliant" : "Non-compliant" }}
+            </span>
+            <button @click.stop="expandedRiskId = expandedRiskId === d.id ? null : d.id">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium" :style="{ backgroundColor: `${riskMeta(d.riskTier).color}15`, color: riskMeta(d.riskTier).color }">
+                {{ riskMeta(d.riskTier).label }} · {{ d.riskScore }}
+              </span>
+            </button>
+            <span v-if="d.activeViolations?.length > 0" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold" :style="{ backgroundColor: `${DANGER}12`, color: DANGER }">
+              <component :is="ICONS.DangerTriangle" :size="9" weight="Linear" /> {{ d.activeViolations.length }}
+            </span>
+            <span v-if="d.openCases?.length > 0" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold" :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }">
+              <component :is="ICONS.Folder" :size="9" weight="Linear" /> {{ d.openCases.length }}
+            </span>
+          </div>
+
+          <div v-if="expandedRiskId === d.id" class="mt-2 rounded-lg p-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700" @click.stop>
+            <p class="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-gray-400">What's driving this score</p>
+            <p v-if="(d.riskFactors || []).length === 0" class="text-xs text-gray-400">No contributing factors — baseline score.</p>
+            <div v-else class="space-y-1">
+              <div v-for="(f, fi) in d.riskFactors" :key="fi" class="flex items-center justify-between gap-2 text-xs">
+                <span class="text-gray-900 dark:text-white">{{ f.label }}</span>
+                <span class="font-semibold shrink-0" style="color: #ef4444">+{{ f.points }}</span>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-gray-400 mt-1.5">{{ d.osVersion || "—" }} · Last seen {{ formatLastSeen(d.lastSeen) }}</p>
+        </div>
+      </div>
+    </div>
+
     <div v-else class="overflow-x-auto">
       <table class="w-full text-sm text-left">
         <thead class="bg-gray-50 dark:bg-gray-900/50">
