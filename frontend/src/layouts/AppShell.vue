@@ -5,18 +5,26 @@
 // workspace switcher + avatar dropdown (Audit Logs / workspace list / sign out) on
 // the right — replacing the earlier left-sidebar layout, which never matched the
 // original design.
-import { Widget, Smartphone, ShieldWarning, Folder, Routing, FileText, Settings, History, Logout } from "@solar-icons/vue";
+import { Widget, Smartphone, ShieldWarning, Folder, Routing, FileText, Settings, History, Logout, List as MenuIcon } from "@solar-icons/vue";
 import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
+import { Drawer } from "@applivery/bluesky-vue";
 import { useAuthStore, type FeatureArea } from "../stores/auth";
 import { useSegmentsStore } from "../stores/segments";
 import { useUiStore, type ThemeMode } from "../stores/ui";
 import { useDashboardStateStore } from "../stores/dashboardState";
 import { useSessionGuards } from "../composables/useSessionGuards";
+import { useBreakpoint } from "../composables/useBreakpoint";
 import { ICONS } from "../lib/solarIcons";
 import { api } from "../api/http";
 import WorkspaceOnboardingModal from "../components/onboarding/WorkspaceOnboardingModal.vue";
 import SegmentsPanel from "../components/shared/SegmentsPanel.vue";
+
+// Below Tailwind's `md` (768px) — see useBreakpoint.ts's module doc. Every
+// `v-if="isMobile"` branch added below is new markup; the existing
+// `v-else`/`!isMobile` branch is the original desktop template, untouched.
+const { isMobile } = useBreakpoint();
+const isMobileMenuOpen = ref(false);
 
 // Views the Segments panel is reachable from (App.jsx:4462's currentView
 // check) — Overview/Devices/Compliance/Cases only.
@@ -170,7 +178,8 @@ function onCloned() {
 
 <template>
   <div class="w-full h-screen flex flex-col overflow-hidden">
-    <nav class="h-16 min-h-16 flex items-center justify-between pl-4 pr-4 z-50 shrink-0 relative" :style="{ backgroundColor: PRIMARY_BLUE }">
+    <!-- Desktop nav (>=768px) — untouched from before mobile support was added. -->
+    <nav v-if="!isMobile" class="h-16 min-h-16 flex items-center justify-between pl-4 pr-4 z-50 shrink-0 relative" :style="{ backgroundColor: PRIMARY_BLUE }">
       <div class="flex items-center h-full">
         <div class="flex items-center gap-3 mr-4 shrink-0">
           <img src="https://dashboard.applivery.io/images/logo-combined-white.svg" class="h-[22px] object-contain block" alt="Applivery" />
@@ -289,6 +298,33 @@ function onCloned() {
       </div>
     </nav>
 
+    <!-- Mobile nav (<768px) — compact bar (hamburger + logo + settings), all
+         other chrome from the desktop nav/footer (tabs, workspace switcher,
+         audit logs, theme, sign out) lives in the slide-out drawer below,
+         since there's no room for it in a 56px bar. -->
+    <nav v-else class="h-14 min-h-14 flex items-center justify-between px-3 z-50 shrink-0" :style="{ backgroundColor: PRIMARY_BLUE }">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="flex h-9 w-9 items-center justify-center rounded-md text-white hover:bg-white/10 transition"
+          aria-label="Open menu"
+          @click="isMobileMenuOpen = true"
+        >
+          <MenuIcon :size="20" weight="Linear" />
+        </button>
+        <img src="https://dashboard.applivery.io/images/logo-combined-white.svg" class="h-[18px] object-contain block" alt="Applivery" />
+        <span class="text-[16px] text-white/90 select-none" style="font-family: 'Outfit', sans-serif; font-weight: 300; letter-spacing: -0.1px">SOAR</span>
+      </div>
+      <button
+        type="button"
+        class="flex h-9 w-9 items-center justify-center rounded-md text-white hover:bg-white/10 transition"
+        aria-label="Settings"
+        @click="isSettingsModalOpen = true"
+      >
+        <Settings :size="19" weight="Linear" />
+      </button>
+    </nav>
+
     <main class="flex-1 min-w-0 min-h-0 overflow-y-auto">
       <RouterView />
     </main>
@@ -297,8 +333,94 @@ function onCloned() {
     <SettingsModal v-if="isSettingsModalOpen" @close="isSettingsModalOpen = false" />
     <SegmentsPanel :views="SEGMENT_PANEL_VIEWS" :current-view="activeId" />
 
-    <!-- Footer — theme selector + status + operational pill (App.jsx ~5280-5350) -->
-    <footer class="fixed bottom-0 left-0 right-0 z-[50] flex items-center justify-between px-6 py-2.5 border-t h-[44px] bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+    <!-- Mobile menu drawer — the mobile equivalent of the desktop nav tabs +
+         workspace switcher + Audit Logs link + theme toggle + sign out, all
+         of which live in the top nav bar / fixed footer on desktop but don't
+         fit in the mobile bar above. -->
+    <Drawer v-if="isMobile" :open="isMobileMenuOpen" side="left" width="w-72 max-w-[85vw]" title="Menu" @close="isMobileMenuOpen = false">
+      <div class="-m-6 flex flex-col divide-y divide-gray-100 dark:divide-gray-700">
+        <div class="py-2">
+          <button
+            v-for="tab in visibleTabs"
+            :key="tab.id"
+            type="button"
+            class="w-full flex items-center gap-3 px-6 py-3 text-left text-[15px] transition-colors"
+            :class="activeId === tab.id ? 'text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/10 font-medium' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'"
+            @click="goTo(tab.id); isMobileMenuOpen = false"
+          >
+            <component :is="tab.icon" :size="19" weight="Linear" />
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <div class="py-2">
+          <button type="button" class="w-full flex items-center gap-3 px-6 py-3 text-left text-[15px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors" @click="goTo('audit-logs'); isMobileMenuOpen = false">
+            <History :size="18" weight="Linear" class="text-gray-400" />
+            Audit Logs
+          </button>
+        </div>
+
+        <div class="py-3 px-6">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Workspace</div>
+          <div class="text-[14px] font-medium truncate text-gray-900 dark:text-white mb-1">{{ workspaceName }}</div>
+          <template v-if="auth.organizations.length > 1">
+            <button
+              v-for="org in auth.organizations"
+              :key="org.id || org._id || org.slug"
+              type="button"
+              class="w-full flex items-center gap-2.5 py-2 text-left transition-colors"
+              @click="onSwitchWorkspace(org.slug || org._id || org.id || ''); isMobileMenuOpen = false"
+            >
+              <div class="shrink-0 w-6 h-6 rounded-md overflow-hidden flex items-center justify-center text-white text-[10px] font-bold" :style="{ backgroundColor: PRIMARY_BLUE }">
+                {{ (org.name || "?").slice(0, 2).toUpperCase() }}
+              </div>
+              <span
+                class="text-[13px] truncate flex-1"
+                :class="(org.slug || org._id || org.id) !== auth.orgSlug ? 'text-gray-900 dark:text-white' : ''"
+                :style="{ color: (org.slug || org._id || org.id) === auth.orgSlug ? PRIMARY_BLUE : undefined, fontWeight: (org.slug || org._id || org.id) === auth.orgSlug ? 600 : 400 }"
+              >
+                {{ org.name }}
+              </span>
+            </button>
+          </template>
+        </div>
+
+        <div class="py-3 px-6">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Theme</div>
+          <div class="flex gap-2">
+            <button
+              v-for="opt in THEME_OPTIONS"
+              :key="opt.mode"
+              type="button"
+              class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-lg border text-[11px] transition-colors"
+              :class="uiStore.themeMode === opt.mode ? 'border-brand-500 text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/10' : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'"
+              @click="chooseTheme(opt.mode)"
+            >
+              <component :is="opt.icon" :size="16" weight="Linear" />
+              {{ opt.label.replace(" mode", "").replace(" default", "") }}
+            </button>
+          </div>
+        </div>
+
+        <div class="py-2">
+          <button type="button" class="w-full flex items-center gap-3 px-6 py-3 text-left transition-colors hover:bg-gray-50 dark:hover:bg-white/5" @click="signOut">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center uppercase bg-emerald-800 text-emerald-200/80 text-xs shrink-0">
+              {{ userInitials }}
+            </div>
+            <div class="flex flex-col min-w-0 flex-1">
+              <span class="text-[13px] font-medium truncate text-gray-900 dark:text-white">{{ userDisplayName || "Signed in" }}</span>
+              <span class="text-[11px] truncate text-gray-500 dark:text-gray-400">{{ auth.email || "" }}</span>
+            </div>
+            <Logout :size="15" class="text-gray-400 shrink-0" />
+          </button>
+        </div>
+
+        <div class="py-3 px-6 text-[10px] text-gray-400 dark:text-gray-500">©{{ new Date().getFullYear() }} Applivery S.L. All rights reserved</div>
+      </div>
+    </Drawer>
+
+    <!-- Footer — theme selector + status + operational pill (App.jsx ~5280-5350). Desktop only (>=768px) — its content lives in the mobile drawer above instead. -->
+    <footer v-if="!isMobile" class="fixed bottom-0 left-0 right-0 z-[50] flex items-center justify-between px-6 py-2.5 border-t h-[44px] bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
       <span class="text-[11px] text-gray-400 dark:text-gray-400">©{{ new Date().getFullYear() }} Applivery S.L. All rights reserved</span>
 
       <div class="flex items-center gap-4">
