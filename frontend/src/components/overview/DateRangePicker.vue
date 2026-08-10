@@ -6,8 +6,10 @@
 import { computed, ref } from "vue";
 import CalendarMonth from "./CalendarMonth.vue";
 import { useUiStore } from "../../stores/ui";
+import { useBreakpoint } from "../../composables/useBreakpoint";
 
 const uiStore = useUiStore();
+const { isMobile } = useBreakpoint();
 
 export interface DateRangeValue {
   label: string;
@@ -100,7 +102,8 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 </script>
 
 <template>
-  <div class="absolute right-0 top-full mt-2 z-[300] rounded-2xl shadow-2xl border overflow-hidden flex bg-white dark:bg-gray-800" :style="{ borderColor: uiStore.activeTheme.border }">
+  <!-- Desktop (>=768px): unchanged absolute dropdown, presets sidebar + dual calendar. -->
+  <div v-if="!isMobile" class="absolute right-0 top-full mt-2 z-[300] rounded-2xl shadow-2xl border overflow-hidden flex bg-white dark:bg-gray-800" :style="{ borderColor: uiStore.activeTheme.border }">
     <!-- Presets -->
     <div class="flex flex-col py-4 border-r" :style="{ borderColor: uiStore.activeTheme.border, minWidth: '160px' }">
       <button
@@ -178,4 +181,70 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
       </div>
     </div>
   </div>
+
+  <!-- Mobile (<768px): the desktop dual-calendar-plus-sidebar layout is
+       ~700px wide and doesn't fit a phone screen — this renders instead as
+       a bottom sheet: horizontally-scrollable preset chips, a single
+       month's calendar (still fully navigable via ‹ ›), then the same
+       Cancel/Apply footer. -->
+  <Teleport v-else to="body">
+    <div class="fixed inset-0 z-[299] bg-black/40" @click="emit('cancel')" />
+    <div
+      class="fixed inset-x-0 bottom-0 z-[300] rounded-t-2xl shadow-2xl border-t max-h-[85vh] overflow-y-auto bg-white dark:bg-gray-800"
+      :style="{ borderColor: uiStore.activeTheme.border }"
+    >
+      <div class="flex gap-2 overflow-x-auto px-4 pt-4 pb-2 -mx-1">
+        <button
+          v-for="p in PRESETS"
+          :key="p.label"
+          type="button"
+          class="shrink-0 px-3.5 py-1.5 rounded-full text-[13px] whitespace-nowrap transition-all"
+          :style="{
+            color: activeLabel === p.label ? '#fff' : uiStore.activeTheme.text,
+            fontWeight: activeLabel === p.label ? 600 : 400,
+            backgroundColor: activeLabel === p.label ? primaryBlue : uiStore.activeTheme.card,
+            border: `1px solid ${activeLabel === p.label ? primaryBlue : uiStore.activeTheme.border}`,
+          }"
+          @click="selectPreset(p)"
+        >
+          {{ p.label }}
+        </button>
+      </div>
+
+      <div class="flex flex-col px-4 pb-4 gap-3">
+        <div class="flex items-center justify-between mt-2 gap-4">
+          <button type="button" class="w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-60 text-lg font-light transition-opacity text-gray-900 dark:text-white" @click="prevMonth">‹</button>
+          <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ MONTHS[leftYM.month] }} {{ leftYM.year }}</span>
+          <button type="button" class="w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-60 text-lg font-light transition-opacity text-gray-900 dark:text-white" @click="nextMonth">›</button>
+        </div>
+        <CalendarMonth
+          :year="leftYM.year"
+          :month="leftYM.month"
+          :from="pendingFrom"
+          :to="pendingTo"
+          :hover-date="pendingTo ? null : hoverDate"
+          :primary-blue="primaryBlue"
+          :is-custom="isCustom"
+          @day-click="handleDayClick"
+          @day-hover="hoverDate = $event"
+        />
+
+        <div class="flex items-center justify-between border-t pt-4 gap-4" :style="{ borderColor: uiStore.activeTheme.border }">
+          <span class="text-[13px] tabular-nums" :style="{ color: uiStore.activeTheme.textMuted }">{{ fmt(pendingFrom) }}<template v-if="pendingFrom"> – </template>{{ fmt(pendingTo) }}</span>
+          <div class="flex gap-2 shrink-0">
+            <button type="button" class="px-4 py-2 rounded-lg text-sm font-medium border transition-colors hover:opacity-70" :style="{ color: uiStore.activeTheme.textMuted, borderColor: uiStore.activeTheme.border }" @click="emit('cancel')">Cancel</button>
+            <button
+              type="button"
+              class="px-6 py-2 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+              :style="{ backgroundColor: primaryBlue }"
+              :disabled="!pendingFrom"
+              @click="apply"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

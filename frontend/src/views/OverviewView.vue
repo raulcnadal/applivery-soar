@@ -8,6 +8,7 @@ import { Alert, Button, EmptyState, PageHeader } from "@applivery/bluesky-vue";
 import { GridLayout, GridItem } from "grid-layout-plus";
 import { ICONS, resolveIcon } from "../lib/solarIcons";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useBreakpoint } from "../composables/useBreakpoint";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import WidgetCard from "../components/overview/WidgetCard.vue";
 import WidgetBuilderPanel from "../components/overview/WidgetBuilderPanel.vue";
@@ -28,6 +29,8 @@ import { filterWidgetItemsForClick, insightKind } from "../lib/widgetVisuals";
 // App.jsx's PRIMARY_BLUE (~line 20) — the one consistent brand accent used
 // throughout the Overview page's chrome (buttons, icon badges, menus).
 const PRIMARY_BLUE = "#0241E3";
+
+const { isMobile } = useBreakpoint();
 
 const store = useDashboardStateStore();
 const segmentsStore = useSegmentsStore();
@@ -344,7 +347,7 @@ async function saveWidgetForm(w: DashboardWidget) {
         </span>
       </template>
       <template #action>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3">
           <button type="button" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80" :style="{ color: PRIMARY_BLUE }" @click="openBuilder()">
             <component :is="ICONS.AddCircle" :size="15" weight="Linear" />
             Add Widget
@@ -369,6 +372,62 @@ async function saveWidgetForm(w: DashboardWidget) {
     <EmptyState v-if="!widgets.length" title="No widgets yet" description="Add your first widget to get started.">
       <template #action><Button size="sm" @click="openBuilder()">Add Widget</Button></template>
     </EmptyState>
+
+    <!-- Mobile (<768px): the 12-column drag/resize grid below isn't usable
+         on a touch/phone-width screen (columns collapse to a few px each,
+         and drag/resize gestures don't translate) — widgets instead render
+         as a plain vertically-stacked list, full width, fixed height,
+         iterating `widgets` directly rather than the grid `layout`. Same
+         WidgetCard component and click/menu behavior, just no
+         positioning/sizing/drag affordances (which have no meaning without
+         a grid to place them in). -->
+    <div v-else-if="isMobile" class="space-y-4">
+      <div v-for="w in widgets" :key="w.id" class="h-80 w-full rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800 flex flex-col overflow-hidden relative">
+        <div class="px-5 pt-4 pb-3 flex justify-between items-center shrink-0 border-b" :style="{ borderColor: uiStore.activeTheme.border + '4D' }">
+          <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: iconFor(w.stat).bg, color: iconFor(w.stat).color }">
+              <component :is="iconFor(w.stat).component" :size="15" weight="Linear" />
+            </div>
+            <div class="flex items-baseline gap-1.5 min-w-0">
+              <span class="text-[13px] font-medium text-gray-900 dark:text-white truncate">{{ w.title }}</span>
+              <span v-if="isTrendWidget(w.stat)" class="text-[10px] shrink-0 text-gray-500 dark:text-gray-400">last 30 days</span>
+            </div>
+            <div v-if="osTotalsFor(w.id)" class="flex items-center gap-2.5 ml-1">
+              <div v-if="(osTotalsFor(w.id)?.apple ?? 0) > 0" class="flex items-center gap-1 text-[11px] font-semibold" :style="{ color: uiStore.isDark ? '#E5E7EB' : '#1D1D1F' }">
+                <OsIcon platform="apple" :size="13" :is-dark-mode="uiStore.isDark" /> {{ osTotalsFor(w.id)?.apple }}
+              </div>
+              <div v-if="(osTotalsFor(w.id)?.android ?? 0) > 0" class="flex items-center gap-1 text-[11px] font-semibold" style="color: #3ddc84">
+                <OsIcon platform="android" :size="13" /> {{ osTotalsFor(w.id)?.android }}
+              </div>
+              <div v-if="(osTotalsFor(w.id)?.windows ?? 0) > 0" class="flex items-center gap-1 text-[11px] font-semibold" style="color: #0241e2">
+                <OsIcon platform="windows" :size="13" /> {{ osTotalsFor(w.id)?.windows }}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0 ml-2">
+            <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-500 dark:text-gray-400" @click="openWidgetInfo(w.id)">
+              <component :is="ICONS.InfoCircle" :size="13" weight="Linear" />
+            </button>
+            <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-gray-500 dark:text-gray-400" @click="openBuilder(w)">
+              <component :is="ICONS.Pen" :size="13" weight="Linear" />
+            </button>
+            <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style="color: #ef4444" @click="removeWidget(w.id)">
+              <component :is="ICONS.TrashBinTrash" :size="13" weight="Linear" />
+            </button>
+          </div>
+        </div>
+        <div class="flex-1 px-4 pb-4 pt-3 relative min-h-0">
+          <WidgetCard
+            :widget="w"
+            :data="widgetSlots[w.id]?.data ?? null"
+            :is-loading="widgetSlots[w.id]?.isLoading ?? true"
+            :error="widgetSlots[w.id]?.error ?? null"
+            @open-org-profile="openOrgProfile(w.id)"
+            @chart-click="onChartClick(w.id, $event)"
+          />
+        </div>
+      </div>
+    </div>
 
     <GridLayout
       v-else

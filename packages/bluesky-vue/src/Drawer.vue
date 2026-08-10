@@ -63,7 +63,12 @@ onUnmounted(() => {
       <!-- Panel -->
       <div
         :class="cn(
-          'fixed inset-y-0 z-50 bg-white dark:bg-gray-800 flex flex-col',
+          // max-w-[100vw] caps whatever fixed width a caller passes (most
+          // pass a plain px/rem Tailwind width class, e.g. w-96 or w-[480px],
+          // sized for a desktop panel) so it can never overrun a phone-width
+          // viewport — a no-op at desktop widths, since no drawer's fixed
+          // width is anywhere close to 100vw there.
+          'fixed inset-y-0 z-50 bg-white dark:bg-gray-800 flex flex-col max-w-[100vw]',
           width,
           side === 'right' ? 'right-0 rounded-l-2xl shadow-2xl' : 'left-0 rounded-r-2xl shadow-2xl',
           props.class,

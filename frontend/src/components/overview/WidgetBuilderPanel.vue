@@ -7,6 +7,7 @@
 import { computed, ref, watch } from "vue";
 import { ICONS, resolveIcon } from "../../lib/solarIcons";
 import { useUiStore } from "../../stores/ui";
+import { useBreakpoint } from "../../composables/useBreakpoint";
 import {
   WIDGET_CATALOG,
   WIDGET_SIZES,
@@ -24,6 +25,9 @@ import {
 
 const PRIMARY_BLUE = "#0241E3";
 const uiStore = useUiStore();
+// Below 768px the 400px fixed panel width would overrun the viewport —
+// full-width on mobile instead, same slide-in-from-left behavior.
+const { isMobile } = useBreakpoint();
 
 const props = defineProps<{
   open: boolean;
@@ -119,8 +123,7 @@ function blockDims(id: "small" | "half" | "full") {
     <!-- Sliding panel from the left, full height -->
     <div
       class="fixed top-0 bottom-0 left-0 z-[109] flex flex-col shadow-2xl border-r bg-white dark:bg-gray-800 transition-transform duration-300"
-      style="width: 400px"
-      :style="{ transform: open ? 'translateX(0)' : 'translateX(-100%)', borderColor: uiStore.activeTheme.border }"
+      :style="{ width: isMobile ? '100vw' : '400px', transform: open ? 'translateX(0)' : 'translateX(-100%)', borderColor: uiStore.activeTheme.border }"
     >
       <!-- Header -->
       <div class="flex items-center justify-between px-6 py-5 border-b shrink-0" :style="{ borderColor: uiStore.activeTheme.border }">
