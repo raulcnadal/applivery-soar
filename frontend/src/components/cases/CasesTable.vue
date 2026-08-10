@@ -8,6 +8,7 @@
 import { computed, ref } from "vue";
 import { EmptyState } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
+import { useBreakpoint } from "../../composables/useBreakpoint";
 import type { MitreTechniqueDef } from "../../lib/mitreCatalog";
 import MitreTagPills from "../shared/MitreTagPills.vue";
 import SlaBadge from "./SlaBadge.vue";
@@ -50,6 +51,7 @@ const SOURCE_META: Record<string, { label: string; icon: keyof typeof ICONS }> =
 };
 
 const notPermittedTitle = "Your role isn't permitted to bulk-update Cases.";
+const { isMobile } = useBreakpoint();
 
 const selectedIds = ref<Set<string>>(new Set());
 const allSelected = computed(() => props.cases.length > 0 && props.cases.every((c) => selectedIds.value.has(c.id)));
@@ -136,33 +138,70 @@ function timeAgo(isoString?: string | null): string | null {
       <div
         v-for="(c, i) in cases"
         :key="c.id"
-        class="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+        class="w-full px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
         :class="i > 0 ? 'border-t border-gray-200 dark:border-gray-700' : ''"
       >
-        <input type="checkbox" :checked="selectedIds.has(c.id)" class="shrink-0" @click.stop @change="toggleOne(c.id)" />
-        <button class="flex items-center gap-3 flex-1 min-w-0 text-left" @click="emit('open', c)">
-          <component :is="ICONS[(SOURCE_META[c.source]?.icon ?? 'Folder') as keyof typeof ICONS]" :size="15" weight="Linear" class="shrink-0 text-gray-400" />
-          <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium truncate text-gray-900 dark:text-white">{{ c.title }}</p>
-            <p class="text-xs truncate text-gray-400">
+        <!-- Mobile (<768px): the desktop row below packs icon + title +
+             MITRE pills + SLA/severity/status badges into one non-wrapping
+             line, which can genuinely run wider than a phone screen once a
+             case has a couple of MITRE techniques attached — stacked
+             instead: title/meta on top, every badge in a wrapping row
+             underneath. -->
+        <div v-if="isMobile" class="flex items-start gap-3">
+          <input type="checkbox" :checked="selectedIds.has(c.id)" class="shrink-0 mt-1" @click.stop @change="toggleOne(c.id)" />
+          <button class="flex-1 min-w-0 text-left" @click="emit('open', c)">
+            <div class="flex items-center gap-2 min-w-0">
+              <component :is="ICONS[(SOURCE_META[c.source]?.icon ?? 'Folder') as keyof typeof ICONS]" :size="14" weight="Linear" class="shrink-0 text-gray-400" />
+              <p class="text-sm font-medium truncate text-gray-900 dark:text-white">{{ c.title }}</p>
+            </div>
+            <p class="text-xs truncate text-gray-400 mt-0.5">
               {{ SOURCE_META[c.source]?.label ?? c.source }}{{ c.assignee ? ` · Assigned to ${c.assignee}` : " · Unassigned" }} · Updated {{ timeAgo(c.updatedAt) }}
             </p>
-          </div>
-          <MitreTagPills v-if="c.mitreTechniques?.length" :ids="c.mitreTechniques" :technique-by-id="techniqueById" :tactic-color="tacticColor" />
-          <SlaBadge :sla-status="c.slaStatus" />
-          <span
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase shrink-0"
-            :style="{ backgroundColor: `${(SEVERITY_META[c.severity] ?? { color: MUTED }).color}15`, color: (SEVERITY_META[c.severity] ?? { color: MUTED, label: c.severity }).color }"
-          >
-            {{ (SEVERITY_META[c.severity] ?? { label: c.severity }).label }}
-          </span>
-          <span
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase shrink-0"
-            :style="{ backgroundColor: `${(STATUS_META[c.status] ?? { color: MUTED }).color}15`, color: (STATUS_META[c.status] ?? { color: MUTED, label: c.status }).color }"
-          >
-            {{ (STATUS_META[c.status] ?? { label: c.status }).label }}
-          </span>
-        </button>
+            <div class="flex items-center gap-1.5 flex-wrap mt-2">
+              <span
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase"
+                :style="{ backgroundColor: `${(SEVERITY_META[c.severity] ?? { color: MUTED }).color}15`, color: (SEVERITY_META[c.severity] ?? { color: MUTED, label: c.severity }).color }"
+              >
+                {{ (SEVERITY_META[c.severity] ?? { label: c.severity }).label }}
+              </span>
+              <span
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase"
+                :style="{ backgroundColor: `${(STATUS_META[c.status] ?? { color: MUTED }).color}15`, color: (STATUS_META[c.status] ?? { color: MUTED, label: c.status }).color }"
+              >
+                {{ (STATUS_META[c.status] ?? { label: c.status }).label }}
+              </span>
+              <SlaBadge :sla-status="c.slaStatus" />
+              <MitreTagPills v-if="c.mitreTechniques?.length" :ids="c.mitreTechniques" :technique-by-id="techniqueById" :tactic-color="tacticColor" />
+            </div>
+          </button>
+        </div>
+
+        <div v-else class="flex items-center gap-3">
+          <input type="checkbox" :checked="selectedIds.has(c.id)" class="shrink-0" @click.stop @change="toggleOne(c.id)" />
+          <button class="flex items-center gap-3 flex-1 min-w-0 text-left" @click="emit('open', c)">
+            <component :is="ICONS[(SOURCE_META[c.source]?.icon ?? 'Folder') as keyof typeof ICONS]" :size="15" weight="Linear" class="shrink-0 text-gray-400" />
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium truncate text-gray-900 dark:text-white">{{ c.title }}</p>
+              <p class="text-xs truncate text-gray-400">
+                {{ SOURCE_META[c.source]?.label ?? c.source }}{{ c.assignee ? ` · Assigned to ${c.assignee}` : " · Unassigned" }} · Updated {{ timeAgo(c.updatedAt) }}
+              </p>
+            </div>
+            <MitreTagPills v-if="c.mitreTechniques?.length" :ids="c.mitreTechniques" :technique-by-id="techniqueById" :tactic-color="tacticColor" />
+            <SlaBadge :sla-status="c.slaStatus" />
+            <span
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase shrink-0"
+              :style="{ backgroundColor: `${(SEVERITY_META[c.severity] ?? { color: MUTED }).color}15`, color: (SEVERITY_META[c.severity] ?? { color: MUTED, label: c.severity }).color }"
+            >
+              {{ (SEVERITY_META[c.severity] ?? { label: c.severity }).label }}
+            </span>
+            <span
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase shrink-0"
+              :style="{ backgroundColor: `${(STATUS_META[c.status] ?? { color: MUTED }).color}15`, color: (STATUS_META[c.status] ?? { color: MUTED, label: c.status }).color }"
+            >
+              {{ (STATUS_META[c.status] ?? { label: c.status }).label }}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   </template>
