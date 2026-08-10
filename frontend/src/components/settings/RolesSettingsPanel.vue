@@ -66,7 +66,7 @@ async function onSubTabChange(tabId: string) {
     <RoleDialog v-if="isCreatingOrEditing" :role="editingRole" @close="closeRoleEditor" @saved="store.fetchRoles()" />
 
     <template v-else>
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between flex-wrap gap-2">
         <Tabs :tabs="subTabs" :model-value="activeSubTab" variant="pill" @update:model-value="onSubTabChange($event as string)" />
         <Button v-if="activeSubTab === 'roles'" @click="openNewRole">New role</Button>
       </div>

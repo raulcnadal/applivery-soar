@@ -29,7 +29,7 @@ const emit = defineEmits<{
   <!-- Pill variant -->
   <div
     v-if="variant === 'pill'"
-    :class="cn('inline-flex gap-1 bg-gray-100 dark:bg-gray-900/50 rounded-xl p-1', props.class)"
+    :class="cn('inline-flex gap-1 bg-gray-100 dark:bg-gray-900/50 rounded-xl p-1 max-w-full overflow-x-auto', props.class)"
   >
     <button
       v-for="tab in tabs"
@@ -59,7 +59,7 @@ const emit = defineEmits<{
     v-else
     :class="cn('border-b border-gray-200 dark:border-gray-700 w-full', props.class)"
   >
-    <div class="flex">
+    <div class="flex overflow-x-auto">
       <button
         v-for="tab in tabs"
         :key="tab.id"
