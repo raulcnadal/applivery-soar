@@ -76,7 +76,7 @@ function close() {
           />
         </div>
 
-        <div class="p-6 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
+        <div class="p-6 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between flex-wrap gap-3 shrink-0">
           <button class="px-5 py-2.5 rounded-lg font-bold text-sm transition-colors hover:bg-red-500/10" :style="{ color: DANGER }" @click="resetToDefault">Reset to Default</button>
           <div class="flex gap-3">
             <button class="px-5 py-2.5 rounded-lg font-medium text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-gray-400" @click="close">Close</button>

@@ -217,7 +217,7 @@ function cancelEdit() {
             <!-- 1. Select Data Sources -->
             <div>
               <label class="block text-xs font-semibold uppercase tracking-widest mb-3 text-gray-400">1. Select Data Sources</label>
-              <div class="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
                 <label
                   v-for="item in selectableSources"
                   :key="item.id"
@@ -247,7 +247,7 @@ function cancelEdit() {
             <!-- 3. Filters -->
             <div>
               <label class="block text-xs font-semibold uppercase tracking-widest mb-2 text-gray-400">3. Filters</label>
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Operating System</label>
                   <select v-model="form.filters.type" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
@@ -356,7 +356,7 @@ function cancelEdit() {
                   {{ form.schedule.enabled ? "ON" : "OFF" }}
                 </button>
               </div>
-              <div v-if="form.schedule.enabled" class="grid grid-cols-2 gap-4 mt-4">
+              <div v-if="form.schedule.enabled" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                 <div>
                   <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Frequency</label>
                   <select v-model="form.schedule.frequency" class="w-full rounded-lg px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
@@ -385,7 +385,7 @@ function cancelEdit() {
         </div>
 
         <!-- Footer -->
-        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 shrink-0">
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between flex-wrap gap-3 shrink-0">
           <div class="flex items-center gap-2">
             <button v-if="editingReport" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5" @click="cancelEdit">Cancel Edit</button>
             <button class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5" @click="emit('close')">Cancel</button>
