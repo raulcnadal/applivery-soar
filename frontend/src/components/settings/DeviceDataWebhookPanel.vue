@@ -290,7 +290,7 @@ onMounted(async () => {
                 same values via your UEM to <span class="font-mono">HKLM\SOFTWARE\Policies\Applivery\SOAR</span>). macOS: deploy as
                 <span class="font-mono">/Library/Preferences/es.mi-labs.soar.agent.json</span> via MDM Custom Settings.
               </p>
-              <div class="grid grid-cols-2 gap-2">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div class="flex gap-1.5">
                   <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows')">Windows .reg</Button>
                   <Button size="sm" variant="ghost" @click="copySnippet('windows')">Copy</Button>
@@ -386,7 +386,7 @@ X-Device-Report-Secret: {{ store.status.secret }}</code>
         </p>
         <p v-if="!store.status?.configured" class="text-xs text-gray-500 dark:text-gray-400">Generate a webhook secret above first — these scripts reuse it.</p>
         <template v-else>
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
               type="button"
               :disabled="downloading === 'macos'"
@@ -426,7 +426,7 @@ X-Device-Report-Secret: {{ store.status.secret }}</code>
         </p>
         <p v-if="!store.status?.configured" class="text-xs text-gray-500 dark:text-gray-400">Generate a webhook secret above first — these scripts reuse it.</p>
         <template v-else>
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
               type="button"
               :disabled="downloadingSecurity === 'windows'"

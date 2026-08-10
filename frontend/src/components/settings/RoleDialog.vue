@@ -153,7 +153,7 @@ async function save() {
       <div>
         <p class="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Feature access</p>
         <div class="space-y-2">
-          <div v-for="area in FEATURE_AREAS" :key="area" class="grid grid-cols-2 gap-3 items-center">
+          <div v-for="area in FEATURE_AREAS" :key="area" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-3 sm:items-center">
             <span class="text-sm text-gray-700 dark:text-gray-200">{{ FEATURE_AREA_LABELS[area] }}</span>
             <Input
               :model-value="form.featureAccess[area]"

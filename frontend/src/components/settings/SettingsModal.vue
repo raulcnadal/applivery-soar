@@ -12,7 +12,9 @@
 // "Inbound Webhooks" was moved here from Workflows (Phase 4) rather than
 // being genuinely missing as an earlier pass had believed.
 import { computed, ref } from "vue";
+import { Drawer } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
+import { useBreakpoint } from "../../composables/useBreakpoint";
 import HelpIcon from "../shared/HelpIcon.vue";
 import GeneralSettingsForm from "./GeneralSettingsForm.vue";
 import SmtpSettingsForm from "./SmtpSettingsForm.vue";
@@ -41,6 +43,8 @@ import { useAuthStore } from "../../stores/auth";
 const emit = defineEmits<{ close: [] }>();
 
 const auth = useAuthStore();
+const { isMobile } = useBreakpoint();
+const mobileNavOpen = ref(false);
 
 const isSuperAdmin = computed(() => Boolean(auth.access?.isSuperAdmin));
 
@@ -120,7 +124,10 @@ const helpAnchor = computed(() => SETTINGS_TAB_ANCHORS[activeTab.value] ?? null)
 // same as every other generic tab below.
 function selectTab(tabId: string) {
   activeTab.value = tabId;
+  mobileNavOpen.value = false;
 }
+
+const activeTabMeta = computed(() => visibleTabs.value.find((t) => t.id === activeTab.value));
 </script>
 
 <template>
@@ -149,8 +156,8 @@ function selectTab(tabId: string) {
            light gray sitting on the dark card, with the already-correct
            dark:text-gray-400 nav-item text rendering unreadable gray-on-
            light-gray. -->
-      <div class="flex flex-1 overflow-hidden">
-        <div class="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-1 bg-gray-50/60 dark:bg-black/20">
+      <div class="flex flex-1 overflow-hidden" :class="isMobile ? 'flex-col' : ''">
+        <div v-if="!isMobile" class="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-1 bg-gray-50/60 dark:bg-black/20">
           <button
             v-for="tab in visibleTabs"
             :key="tab.id"
@@ -165,7 +172,25 @@ function selectTab(tabId: string) {
           </button>
         </div>
 
-        <div class="flex-1 min-w-0 overflow-y-auto p-8 bg-gray-50/30 dark:bg-black/10">
+        <!-- Mobile (<768px): no room for the 224px nav rail alongside real
+             content — a compact bar shows the current section and opens a
+             slide-in Drawer listing all sections instead, same pattern as
+             AppShell's mobile menu. -->
+        <div v-else class="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-black/20">
+          <div class="flex items-center gap-2 min-w-0">
+            <component :is="activeTabMeta?.icon" :size="15" weight="Linear" class="shrink-0" style="color: #0055ff" />
+            <span class="text-[13px] font-semibold truncate text-gray-900 dark:text-white">{{ activeTabMeta?.label }}</span>
+          </div>
+          <button
+            type="button"
+            class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200"
+            @click="mobileNavOpen = true"
+          >
+            <component :is="ICONS.List" :size="14" weight="Linear" /> Sections
+          </button>
+        </div>
+
+        <div class="flex-1 min-w-0 overflow-y-auto p-4 md:p-8 bg-gray-50/30 dark:bg-black/10">
           <h3 v-if="!SELF_HEADED_TABS.has(activeTab)" class="text-sm font-bold mb-4 text-gray-900 dark:text-white">
             {{ CONTENT_HEADING[activeTab] ?? visibleTabs.find((t) => t.id === activeTab)?.label }}
           </h3>
@@ -201,5 +226,22 @@ function selectTab(tabId: string) {
         </button>
       </div>
     </div>
+
+    <Drawer v-if="isMobile" :open="mobileNavOpen" side="left" width="w-72 max-w-[85vw]" title="Settings sections" @close="mobileNavOpen = false">
+      <div class="-m-6 py-2">
+        <button
+          v-for="tab in visibleTabs"
+          :key="tab.id"
+          type="button"
+          class="w-full flex items-center gap-3 px-6 py-3 text-left text-[14px] transition-colors"
+          :class="activeTab === tab.id ? 'font-semibold' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'"
+          :style="activeTab === tab.id ? { backgroundColor: '#0055FF18', color: '#0055FF' } : {}"
+          @click="selectTab(tab.id)"
+        >
+          <component :is="tab.icon" :size="16" weight="Linear" class="shrink-0" />
+          <span class="truncate">{{ tab.label }}</span>
+        </button>
+      </div>
+    </Drawer>
   </div>
 </template>

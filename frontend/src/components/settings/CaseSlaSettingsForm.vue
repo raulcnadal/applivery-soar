@@ -68,7 +68,7 @@ async function save() {
     </div>
 
     <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
-      <div v-for="sev in SEVERITIES" :key="sev" class="grid grid-cols-3 gap-3 items-center px-4 py-3">
+      <div v-for="sev in SEVERITIES" :key="sev" class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:items-center px-4 py-3">
         <p class="text-sm font-medium text-gray-900 dark:text-white capitalize">{{ sev }}</p>
         <Input v-model.number="form.thresholds[sev].acknowledgeMinutes" type="number" label="Acknowledge (minutes)" />
         <Input v-model.number="form.thresholds[sev].resolveMinutes" type="number" label="Resolve (minutes)" />

@@ -22,7 +22,7 @@ const monthCount = computed(() => store.osUpdateCatalog?.monthsFetched.length ??
     </p>
     <Alert v-if="store.osUpdateCatalog?.lastError" type="danger">{{ store.osUpdateCatalog.lastError }}</Alert>
 
-    <div class="grid grid-cols-3 gap-4 max-w-xl">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-xl">
       <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4">
         <p class="text-xs text-gray-500 dark:text-gray-400">KB entries</p>
         <p class="text-2xl font-semibold text-gray-900 dark:text-white">{{ entryCount }}</p>

@@ -145,14 +145,14 @@ onMounted(async () => {
         <form v-if="addingType === d.id" class="p-4 rounded-xl space-y-3 border border-brand-200 dark:border-brand-800 bg-white dark:bg-gray-800" @submit.prevent="save">
           <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
           <Input v-model="form.name" label="Name" />
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Input :model-value="form.type" type="select" :options="['syslog', 'webhook', 's3', 'nfs', 'sftp'].map((t) => ({ value: t, label: t.toUpperCase() }))" label="Type" @update:model-value="form.type = $event as string" />
             <Input :model-value="form.format" type="select" :options="[{ value: 'json', label: 'JSON' }, { value: 'cef', label: 'CEF (SIEM)' }]" label="Format" @update:model-value="form.format = $event as string" />
           </div>
 
           <template v-if="form.type === 'syslog'">
-            <div class="grid grid-cols-3 gap-2">
-              <Input v-model="form.host" label="Host" class="col-span-2" />
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <Input v-model="form.host" label="Host" class="sm:col-span-2" />
               <Input v-model="form.port" label="Port" placeholder="514" />
             </div>
             <Input v-model="form.facility" label="Facility (0-23)" placeholder="16" />
@@ -163,11 +163,11 @@ onMounted(async () => {
           </template>
           <template v-else-if="form.type === 's3'">
             <Input v-model="form.bucket" label="Bucket" />
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <Input v-model="form.region" label="Region" placeholder="us-east-1" />
               <Input v-model="form.prefix" label="Key prefix (optional)" />
             </div>
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <Input v-model="form.accessKeyId" label="Access key ID" />
               <Input v-model="form.secretAccessKey" type="password" label="Secret access key" placeholder="Leave blank to keep current" />
             </div>
@@ -177,8 +177,8 @@ onMounted(async () => {
             <Input v-model="form.path" label="Local/mounted directory path" placeholder="/mnt/log-exports" />
           </template>
           <template v-else-if="form.type === 'sftp'">
-            <div class="grid grid-cols-3 gap-2">
-              <Input v-model="form.sftpHost" label="Host" class="col-span-2" />
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <Input v-model="form.sftpHost" label="Host" class="sm:col-span-2" />
               <Input v-model="form.sftpPort" label="Port" placeholder="22" />
             </div>
             <Input v-model="form.username" label="Username" />
@@ -224,14 +224,14 @@ onMounted(async () => {
     <form v-if="addingType === 'new'" class="p-4 rounded-xl space-y-3 border border-brand-200 dark:border-brand-800 bg-white dark:bg-gray-800" @submit.prevent="save">
       <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
       <Input v-model="form.name" label="Name" />
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Input :model-value="form.type" type="select" :options="['syslog', 'webhook', 's3', 'nfs', 'sftp'].map((t) => ({ value: t, label: t.toUpperCase() }))" label="Type" @update:model-value="form.type = $event as string" />
         <Input :model-value="form.format" type="select" :options="[{ value: 'json', label: 'JSON' }, { value: 'cef', label: 'CEF (SIEM)' }]" label="Format" @update:model-value="form.format = $event as string" />
       </div>
 
       <template v-if="form.type === 'syslog'">
-        <div class="grid grid-cols-3 gap-2">
-          <Input v-model="form.host" label="Host" class="col-span-2" />
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <Input v-model="form.host" label="Host" class="sm:col-span-2" />
           <Input v-model="form.port" label="Port" placeholder="514" />
         </div>
         <Input v-model="form.facility" label="Facility (0-23)" placeholder="16" />
@@ -242,11 +242,11 @@ onMounted(async () => {
       </template>
       <template v-else-if="form.type === 's3'">
         <Input v-model="form.bucket" label="Bucket" />
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Input v-model="form.region" label="Region" placeholder="us-east-1" />
           <Input v-model="form.prefix" label="Key prefix (optional)" />
         </div>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Input v-model="form.accessKeyId" label="Access key ID" />
           <Input v-model="form.secretAccessKey" type="password" label="Secret access key" placeholder="Leave blank to keep current" />
         </div>
@@ -256,8 +256,8 @@ onMounted(async () => {
         <Input v-model="form.path" label="Local/mounted directory path" placeholder="/mnt/log-exports" />
       </template>
       <template v-else-if="form.type === 'sftp'">
-        <div class="grid grid-cols-3 gap-2">
-          <Input v-model="form.sftpHost" label="Host" class="col-span-2" />
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <Input v-model="form.sftpHost" label="Host" class="sm:col-span-2" />
           <Input v-model="form.sftpPort" label="Port" placeholder="22" />
         </div>
         <Input v-model="form.username" label="Username" />

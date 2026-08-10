@@ -4,8 +4,11 @@
 // populates).
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useBreakpoint } from "../../composables/useBreakpoint";
 import { useAppliveryWebhookSettingsStore } from "../../stores/appliveryWebhookSettings";
 import { useWorkflowsStore } from "../../stores/workflows";
+
+const { isMobile } = useBreakpoint();
 
 const OUTCOME_COLORS: Record<string, string> = {
   logged: "#9CA3AF", webhook_disabled: "#9CA3AF", case_opened: "#0241E3", workflow_fired: "#22C55E",
@@ -86,7 +89,34 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800">
+    <!-- Mobile (<768px): the desktop table's 6 columns (checkboxes + a
+         select + a conditional workflow picker per row) can't fit a phone
+         width — one card per event instead. -->
+    <div v-if="isMobile" class="space-y-2">
+      <div v-for="r in rules" :key="r.actionKey" class="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2">
+        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ r.label || r.actionKey }}</p>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-700 dark:text-gray-200">
+          <label class="flex items-center gap-1.5"><input type="checkbox" v-model="r.enabled" /> Enabled</label>
+          <label class="flex items-center gap-1.5"><input type="checkbox" v-model="r.openCase" /> Open case</label>
+          <label class="flex items-center gap-1.5"><input type="checkbox" v-model="r.runWorkflow" /> Run workflow</label>
+        </div>
+        <div>
+          <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Case severity</label>
+          <select v-model="r.caseSeverity" class="w-full rounded-lg px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+            <option v-for="s in ['low', 'medium', 'high', 'critical']" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+        <Input
+          v-if="r.runWorkflow"
+          :model-value="r.workflowId ?? ''" type="select"
+          label="Workflow"
+          :options="[{ value: '', label: 'Select workflow…' }, ...workflowOptions]"
+          @update:model-value="r.workflowId = ($event as string) || null"
+        />
+      </div>
+    </div>
+
+    <div v-else class="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800">
       <table class="min-w-full text-sm">
         <thead class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
           <tr>

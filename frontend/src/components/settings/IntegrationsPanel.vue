@@ -174,18 +174,18 @@ onMounted(async () => {
       </template>
       <template v-else-if="form.type === 'jira'">
         <Input v-model="form.baseUrl" label="Base URL" placeholder="https://yourcompany.atlassian.net" :disabled="!canManage()" />
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Input v-model="form.email" label="Email" :disabled="!canManage()" />
           <Input v-model="form.apiToken" type="password" label="API token" :disabled="!canManage()" />
         </div>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Input v-model="form.projectKey" label="Project key" :disabled="!canManage()" />
           <Input v-model="form.issueType" label="Issue type" :disabled="!canManage()" />
         </div>
       </template>
       <template v-else-if="form.type === 'servicenow'">
         <Input v-model="form.instanceUrl" label="Instance URL" :disabled="!canManage()" />
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Input v-model="form.username" label="Username" :disabled="!canManage()" />
           <Input v-model="form.password" type="password" label="Password" :disabled="!canManage()" />
         </div>
