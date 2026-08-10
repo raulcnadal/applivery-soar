@@ -117,7 +117,7 @@ async function runNow(rep: ScheduledReport) {
         </div>
         <p class="text-sm mt-1 text-gray-400">Build, schedule, and manage automated reports.</p>
       </div>
-      <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0 max-w-full overflow-x-auto">
+      <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0 w-full sm:w-auto sm:max-w-full overflow-x-auto">
         <button
           class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
           :class="tab === 'builder' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"

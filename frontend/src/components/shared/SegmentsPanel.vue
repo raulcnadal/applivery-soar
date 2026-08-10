@@ -7,6 +7,7 @@
 // rendered above the real, recursively-rendered segment tree.
 import { computed } from "vue";
 import { ICONS } from "../../lib/solarIcons";
+import { useBreakpoint } from "../../composables/useBreakpoint";
 import { GLOBAL_SEGMENT, useSegmentsStore, type SegmentTreeNode } from "../../stores/segments";
 import SegmentTreeRow from "./SegmentTreeRow.vue";
 
@@ -14,6 +15,7 @@ const PRIMARY_BLUE = "#0241E3";
 
 const props = defineProps<{ views: string[]; currentView: string }>();
 const store = useSegmentsStore();
+const { isMobile } = useBreakpoint();
 
 const visible = computed(() => props.views.includes(props.currentView));
 
@@ -39,12 +41,35 @@ const displayNodes = computed(() => filterTree(store.tree, store.search.toLowerC
 </script>
 
 <template>
-  <div class="fixed left-0 top-0 bottom-0 w-4 z-[140]" @mouseenter="onHoverEdge" />
+  <!-- Desktop: an invisible hover strip along the left edge opens the panel
+       on mouse-enter. Not usable on touch (no hover event, and the same
+       screen edge is reserved for iOS's back-swipe gesture), so mobile gets
+       its own visible, tappable trigger tab instead. -->
+  <div v-if="!isMobile" class="fixed left-0 top-0 bottom-0 w-4 z-[140]" @mouseenter="onHoverEdge" />
+
+  <button
+    v-if="isMobile && visible && !store.isPanelOpen"
+    type="button"
+    aria-label="Open segments"
+    class="fixed left-0 top-1/2 -translate-y-1/2 z-[140] flex items-center gap-1 pl-2 pr-2.5 py-3 rounded-r-xl shadow-lg text-white"
+    :style="{ backgroundColor: PRIMARY_BLUE }"
+    @click="store.isPanelOpen = true"
+  >
+    <component :is="ICONS.AltArrowRight" :size="14" weight="Linear" />
+  </button>
+
+  <!-- Mobile-only tap-outside-to-close backdrop — desktop relies on
+       mouseleave instead, which doesn't fire on touch. -->
+  <div
+    v-if="isMobile && store.isPanelOpen && visible"
+    class="fixed inset-0 bg-black/50 z-[145]"
+    @click="store.isPanelOpen = false"
+  />
 
   <div
-    class="fixed left-0 top-0 bottom-0 w-80 shadow-2xl z-[150] transform transition-transform duration-300 flex flex-col border-r bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-    :class="store.isPanelOpen && visible ? 'translate-x-0' : '-translate-x-full'"
-    @mouseleave="store.isPanelOpen = false"
+    class="fixed left-0 top-0 bottom-0 shadow-2xl z-[150] transform transition-transform duration-300 flex flex-col border-r bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+    :class="[store.isPanelOpen && visible ? 'translate-x-0' : '-translate-x-full', isMobile ? 'w-[85vw] max-w-80' : 'w-80']"
+    @mouseleave="!isMobile && (store.isPanelOpen = false)"
   >
     <div class="p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
       <div class="flex items-center justify-between mb-3">

@@ -91,7 +91,7 @@ onMounted(async () => {
           {{ store.isLoading ? "Loading device fleet…" : `${segmentScopedDevices.length} device${segmentScopedDevices.length !== 1 ? "s" : ""}${nonCompliant ? ` · ${nonCompliant} non-compliant` : ""}` }}
         </p>
       </div>
-      <div class="flex items-center gap-3 shrink-0 ml-auto flex-wrap">
+      <div class="flex items-center gap-3 shrink-0 ml-auto flex-wrap w-full sm:w-auto">
         <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
           <span class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm">
             <component :is="ICONS.Smartphone" :size="14" weight="Linear" /> Devices

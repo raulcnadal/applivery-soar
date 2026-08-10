@@ -156,7 +156,7 @@ const activeTabMeta = computed(() => visibleTabs.value.find((t) => t.id === acti
            light gray sitting on the dark card, with the already-correct
            dark:text-gray-400 nav-item text rendering unreadable gray-on-
            light-gray. -->
-      <div class="flex flex-1 overflow-hidden" :class="isMobile ? 'flex-col' : ''">
+      <div class="flex flex-1 min-h-0 overflow-hidden" :class="isMobile ? 'flex-col' : ''">
         <div v-if="!isMobile" class="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-1 bg-gray-50/60 dark:bg-black/20">
           <button
             v-for="tab in visibleTabs"
@@ -190,7 +190,7 @@ const activeTabMeta = computed(() => visibleTabs.value.find((t) => t.id === acti
           </button>
         </div>
 
-        <div class="flex-1 min-w-0 overflow-y-auto p-4 md:p-8 bg-gray-50/30 dark:bg-black/10">
+        <div class="flex-1 min-w-0 min-h-0 overflow-y-auto p-4 md:p-8 bg-gray-50/30 dark:bg-black/10">
           <h3 v-if="!SELF_HEADED_TABS.has(activeTab)" class="text-sm font-bold mb-4 text-gray-900 dark:text-white">
             {{ CONTENT_HEADING[activeTab] ?? visibleTabs.find((t) => t.id === activeTab)?.label }}
           </h3>
