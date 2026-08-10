@@ -9,7 +9,7 @@ import { ICONS } from "../../lib/solarIcons";
 import { computed, onMounted, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
 import { useDeviceReportSecretStore } from "../../stores/deviceReportSecret";
-import { useAgentDownloadsStore, type AgentAsset, type AgentPlatform } from "../../stores/agentDownloads";
+import { AGENT_VARIANTS, useAgentDownloadsStore, variantKey, type AgentAsset, type AgentVariant } from "../../stores/agentDownloads";
 
 const store = useDeviceReportSecretStore();
 const auth = useAuthStore();
@@ -139,9 +139,9 @@ async function downloadAgentAsset(asset: AgentAsset) {
     downloadingAsset.value = null;
   }
 }
-async function publishAgent(platform: AgentPlatform) {
+async function publishAgent(variant: AgentVariant) {
   try {
-    await agentStore.publishToApplivery(platform);
+    await agentStore.publishToApplivery(variant);
   } catch {
     // Surfaced via agentStore.publishError in the template — nothing else to do here.
   }
@@ -151,6 +151,9 @@ function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(1)} MB`;
 }
+// Only used by the legacy GitHub-token release list below (AgentAsset is
+// still plain platform-keyed, not (platform, arch) like AGENT_VARIANTS —
+// that path never carried an ARM64 build to begin with).
 const platformLabels: Record<string, string> = {
   windows: "Windows",
   macos: "macOS",
@@ -248,29 +251,29 @@ X-Device-Report-Secret: {{ store.status.secret }}</code>
         <div v-if="agentStore.isLoadingBuilds" class="text-xs text-gray-500 dark:text-gray-400">Checking for published builds…</div>
         <div v-else class="space-y-2">
           <div
-            v-for="platform in (['windows', 'macos'] as const)"
-            :key="platform"
+            v-for="variant in AGENT_VARIANTS"
+            :key="variantKey(variant.platform, variant.arch)"
             class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"
           >
             <div class="min-w-0">
-              <p class="text-xs font-bold text-gray-900 dark:text-white">{{ platformLabels[platform] }}</p>
-              <template v-if="agentStore.builds[platform]">
-                <p class="text-[10px] font-mono truncate text-gray-500 dark:text-gray-400">{{ agentStore.builds[platform]!.filename }} · {{ formatBytes(agentStore.builds[platform]!.sizeBytes) }}</p>
-                <p v-if="agentStore.publishStatus?.[platform]?.applicationId" class="text-[10px] text-emerald-600 dark:text-emerald-400">
-                  Published to Applivery {{ agentStore.publishStatus![platform].publishedAt ? `on ${new Date(agentStore.publishStatus![platform].publishedAt!).toLocaleDateString()}` : "" }}
+              <p class="text-xs font-bold text-gray-900 dark:text-white">{{ variant.label }}</p>
+              <template v-if="agentStore.builds[variantKey(variant.platform, variant.arch)]">
+                <p class="text-[10px] font-mono truncate text-gray-500 dark:text-gray-400">{{ agentStore.builds[variantKey(variant.platform, variant.arch)]!.filename }} · {{ formatBytes(agentStore.builds[variantKey(variant.platform, variant.arch)]!.sizeBytes) }}</p>
+                <p v-if="agentStore.publishStatus?.[variantKey(variant.platform, variant.arch)]?.applicationId" class="text-[10px] text-emerald-600 dark:text-emerald-400">
+                  Published to Applivery {{ agentStore.publishStatus![variantKey(variant.platform, variant.arch)].publishedAt ? `on ${new Date(agentStore.publishStatus![variantKey(variant.platform, variant.arch)].publishedAt!).toLocaleDateString()}` : "" }}
                 </p>
               </template>
               <p v-else class="text-[10px] text-gray-500 dark:text-gray-400">No build published yet — the agent repo's CI publishes one automatically on push to main.</p>
             </div>
             <div class="flex items-center gap-1.5 shrink-0">
-              <Button size="sm" variant="ghost" :disabled="!agentStore.builds[platform]" :loading="agentStore.downloadingBuild === platform" @click="agentStore.downloadBuild(platform)">Download</Button>
+              <Button size="sm" variant="ghost" :disabled="!agentStore.builds[variantKey(variant.platform, variant.arch)]" :loading="agentStore.downloadingBuild === variantKey(variant.platform, variant.arch)" @click="agentStore.downloadBuild(variant)">Download</Button>
               <Button
                 size="sm"
-                :disabled="!agentStore.builds[platform] || !canEdit()"
-                :loading="agentStore.isPublishing === platform"
-                @click="publishAgent(platform)"
+                :disabled="!agentStore.builds[variantKey(variant.platform, variant.arch)] || !canEdit()"
+                :loading="agentStore.isPublishing === variantKey(variant.platform, variant.arch)"
+                @click="publishAgent(variant)"
               >
-                {{ agentStore.publishStatus?.[platform]?.applicationId ? "Republish" : "Publish to Applivery" }}
+                {{ agentStore.publishStatus?.[variantKey(variant.platform, variant.arch)]?.applicationId ? "Republish" : "Publish to Applivery" }}
               </Button>
             </div>
           </div>

@@ -24,6 +24,7 @@ const PUBLIC_ROUTES = new Set([
   "POST /api/device-data/report-apps",
   "GET /api/device-data/custom-checks",
   "POST /api/internal/agent-builds/:platform",
+  "GET /api/agent-downloads",
   "GET /api/agent-downloads/:platform",
   "GET /api/agent-downloads/:platform/meta",
   "POST /api/applivery-webhook/receive/:secret",

@@ -6,13 +6,33 @@ import { ref } from "vue";
  *  - Zero-config (/api/agent-downloads/*, agentBuilds.controller.ts):
  *    publicly-served, no-token binaries this app's own backend stores
  *    directly (pushed there by each agent repo's CI) — the primary path,
- *    works for every customer with no setup.
+ *    works for every customer with no setup. Three (platform, arch)
+ *    variants exist — windows/amd64, windows/arm64, macos/universal — see
+ *    AGENT_VARIANTS below.
  *  - GitHub-token (config/releases/download below): the original,
  *    now-optional fallback for whoever already configured it — proxies the
  *    agent repos' own GitHub Releases, requires a repo-read PAT most
  *    customers don't have. */
 
 export type AgentPlatform = "windows" | "macos";
+export type AgentArch = string;
+
+export interface AgentVariant {
+  platform: AgentPlatform;
+  arch: AgentArch;
+  label: string;
+}
+
+/** Every zero-config variant this app's backend can serve — one row each in the Settings panel. Windows ships both an x64 and an ARM64 MSI (the agent repo's CI builds both); macOS is a single universal binary. */
+export const AGENT_VARIANTS: AgentVariant[] = [
+  { platform: "windows", arch: "amd64", label: "Windows (x64)" },
+  { platform: "windows", arch: "arm64", label: "Windows (ARM64)" },
+  { platform: "macos", arch: "universal", label: "macOS" },
+];
+
+export function variantKey(platform: AgentPlatform, arch: AgentArch): string {
+  return `${platform}:${arch}`;
+}
 
 export interface AgentDownloadsConfigStatus {
   configured: boolean;
@@ -33,6 +53,7 @@ export interface AgentAsset {
 
 export interface AgentBuildMeta {
   platform: AgentPlatform;
+  arch: string;
   filename: string;
   contentType: string;
   sizeBytes: number;
@@ -54,20 +75,20 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
   const error = ref<string | null>(null);
   const assetsError = ref<string | null>(null);
 
-  // ── Zero-config builds (no token, publicly served) ──
-  const builds = ref<Record<AgentPlatform, AgentBuildMeta | null>>({ windows: null, macos: null });
+  // ── Zero-config builds (no token, publicly served) — keyed by variantKey ──
+  const builds = ref<Record<string, AgentBuildMeta | null>>(Object.fromEntries(AGENT_VARIANTS.map((v) => [variantKey(v.platform, v.arch), null])));
   const isLoadingBuilds = ref(false);
   const buildsError = ref<string | null>(null);
-  const downloadingBuild = ref<AgentPlatform | null>(null);
+  const downloadingBuild = ref<string | null>(null);
 
-  // ── Publish to Applivery App Distribution ──
-  const publishStatus = ref<Record<AgentPlatform, PublishStatusEntry> | null>(null);
-  const isPublishing = ref<AgentPlatform | null>(null);
+  // ── Publish to Applivery — keyed by variantKey ──
+  const publishStatus = ref<Record<string, PublishStatusEntry> | null>(null);
+  const isPublishing = ref<string | null>(null);
   const publishError = ref<string | null>(null);
   // Set only on a successful publish call whose result was a no-op (this
-  // exact build was already the live Publication) — surfaced as an info
-  // notice, distinct from publishError, so "nothing changed" doesn't read
-  // as a failure.
+  // exact build was already published) — surfaced as an info notice,
+  // distinct from publishError, so "nothing changed" doesn't read as a
+  // failure.
   const publishInfo = ref<string | null>(null);
 
   async function fetchConfig() {
@@ -130,17 +151,12 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
     buildsError.value = null;
     try {
       const { api } = await import("../api/http");
-      const fetchOne = async (platform: AgentPlatform) => {
-        try {
-          const res = await api.get(`/agent-downloads/${platform}/meta`);
-          return res.data as AgentBuildMeta;
-        } catch (err: any) {
-          if (err?.response?.status === 404) return null;
-          throw err;
-        }
-      };
-      const [windows, macos] = await Promise.all([fetchOne("windows"), fetchOne("macos")]);
-      builds.value = { windows, macos };
+      const res = await api.get("/agent-downloads");
+      const next: Record<string, AgentBuildMeta | null> = Object.fromEntries(AGENT_VARIANTS.map((v) => [variantKey(v.platform, v.arch), null]));
+      for (const row of (res.data?.builds ?? []) as AgentBuildMeta[]) {
+        next[variantKey(row.platform, row.arch)] = row;
+      }
+      builds.value = next;
     } catch (err: any) {
       buildsError.value = err?.response?.data?.detail || "Failed to check for published agent builds.";
     } finally {
@@ -148,16 +164,17 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
     }
   }
 
-  async function downloadBuild(platform: AgentPlatform) {
-    downloadingBuild.value = platform;
+  async function downloadBuild(variant: AgentVariant) {
+    const key = variantKey(variant.platform, variant.arch);
+    downloadingBuild.value = key;
     try {
       const { api } = await import("../api/http");
-      const res = await api.get(`/agent-downloads/${platform}`, { responseType: "blob" });
+      const res = await api.get(`/agent-downloads/${variant.platform}`, { params: { arch: variant.arch }, responseType: "blob" });
       const blob = new Blob([res.data]);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = builds.value[platform]?.filename || `applivery-soar-agent-${platform}`;
+      a.download = builds.value[key]?.filename || `applivery-soar-agent-${key.replace(":", "-")}`;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -175,19 +192,20 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
     }
   }
 
-  async function publishToApplivery(platform: AgentPlatform) {
-    isPublishing.value = platform;
+  async function publishToApplivery(variant: AgentVariant) {
+    const key = variantKey(variant.platform, variant.arch);
+    isPublishing.value = key;
     publishError.value = null;
     publishInfo.value = null;
     try {
       const { api } = await import("../api/http");
-      const res = await api.post(`/settings/agent-downloads/publish/${platform}`);
+      const res = await api.post(`/settings/agent-downloads/publish/${variant.platform}/${variant.arch}`);
       if (res.data?.alreadyPublished) {
-        publishInfo.value = res.data.message || `This ${platform} agent build is already published to Applivery.`;
+        publishInfo.value = res.data.message || `This ${variant.label} agent build is already published to Applivery.`;
       }
       await fetchPublishStatus();
     } catch (err: any) {
-      publishError.value = err?.response?.data?.detail || `Failed to publish the ${platform} agent to Applivery.`;
+      publishError.value = err?.response?.data?.detail || `Failed to publish the ${variant.label} agent to Applivery.`;
       throw err;
     } finally {
       isPublishing.value = null;

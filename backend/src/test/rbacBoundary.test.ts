@@ -113,7 +113,7 @@ const CASES: Case[] = [
 
   // ── agentBuilds.controller.ts — Publish to Applivery (dashboard-gated half; the ingest/download routes are deliberately public, see authRequired.test.ts) ──
   { label: "agentBuilds: GET /api/settings/agent-downloads/publish-status", method: "get", path: "/api/settings/agent-downloads/publish-status", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
-  { label: "agentBuilds: POST /api/settings/agent-downloads/publish/:platform", method: "post", path: "/api/settings/agent-downloads/publish/windows", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
+  { label: "agentBuilds: POST /api/settings/agent-downloads/publish/:platform/:arch", method: "post", path: "/api/settings/agent-downloads/publish/windows/amd64", area: "settings", level: "manage", insufficientAccess: roleWithAccess({ settings: "read" }) },
 
   // ── scriptRepos.controller.ts — newly gated (deep audit) ──
   { label: "scriptRepos: GET /api/script-repos", method: "get", path: "/api/script-repos", area: "workflows", level: "read", insufficientAccess: roleWithAccess({ workflows: "none" }) },

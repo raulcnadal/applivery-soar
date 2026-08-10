@@ -5,20 +5,25 @@ import { requirePermission } from "../../middleware/rbac.middleware";
 import { verifyAgentBuildSecret } from "../../middleware/agentBuildSecret.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { HttpError } from "../../utils/httpError";
-import { getAgentBuildMeta, getPublishStatus, publishAgentBuildToApplivery, receiveAgentBuild, streamAgentBuild } from "./agentBuilds.service";
+import { getAgentBuildMeta, getPublishStatus, listAgentBuildMeta, publishAgentBuildToApplivery, receiveAgentBuild, streamAgentBuild } from "./agentBuilds.service";
 
 /**
  * Zero-configuration Applivery SOAR Agent distribution — see
- * agentBuilds.service.ts's module doc for the full design. Three trust
- * levels in one file:
+ * agentBuilds.service.ts's module doc for the full design (including the
+ * platform/arch variant model: windows/amd64, windows/arm64, macos/universal).
+ * Three trust levels in one file:
  *  - POST /api/internal/agent-builds/:platform — CI-only, gated by the
- *    shared AGENT_BUILD_INGEST_SECRET header (verifyAgentBuildSecret).
- *  - GET  /api/agent-downloads/:platform[/meta] — deliberately public, no
+ *    shared AGENT_BUILD_INGEST_SECRET header (verifyAgentBuildSecret). Arch
+ *    comes from the optional X-Agent-Arch header (defaults per platform).
+ *  - GET  /api/agent-downloads[/:platform[/meta]] — deliberately public, no
  *    auth at all, exactly like pulling a public Docker image — this is the
  *    entire point of the feature (no GitHub PAT required from customers).
- *  - POST /api/settings/agent-downloads/publish/:platform and its status
- *    GET — dashboard-authenticated, settings:manage/read, run with the
- *    requesting admin's own live Applivery session.
+ *    Arch comes from an optional `?arch=` query param (defaults per
+ *    platform); the platform-less `/api/agent-downloads` list route returns
+ *    every published variant at once.
+ *  - POST /api/settings/agent-downloads/publish/:platform/:arch and its
+ *    status GET — dashboard-authenticated, settings:manage/read, run with
+ *    the requesting admin's own live Applivery session.
  */
 
 export const agentBuildsRouter = Router();
@@ -45,8 +50,9 @@ agentBuildsRouter.post(
     const filename = req.header("X-Agent-Filename") || `agent-${req.params.platform}.bin`;
     const contentType = req.header("X-Agent-Content-Type") || "application/octet-stream";
     const version = req.header("X-Agent-Version") || null;
+    const arch = req.header("X-Agent-Arch") || null;
     const data = req.body as Buffer;
-    const meta = await receiveAgentBuild(req.params.platform, filename, contentType, data, version);
+    const meta = await receiveAgentBuild(req.params.platform, arch, filename, contentType, data, version);
     res.status(201).json(meta);
   }),
 );
@@ -54,9 +60,16 @@ agentBuildsRouter.post(
 // ── Public downloads — no auth, by design. ──
 
 agentBuildsRouter.get(
+  "/api/agent-downloads",
+  asyncHandler(async (_req, res) => {
+    res.json({ builds: await listAgentBuildMeta() });
+  }),
+);
+
+agentBuildsRouter.get(
   "/api/agent-downloads/:platform/meta",
   asyncHandler(async (req, res) => {
-    const meta = await getAgentBuildMeta(req.params.platform);
+    const meta = await getAgentBuildMeta(req.params.platform, req.query.arch as string | undefined);
     if (!meta) {
       res.status(404).json({ detail: `No ${req.params.platform} agent build has been published yet.` });
       return;
@@ -68,7 +81,7 @@ agentBuildsRouter.get(
 agentBuildsRouter.get(
   "/api/agent-downloads/:platform",
   asyncHandler(async (req, res) => {
-    const { filename, contentType, data } = await streamAgentBuild(req.params.platform);
+    const { filename, contentType, data } = await streamAgentBuild(req.params.platform, req.query.arch as string | undefined);
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Length", String(data.length));
@@ -76,20 +89,20 @@ agentBuildsRouter.get(
   }),
 );
 
-// ── Publish to Applivery App Distribution — dashboard-authenticated. ──
+// ── Publish to Applivery — dashboard-authenticated. ──
 
 agentBuildsRouter.get("/api/settings/agent-downloads/publish-status", ...readSettings, asyncHandler(async (req, res) => {
   res.json(await getPublishStatus(workspaceOf(req)));
 }));
 
 agentBuildsRouter.post(
-  "/api/settings/agent-downloads/publish/:platform",
+  "/api/settings/agent-downloads/publish/:platform/:arch",
   ...manageSettings,
   asyncHandler(async (req, res) => {
     const authorization = req.header("Authorization");
     const workspaceSlug = req.header("X-Workspace-Slug");
     if (!authorization || !workspaceSlug) throw new HttpError(401, "Missing Applivery session — try refreshing the page and logging in again");
-    const result = await publishAgentBuildToApplivery(authorization, workspaceSlug, req.params.platform, actorOf(req));
+    const result = await publishAgentBuildToApplivery(authorization, workspaceSlug, req.params.platform, req.params.arch, actorOf(req));
     res.json(result);
   }),
 );
