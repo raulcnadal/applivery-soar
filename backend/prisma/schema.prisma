@@ -79,28 +79,23 @@ model WorkspaceState {
   // that file's doc comment for why location refresh needs its own,
   // separately-tunable budget rather than sharing the installed-apps one.
   locationRefreshBudgetPerHour       Int?
-  // "Publish to Applivery" bookkeeping (agentBuilds.service.ts) — mirrors
-  // Applivery's own three-tier App Distribution model, per workspace (each
-  // workspace's Applivery org is independent):
-  //   1. agentDistributionAppId — the single, OS-agnostic App Distribution
-  //      "Application" container (named "Applivery SOAR Agent") that both
-  //      platforms' Builds live under. Looked up/created once, shared by
-  //      both platforms — there's no settable identifying field to
-  //      find-by-name reliably against, so remembering the id is the only
-  //      way to avoid creating a duplicate App on every publish.
-  //   2. windows/macosAgentBuildId — the last App Distribution Build id
-  //      created for each platform, used to detect "this exact binary is
-  //      already published" (skip re-publishing) without an extra API call.
-  //   3. windows/macosAgentApplicationId — the Windows/Apple MDM "enterprise
-  //      application" id (the actual deployable-to-devices Publication),
-  //      upserted in place on every republish so later versions update the
-  //      existing Publication instead of accumulating duplicates. Apple's
-  //      enterprise-application API in particular has no settable info.name
-  //      to upsert-by-name against (confirmed against Applivery's own
-  //      OpenAPI schema), so this id is the only reliable anchor.
-  agentDistributionAppId            String?
-  windowsAgentBuildId                String?
-  macosAgentBuildId                  String?
+  // "Publish to Applivery" bookkeeping (agentBuilds.service.ts) — an
+  // uploaded MDM asset (`mdm/assets`) whose name is stamped with the exact
+  // AgentBuild version (the git commit SHA the agent repo's CI tagged it
+  // with), so a repeat "Publish" click for a version that's already up
+  // there is detected by name+subType lookup and halted as a no-op instead
+  // of creating a duplicate asset — that per-click duplication (not a
+  // version bump) is what an admin was seeing in Applivery's Assets list
+  // before this dedup check existed.
+  // windows/macosAgentApplicationId is the Windows/Apple MDM "enterprise
+  // application" id (the actual deployable-to-devices object referencing
+  // that asset via config.mdmAssetId) — remembered so a later publish of a
+  // genuinely new version updates it in place via PUT instead of creating a
+  // duplicate application. Apple's enterprise-application API in particular
+  // has no settable info.name to upsert-by-name against (confirmed against
+  // Applivery's own OpenAPI schema), so this id is the only reliable
+  // anchor. Per-workspace, not global, since each workspace's Applivery org
+  // is independent.
   windowsAgentApplicationId         String?
   macosAgentApplicationId           String?
   windowsAgentPublishedAt           DateTime?
