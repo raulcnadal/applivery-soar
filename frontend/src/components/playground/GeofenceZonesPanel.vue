@@ -168,7 +168,7 @@ function shapeSummary(zone: GeofenceZone): string {
         </button>
       </div>
 
-      <div class="grid grid-cols-4 gap-2 mb-2">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
         <div>
           <div class="text-sm font-bold" :style="{ color: coverageColor }">{{ coveragePct }}%</div>
           <div class="text-[9px] text-gray-400">{{ store.refreshStatus.syncedCount }}/{{ store.refreshStatus.targetDeviceCount }} synced</div>
