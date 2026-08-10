@@ -79,16 +79,28 @@ model WorkspaceState {
   // that file's doc comment for why location refresh needs its own,
   // separately-tunable budget rather than sharing the installed-apps one.
   locationRefreshBudgetPerHour       Int?
-  // Tracks the Applivery App Distribution "application" id this workspace's
-  // own "Publish to Applivery" click created for each agent platform
-  // (agentBuilds.service.ts) — required because, unlike Windows, Apple's
-  // enterprise-application API has no settable info.name to upsert-by-name
-  // against (confirmed against Applivery's own OpenAPI schema), so the only
-  // reliable way to update-in-place on a later republish (instead of
-  // creating a duplicate App every time) is remembering the id ourselves.
-  // Per-workspace, not global, since each workspace's Applivery org is
-  // independent — publishing from workspace A never touches workspace B's
-  // App Distribution catalog.
+  // "Publish to Applivery" bookkeeping (agentBuilds.service.ts) — mirrors
+  // Applivery's own three-tier App Distribution model, per workspace (each
+  // workspace's Applivery org is independent):
+  //   1. agentDistributionAppId — the single, OS-agnostic App Distribution
+  //      "Application" container (named "Applivery SOAR Agent") that both
+  //      platforms' Builds live under. Looked up/created once, shared by
+  //      both platforms — there's no settable identifying field to
+  //      find-by-name reliably against, so remembering the id is the only
+  //      way to avoid creating a duplicate App on every publish.
+  //   2. windows/macosAgentBuildId — the last App Distribution Build id
+  //      created for each platform, used to detect "this exact binary is
+  //      already published" (skip re-publishing) without an extra API call.
+  //   3. windows/macosAgentApplicationId — the Windows/Apple MDM "enterprise
+  //      application" id (the actual deployable-to-devices Publication),
+  //      upserted in place on every republish so later versions update the
+  //      existing Publication instead of accumulating duplicates. Apple's
+  //      enterprise-application API in particular has no settable info.name
+  //      to upsert-by-name against (confirmed against Applivery's own
+  //      OpenAPI schema), so this id is the only reliable anchor.
+  agentDistributionAppId            String?
+  windowsAgentBuildId                String?
+  macosAgentBuildId                  String?
   windowsAgentApplicationId         String?
   macosAgentApplicationId           String?
   windowsAgentPublishedAt           DateTime?

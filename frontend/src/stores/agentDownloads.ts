@@ -64,6 +64,11 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
   const publishStatus = ref<Record<AgentPlatform, PublishStatusEntry> | null>(null);
   const isPublishing = ref<AgentPlatform | null>(null);
   const publishError = ref<string | null>(null);
+  // Set only on a successful publish call whose result was a no-op (this
+  // exact build was already the live Publication) — surfaced as an info
+  // notice, distinct from publishError, so "nothing changed" doesn't read
+  // as a failure.
+  const publishInfo = ref<string | null>(null);
 
   async function fetchConfig() {
     isLoading.value = true;
@@ -173,9 +178,13 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
   async function publishToApplivery(platform: AgentPlatform) {
     isPublishing.value = platform;
     publishError.value = null;
+    publishInfo.value = null;
     try {
       const { api } = await import("../api/http");
-      await api.post(`/settings/agent-downloads/publish/${platform}`);
+      const res = await api.post(`/settings/agent-downloads/publish/${platform}`);
+      if (res.data?.alreadyPublished) {
+        publishInfo.value = res.data.message || `This ${platform} agent build is already published to Applivery.`;
+      }
       await fetchPublishStatus();
     } catch (err: any) {
       publishError.value = err?.response?.data?.detail || `Failed to publish the ${platform} agent to Applivery.`;
@@ -188,6 +197,6 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
   return {
     config, assets, isLoading, isLoadingAssets, error, assetsError, fetchConfig, fetchAssets, setToken, clearToken, downloadAsset,
     builds, isLoadingBuilds, buildsError, downloadingBuild, fetchBuildMeta, downloadBuild,
-    publishStatus, isPublishing, publishError, fetchPublishStatus, publishToApplivery,
+    publishStatus, isPublishing, publishError, publishInfo, fetchPublishStatus, publishToApplivery,
   };
 });

@@ -243,6 +243,7 @@ X-Device-Report-Secret: {{ store.status.secret }}</code>
         <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — publishing to Applivery is disabled.</Alert>
         <Alert v-if="agentStore.buildsError" type="danger">{{ agentStore.buildsError }}</Alert>
         <Alert v-if="agentStore.publishError" type="danger">{{ agentStore.publishError }}</Alert>
+        <Alert v-if="agentStore.publishInfo" type="info">{{ agentStore.publishInfo }}</Alert>
 
         <div v-if="agentStore.isLoadingBuilds" class="text-xs text-gray-500 dark:text-gray-400">Checking for published builds…</div>
         <div v-else class="space-y-2">
