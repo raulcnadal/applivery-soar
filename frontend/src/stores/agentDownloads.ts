@@ -81,15 +81,21 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
   const buildsError = ref<string | null>(null);
   const downloadingBuild = ref<string | null>(null);
 
-  // ── Publish to Applivery — keyed by variantKey ──
+  // ── Publish to Applivery — keyed by variantKey. Errors/info are per-variant
+  // (not a single shared ref) so that publishing one variant can never leave
+  // a stale error banner sitting under an unrelated, successfully-published
+  // row — clicking Republish on Windows x64 only ever touches
+  // publishErrors["windows:amd64"], so a still-in-flight or previously
+  // failed macOS request can't clobber it (or vice versa) regardless of
+  // which settles last. ──
   const publishStatus = ref<Record<string, PublishStatusEntry> | null>(null);
   const isPublishing = ref<string | null>(null);
-  const publishError = ref<string | null>(null);
+  const publishErrors = ref<Record<string, string | null>>(Object.fromEntries(AGENT_VARIANTS.map((v) => [variantKey(v.platform, v.arch), null])));
   // Set only on a successful publish call whose result was a no-op (this
   // exact build was already published) — surfaced as an info notice,
-  // distinct from publishError, so "nothing changed" doesn't read as a
+  // distinct from publishErrors, so "nothing changed" doesn't read as a
   // failure.
-  const publishInfo = ref<string | null>(null);
+  const publishInfos = ref<Record<string, string | null>>(Object.fromEntries(AGENT_VARIANTS.map((v) => [variantKey(v.platform, v.arch), null])));
 
   async function fetchConfig() {
     isLoading.value = true;
@@ -195,17 +201,17 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
   async function publishToApplivery(variant: AgentVariant) {
     const key = variantKey(variant.platform, variant.arch);
     isPublishing.value = key;
-    publishError.value = null;
-    publishInfo.value = null;
+    publishErrors.value = { ...publishErrors.value, [key]: null };
+    publishInfos.value = { ...publishInfos.value, [key]: null };
     try {
       const { api } = await import("../api/http");
       const res = await api.post(`/settings/agent-downloads/publish/${variant.platform}/${variant.arch}`);
       if (res.data?.alreadyPublished) {
-        publishInfo.value = res.data.message || `This ${variant.label} agent build is already published to Applivery.`;
+        publishInfos.value = { ...publishInfos.value, [key]: res.data.message || `This ${variant.label} agent build is already published to Applivery.` };
       }
       await fetchPublishStatus();
     } catch (err: any) {
-      publishError.value = err?.response?.data?.detail || `Failed to publish the ${variant.label} agent to Applivery.`;
+      publishErrors.value = { ...publishErrors.value, [key]: err?.response?.data?.detail || `Failed to publish the ${variant.label} agent to Applivery.` };
       throw err;
     } finally {
       isPublishing.value = null;
@@ -215,6 +221,6 @@ export const useAgentDownloadsStore = defineStore("agentDownloads", () => {
   return {
     config, assets, isLoading, isLoadingAssets, error, assetsError, fetchConfig, fetchAssets, setToken, clearToken, downloadAsset,
     builds, isLoadingBuilds, buildsError, downloadingBuild, fetchBuildMeta, downloadBuild,
-    publishStatus, isPublishing, publishError, publishInfo, fetchPublishStatus, publishToApplivery,
+    publishStatus, isPublishing, publishErrors, publishInfos, fetchPublishStatus, publishToApplivery,
   };
 });
