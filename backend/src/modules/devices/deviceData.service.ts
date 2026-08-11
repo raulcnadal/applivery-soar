@@ -201,3 +201,95 @@ export async function getSelfReportedAttributeNames(workspaceSlug: string, platf
   }
   return Array.from(names).sort();
 }
+
+export interface AgentStatusResponse {
+  device: { matched: boolean; id: string | null; displayName: string | null };
+  compliance: {
+    available: boolean;
+    reason?: string;
+    compliant?: boolean;
+    riskScore?: number | null;
+    riskTier?: string | null;
+    policies: Array<{ id: string; name: string; severity: string }>;
+    violations?: Array<{ policyId: string; policyName: string | null; severity: string | null; lastDetectedAt: string | null }>;
+  };
+}
+
+/**
+ * Device-facing "what applies to me and how am I doing" read-back — the data
+ * source for the Windows agent's tray icon context menu (and, eventually,
+ * the same on other platforms). Same auth model as reportDeviceData/
+ * reportDeviceApps above (X-Workspace-Slug + X-Device-Report-Secret, no
+ * admin session), but this is the first device-facing endpoint that reads
+ * compliance state back OUT rather than only ingesting reports.
+ *
+ * Compliance status/score is never persisted per-device (see
+ * devices.service.ts's getDevicesFull doc comment) — it's computed live off
+ * a cached-or-fresh Applivery fleet snapshot, same as the admin Devices view
+ * uses, via getDevicesFull. That call needs a bearer token; unlike an admin
+ * request there's no live session here, so this uses the workspace's stored
+ * Automation Credential (automationCredential.service.ts) the same way the
+ * background compliance/installed-apps jobs do. A workspace that hasn't
+ * configured one yet still gets a valid response — `compliance.available:
+ * false` with a human-readable reason — rather than an error, so an agent
+ * whose admin hasn't set that up yet just shows "unavailable" in its tray
+ * menu instead of failing its whole status poll.
+ *
+ * `policies` (the "applicable to this platform" list) is always populated
+ * from Prisma directly, independent of whether compliance could be computed
+ * — an agent should be able to show "which policies apply to me" even before
+ * an Automation Credential exists or before this device has been seen by
+ * Applivery yet.
+ */
+export async function getAgentStatus(workspaceSlug: string, serialNumber: string, platform: string): Promise<AgentStatusResponse> {
+  const enabledPolicies = await prisma.compliancePolicy.findMany({ where: { workspaceSlug, enabled: true } });
+  const scopedPolicies = enabledPolicies.filter((p: any) => !p.targetPlatform || p.targetPlatform === platform);
+  const policiesSummary = scopedPolicies.map((p: any) => ({ id: p.id as string, name: p.name as string, severity: p.severity as string }));
+
+  const { getAutomationBearer } = await import("../settings/automationCredential.service");
+  const bearer = await getAutomationBearer(workspaceSlug);
+  if (!bearer) {
+    return {
+      device: { matched: false, id: null, displayName: null },
+      compliance: { available: false, reason: "No Automation Credential configured for this workspace yet — ask an admin to set one up under Settings.", policies: policiesSummary },
+    };
+  }
+
+  try {
+    const { getDevicesFull } = await import("../devices/devices.service");
+    const devicesResp = await getDevicesFull(bearer, workspaceSlug, false);
+    const match = devicesResp.items.find((d: any) => d.serialNumber === serialNumber) ?? null;
+    if (!match) {
+      return {
+        device: { matched: false, id: null, displayName: null },
+        compliance: { available: false, reason: "This device hasn't been matched in the Applivery fleet yet.", policies: policiesSummary },
+      };
+    }
+
+    const policiesById: Map<string, any> = new Map(scopedPolicies.map((p: any) => [p.id as string, p]));
+    const violations = ((match as any).policyViolations ?? []) as Array<{ policyId: string; policyName?: string | null; lastDetectedAt?: string | null }>;
+
+    return {
+      device: { matched: true, id: String((match as any).id), displayName: (match as any).displayName || serialNumber },
+      compliance: {
+        available: true,
+        compliant: Boolean((match as any).policyCompliant),
+        riskScore: (match as any).riskScore ?? null,
+        riskTier: (match as any).riskTier ?? null,
+        policies: policiesSummary,
+        violations: violations.map((v) => ({
+          policyId: v.policyId,
+          policyName: v.policyName ?? policiesById.get(v.policyId)?.name ?? null,
+          severity: policiesById.get(v.policyId)?.severity ?? null,
+          lastDetectedAt: v.lastDetectedAt ?? null,
+        })),
+      },
+    };
+  } catch (e) {
+    console.warn(`[DeviceData] getAgentStatus failed for workspace '${workspaceSlug}': ${e}`);
+    return {
+      device: { matched: false, id: null, displayName: null },
+      compliance: { available: false, reason: "Could not compute compliance status right now — try again later.", policies: policiesSummary },
+    };
+  }
+}
