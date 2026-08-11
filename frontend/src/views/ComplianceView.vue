@@ -19,7 +19,7 @@ import PoliciesTable from "../components/compliance/PoliciesTable.vue";
 import PolicyBuilderDrawer from "../components/compliance/PolicyBuilderDrawer.vue";
 import TemplateGallery from "../components/compliance/TemplateGallery.vue";
 import ViolationsQueue from "../components/compliance/ViolationsQueue.vue";
-import { useComplianceStore, type CompliancePolicy, type ComplianceTemplate } from "../stores/compliance";
+import { useComplianceStore, type CompliancePolicy, type ComplianceTemplate, type ConditionRule } from "../stores/compliance";
 import { useSegmentsStore } from "../stores/segments";
 
 const PRIMARY_BLUE = "#0241E3";
@@ -67,19 +67,54 @@ function editPolicy(policy: CompliancePolicy) {
   drawerOpen.value = true;
 }
 
-function useTemplate(template: ComplianceTemplate, frameworkLabel: string) {
+const SEVERITY_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+const PLATFORM_LABELS_FOR_MERGE: Record<string, string> = { apple: "iOS", macos: "macOS", android: "Android", windows: "Windows" };
+
+// Handles both a single-template pick and a multi-template merge from
+// TemplateGallery's checkbox selection — merging N is the same operation as
+// "merging" 1, so there's one path instead of two. Flattening every
+// selected template's conditions into one flat array with conditionLogic
+// "any" is semantically exact here (not just a convenient simplification):
+// every template in the catalog already uses "any" internally (OR across
+// its own conditions = "this aspect is violated"), so OR-ing across
+// multiple templates' conditions too means "violated if ANY selected aspect
+// is violated" — precisely the intended meaning of a certification-wide
+// policy. This wouldn't hold if any template used "all" logic, but none do
+// (verified against the current catalog).
+function useTemplates(templates: ComplianceTemplate[], frameworkLabel: string) {
+  if (!templates.length) return;
   isTemplateGalleryOpen.value = false;
   editingPolicy.value = null;
+
+  const seen = new Set<string>();
+  const conditions: ConditionRule[] = [];
+  for (const t of templates) {
+    for (const c of t.conditions) {
+      const key = JSON.stringify([c.field, c.operator, c.value]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      conditions.push(c);
+    }
+  }
+
+  const severity = templates.reduce((max, t) => ((SEVERITY_RANK[t.severity] ?? 0) > (SEVERITY_RANK[max] ?? 0) ? t.severity : max), templates[0].severity);
+  const controlRefs = Array.from(new Set(templates.map((t) => t.controlRef)));
+  const targetPlatform = templates[0].targetPlatform ?? null;
+  const platformLabel = targetPlatform ? PLATFORM_LABELS_FOR_MERGE[targetPlatform] ?? targetPlatform : "Common";
+
+  const isSingle = templates.length === 1;
   prefill.value = {
-    name: template.title,
-    description: `${template.description}\n\nFramework: ${frameworkLabel} — ${template.controlRef}. Generated from a template — review conditions and thresholds before enabling autoRun.`,
-    conditions: template.conditions,
-    conditionLogic: template.conditionLogic,
-    framework: template.framework,
-    controlRef: template.controlRef,
-    severity: template.severity,
-    targetPlatform: template.targetPlatform ?? null,
-    targetDeploymentModel: template.targetDeploymentModel ?? null,
+    name: isSingle ? templates[0].title : `${frameworkLabel} — ${platformLabel} baseline`,
+    description: isSingle
+      ? `${templates[0].description}\n\nFramework: ${frameworkLabel} — ${templates[0].controlRef}. Generated from a template — review conditions and thresholds before enabling autoRun.`
+      : `Unified policy generated from ${templates.length} ${frameworkLabel} templates (${controlRefs.join(", ")}).\n\nCovers: ${templates.map((t) => t.title).join("; ")}.\n\nReview conditions and thresholds before enabling autoRun.`,
+    conditions,
+    conditionLogic: "any",
+    framework: templates[0].framework,
+    controlRef: controlRefs.join(", "),
+    severity,
+    targetPlatform,
+    targetDeploymentModel: templates[0].targetDeploymentModel ?? null,
   };
   subView.value = "policies";
   drawerOpen.value = true;
@@ -225,6 +260,6 @@ onMounted(async () => {
       @saved="handleSaved"
     />
 
-    <TemplateGallery :open="isTemplateGalleryOpen" @close="isTemplateGalleryOpen = false" @use="useTemplate" />
+    <TemplateGallery :open="isTemplateGalleryOpen" @close="isTemplateGalleryOpen = false" @use-templates="useTemplates" />
   </main>
 </template>

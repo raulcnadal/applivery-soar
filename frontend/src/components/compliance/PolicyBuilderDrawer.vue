@@ -385,6 +385,17 @@ const mdmActionsByKey = computed(() => Object.fromEntries(workflowsStore.mdmActi
 function workflowIsDestructive(wf: any): boolean {
   return !!wf && (wf.steps || []).some((s: any) => s.type === "mdm_action" && mdmActionsByKey.value[s.config?.action]?.destructive);
 }
+// Same platform-scoping idiom used to scope devices to a policy in
+// compliance.service.ts (!policy.targetPlatform || device.platform ===
+// policy.targetPlatform), applied here to workflow<->policy compatibility
+// instead: a Windows-targeted policy should only offer Windows workflows
+// (plus platform-agnostic ones, which run fine anywhere) — not iOS/macOS/
+// Android workflows whose mdm_action steps would just fail against the
+// devices this policy actually matches. A "Common (all platforms)" policy
+// intentionally has no restriction, same as the device-scoping idiom.
+const platformScopedWorkflows = computed(() =>
+  workflowsStore.workflows.filter((w) => !form.targetPlatform || !w.targetPlatform || w.targetPlatform === form.targetPlatform),
+);
 const selectedWorkflow = computed(() => workflowsStore.workflows.find((w) => w.id === form.workflowId));
 const selectedEscalatedWorkflow = computed(() => workflowsStore.workflows.find((w) => w.id === form.escalatedWorkflowId));
 const isDestructiveWorkflow = computed(() => workflowIsDestructive(selectedWorkflow.value));
@@ -615,7 +626,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <select v-model="form.escalatedWorkflowId" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500">
               <option value="">No escalation — always run the default workflow</option>
-              <option v-for="w in workflowsStore.workflows.filter((w) => w.id !== form.workflowId)" :key="w.id" :value="w.id">{{ w.name }}</option>
+              <option v-for="w in platformScopedWorkflows.filter((w) => w.id !== form.workflowId)" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
             <select v-if="form.escalatedWorkflowId" v-model="form.escalatedWorkflowMinRiskTier" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500">
               <option value="medium">At risk tier: Medium or above</option>
@@ -693,9 +704,12 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">Then run</p>
         <select :value="form.workflowId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" @change="onWorkflowChange(($event.target as HTMLSelectElement).value)">
           <option value="">Select a workflow…</option>
-          <option v-for="w in workflowsStore.workflows" :key="w.id" :value="w.id">{{ w.name }}</option>
+          <option v-for="w in platformScopedWorkflows" :key="w.id" :value="w.id">{{ w.name }}</option>
         </select>
         <p v-if="workflowsStore.workflows.length === 0" class="text-xs mt-1 text-gray-400">No workflows yet — create one from the Workflows tab first.</p>
+        <p v-else-if="platformScopedWorkflows.length === 0" class="text-xs mt-1 text-gray-400">
+          No {{ PLATFORM_LABELS[form.targetPlatform] }} (or platform-agnostic) workflows yet — create one from the Workflows tab first.
+        </p>
       </div>
 
       <div class="mt-5">

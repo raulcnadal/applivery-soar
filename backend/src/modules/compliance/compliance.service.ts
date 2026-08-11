@@ -457,6 +457,21 @@ export async function runComplianceEvaluation(
   const policyAlertEvents: Array<{ policy: (typeof policies)[number]; newViolations: number; deviceCount: number }> = [];
   let policiesChanged = false;
 
+  // Cross-policy dedup for the shared-workflow scenario: nothing stops two
+  // different CompliancePolicy rows from pointing at the same workflowId
+  // (no uniqueness constraint on that column), and each policy tracks its
+  // own violation-suppression independently, keyed by policy+device — not
+  // by workflow. Without this, a device that violates two policies sharing
+  // a workflow in the same pass (e.g. an ISO 27001 policy and a NIS2 policy
+  // both flagging the same missing-encryption issue, both wired to the same
+  // remediation workflow) would launch that workflow twice back-to-back,
+  // with no benefit — the device only needs remediating once. Keyed by
+  // (effectiveWorkflow.id, device.id), populated the first time a workflow
+  // actually launches for a device this pass; every subsequent policy
+  // hitting the same pair reuses that WorkflowRun's id instead of launching
+  // again.
+  const firedWorkflowThisPass = new Map<string, string>(); // `${workflowId}:${deviceId}` -> WorkflowRun.id
+
   for (const policy of policies) {
     const workflow = policy.workflowId ? workflowsById.get(policy.workflowId) ?? null : null;
     const escalatedWorkflow = workflow && policy.escalatedWorkflowId ? workflowsById.get(policy.escalatedWorkflowId) ?? null : null;
@@ -579,33 +594,51 @@ export async function runComplianceEvaluation(
       } else if (policy.autoRun && workflow && effectiveWorkflow) {
         policyAutofiredCount += 1;
         const escalationNote = escalated ? ` — escalated (device risk tier: ${device.riskTier ?? "low"})` : "";
-        const deviceRef: WorkflowDeviceRefPayload = {
-          id: device.id, displayName: device.displayName, platform: device.platform, platformDeviceId: device.platformDeviceId,
-          osLifecycleStatus: (device as any).osLifecycleStatus ?? null,
-        };
-        const runRecord = await launchWorkflowRun(effectiveWorkflow, [deviceRef], authorization, workspaceSlug);
-        if (runRecord === null) {
-          // Workflow has a 'wait'/'run_script_wait' step — needs the durable
-          // engine (Phase 4b). Log it clearly instead of crashing the
-          // evaluation pass or silently dropping the violation.
-          status = "workflow_unavailable";
-          auditEvents.push({
-            category: "violation", action: "violation_detected", actor: actor ?? "system", severity: "critical",
-            targetType: "device", targetId: device.id, targetName: device.displayName,
-            message: `${device.displayName} violated "${policy.name}" — workflow "${effectiveWorkflow.name}" could not run (durable storage not configured)${escalationNote}`,
-          });
-        } else {
+        const dedupKey = `${effectiveWorkflow.id}:${device.id}`;
+        const alreadyFiredRunId = firedWorkflowThisPass.get(dedupKey);
+
+        if (alreadyFiredRunId) {
           status = "auto_fired";
-          workflowRunId = runRecord.id;
-          summary.autoFired += 1;
+          workflowRunId = alreadyFiredRunId;
           auditEvents.push({
             category: "violation", action: "violation_auto_fired", actor: actor ?? "system", severity: "warning",
             targetType: "device", targetId: device.id, targetName: device.displayName,
-            message: `${device.displayName} violated "${policy.name}" — auto-ran "${effectiveWorkflow.name}"${escalationNote}`,
+            message: `${device.displayName} violated "${policy.name}" — "${effectiveWorkflow.name}" was already auto-run for this device earlier in this pass (another policy shares this workflow), so it wasn't launched a second time${escalationNote}`,
           });
           if (caseId) {
-            await prisma.case.update({ where: { id: caseId }, data: { workflowRunIds: { push: runRecord.id }, updatedAt: new Date(nowIso) } });
-            await addCaseTimelineEntry(caseId, "workflow_run_linked", `Auto-ran "${effectiveWorkflow.name}" (policy autoRun is on)${escalationNote}`);
+            await prisma.case.update({ where: { id: caseId }, data: { workflowRunIds: { push: alreadyFiredRunId }, updatedAt: new Date(nowIso) } });
+            await addCaseTimelineEntry(caseId, "workflow_run_linked", `Linked to the "${effectiveWorkflow.name}" run another policy already triggered this pass${escalationNote}`);
+          }
+        } else {
+          const deviceRef: WorkflowDeviceRefPayload = {
+            id: device.id, displayName: device.displayName, platform: device.platform, platformDeviceId: device.platformDeviceId,
+            osLifecycleStatus: (device as any).osLifecycleStatus ?? null,
+          };
+          const runRecord = await launchWorkflowRun(effectiveWorkflow, [deviceRef], authorization, workspaceSlug);
+          if (runRecord === null) {
+            // Workflow has a 'wait'/'run_script_wait' step — needs the durable
+            // engine (Phase 4b). Log it clearly instead of crashing the
+            // evaluation pass or silently dropping the violation.
+            status = "workflow_unavailable";
+            auditEvents.push({
+              category: "violation", action: "violation_detected", actor: actor ?? "system", severity: "critical",
+              targetType: "device", targetId: device.id, targetName: device.displayName,
+              message: `${device.displayName} violated "${policy.name}" — workflow "${effectiveWorkflow.name}" could not run (durable storage not configured)${escalationNote}`,
+            });
+          } else {
+            status = "auto_fired";
+            workflowRunId = runRecord.id;
+            firedWorkflowThisPass.set(dedupKey, runRecord.id);
+            summary.autoFired += 1;
+            auditEvents.push({
+              category: "violation", action: "violation_auto_fired", actor: actor ?? "system", severity: "warning",
+              targetType: "device", targetId: device.id, targetName: device.displayName,
+              message: `${device.displayName} violated "${policy.name}" — auto-ran "${effectiveWorkflow.name}"${escalationNote}`,
+            });
+            if (caseId) {
+              await prisma.case.update({ where: { id: caseId }, data: { workflowRunIds: { push: runRecord.id }, updatedAt: new Date(nowIso) } });
+              await addCaseTimelineEntry(caseId, "workflow_run_linked", `Auto-ran "${effectiveWorkflow.name}" (policy autoRun is on)${escalationNote}`);
+            }
           }
         }
       } else if (!workflow) {

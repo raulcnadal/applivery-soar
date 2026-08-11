@@ -49,25 +49,34 @@ watch(
   },
 );
 
-// Port of DevicePickerModal (WorkflowRunModals.jsx:29-238) — it takes no
-// `workflow` prop at all, so there's no target-platform filtering here;
-// every device in the fleet is selectable regardless of the workflow's
-// target platform.
-const filtered = computed(() => devicesStore.devices.filter((d) => d.displayName.toLowerCase().includes(search.value.toLowerCase())));
+// Platform-scoped, same idiom used for Compliance Policy scoping
+// (compliance.service.ts: !policy.targetPlatform || device.platform ===
+// policy.targetPlatform) — a Workflow's steps (mdm_action in particular)
+// are platform-specific, so running one against a device of a different
+// platform just fails per-device downstream with no clear signal why. This
+// was previously unfiltered in all three picker modes: every device in the
+// fleet was selectable regardless of the workflow's target platform.
+const platformScopedDevices = computed(() => {
+  const platform = props.workflow?.targetPlatform;
+  if (!platform) return devicesStore.devices;
+  return devicesStore.devices.filter((d) => d.platform === platform);
+});
+
+const filtered = computed(() => platformScopedDevices.value.filter((d) => d.displayName.toLowerCase().includes(search.value.toLowerCase())));
 
 const availableTags = computed(() => {
   const set = new Set<string>();
-  devicesStore.devices.forEach((d) => (d.tags || []).forEach((t) => set.add(t)));
+  platformScopedDevices.value.forEach((d) => (d.tags || []).forEach((t) => set.add(t)));
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 });
 
 const audienceMatches = computed(() => {
   if (!audienceId.value) return [];
-  return devicesStore.devices.filter((d) => (d.deviceAudiences || []).some((a) => String(a.id) === String(audienceId.value)));
+  return platformScopedDevices.value.filter((d) => (d.deviceAudiences || []).some((a) => String(a.id) === String(audienceId.value)));
 });
 const tagMatches = computed(() => {
   if (!tag.value) return [];
-  return devicesStore.devices.filter((d) => (d.tags || []).includes(tag.value));
+  return platformScopedDevices.value.filter((d) => (d.tags || []).includes(tag.value));
 });
 
 function toggleDevice(id: string) {
@@ -141,6 +150,10 @@ async function launch() {
           {{ m.label }}
         </button>
       </div>
+
+      <p v-if="workflow?.targetPlatform" class="text-[11px] text-gray-400">
+        Showing {{ workflow.targetPlatform }} devices only — this workflow's target platform.
+      </p>
 
       <div v-if="mode === 'manual'">
         <div class="relative mb-2">

@@ -5,7 +5,7 @@
 // with its own scope-caveat callout, and a card per template that opens
 // the Policy Builder pre-filled via templateToPolicyDraft.
 import { Modal } from "@applivery/bluesky-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useComplianceStore, type ComplianceTemplate } from "../../stores/compliance";
 
@@ -22,7 +22,11 @@ const PLATFORM_FILTERS = [
 ];
 
 defineProps<{ open: boolean }>();
-const emit = defineEmits<{ close: []; use: [template: ComplianceTemplate, frameworkLabel: string] }>();
+// `use-templates` always carries an array (even a single-template selection
+// is just an array of 1) — a single unified-policy creation path instead of
+// two, since merging one template's conditions is the same operation as
+// merging six.
+const emit = defineEmits<{ close: []; "use-templates": [templates: ComplianceTemplate[], frameworkLabel: string] }>();
 
 const store = useComplianceStore();
 const activeFramework = ref("all");
@@ -56,12 +60,44 @@ const visibleTemplates = computed(() =>
   }),
 );
 
-// Port of templateToPolicyDraft (TemplateGallery.jsx:16-26) — deliberately
-// id-less so PolicyBuilderDrawer's existing create path (no policy.id)
-// handles it like any other new policy.
-function useTemplate(t: ComplianceTemplate) {
-  const fw = (frameworksByKey.value as any)[t.framework];
-  emit("use", t, fw?.label || t.framework);
+// Selection defaults to "everything currently visible" and resets to that
+// whenever the framework/platform filter narrows or widens the list — this
+// is what makes "select a certification, select a platform, get one policy
+// covering everything relevant" the zero-extra-clicks path, while still
+// letting an admin uncheck a specific aspect before creating the policy.
+const selectedIds = ref<Set<string>>(new Set());
+watch(visibleTemplates, (list) => { selectedIds.value = new Set(list.map((t) => t.id)); }, { immediate: true });
+
+function toggle(id: string) {
+  const next = new Set(selectedIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedIds.value = next;
+}
+function selectAll() {
+  selectedIds.value = new Set(visibleTemplates.value.map((t) => t.id));
+}
+function selectNone() {
+  selectedIds.value = new Set();
+}
+
+// Merging only makes sense once both dimensions are narrowed to one
+// concrete value — merging across "All frameworks" would blend near-
+// duplicate controls from different certifications into one policy, and
+// merging across "All platforms" would produce a policy whose
+// targetPlatform can't be a single well-defined value.
+const canMerge = computed(() => activeFramework.value !== "all" && activePlatform.value !== "all" && selectedIds.value.size > 0);
+
+// Port of templateToPolicyDraft (TemplateGallery.jsx:16-26), extended to
+// merge N selected templates into one policy draft instead of always being
+// exactly one — deliberately id-less so PolicyBuilderDrawer's existing
+// create path (no policy.id) handles it like any other new policy.
+function createUnifiedPolicy() {
+  if (!canMerge.value) return;
+  const templates = visibleTemplates.value.filter((t) => selectedIds.value.has(t.id));
+  if (!templates.length) return;
+  const fw = (frameworksByKey.value as any)[activeFramework.value];
+  emit("use-templates", templates, fw?.label || activeFramework.value);
 }
 </script>
 
@@ -70,7 +106,9 @@ function useTemplate(t: ComplianceTemplate) {
     <div class="flex items-center justify-between gap-2 mb-4 -mt-1">
       <div>
         <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Compliance Policy Templates</h3>
-        <p class="text-xs mt-0.5 text-gray-400">Starting points mapped to well-known frameworks. Pick one to pre-fill the policy builder for review.</p>
+        <p class="text-xs mt-0.5 text-gray-400">
+          Starting points mapped to well-known frameworks. Pick a certification and a platform, then merge the relevant templates into one unified policy for review.
+        </p>
       </div>
       <button class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 shrink-0" @click="emit('close')">
         <component :is="ICONS.CloseCircle" :size="18" weight="Linear" />
@@ -122,32 +160,53 @@ function useTemplate(t: ComplianceTemplate) {
         <strong>Scope note:</strong> {{ (frameworksByKey as any)[activeFramework].caveats }}
       </div>
 
+      <div v-if="!isLoading && visibleTemplates.length > 0" class="flex items-center gap-3 mb-3">
+        <span class="text-xs font-medium text-gray-400">{{ selectedIds.size }} of {{ visibleTemplates.length }} selected</span>
+        <button class="text-xs font-medium hover:opacity-70 transition-opacity" :style="{ color: PRIMARY_BLUE }" @click="selectAll">Select all</button>
+        <button class="text-xs font-medium hover:opacity-70 transition-opacity" :style="{ color: PRIMARY_BLUE }" @click="selectNone">Select none</button>
+      </div>
+
       <div class="space-y-3">
-        <div v-for="t in visibleTemplates" :key="t.id" class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }">
-                  {{ (frameworksByKey as any)[t.framework]?.shortLabel || t.framework }}
-                </span>
-                <span class="text-[10px] font-medium text-gray-400">{{ t.controlRef }}</span>
-                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full uppercase" :style="{ backgroundColor: `${SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.medium}15`, color: SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.medium }">
-                  {{ t.severity }}
-                </span>
-                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" :style="{ backgroundColor: t.targetPlatform ? '#0241E312' : '#9CA3AF15', color: t.targetPlatform ? PRIMARY_BLUE : '#9CA3AF' }">
-                  {{ t.targetPlatform ? PLATFORM_LABELS[t.targetPlatform] ?? t.targetPlatform : "Common" }}
-                </span>
-              </div>
-              <p class="text-sm font-medium mt-1.5 text-gray-900 dark:text-white">{{ t.title }}</p>
-              <p class="text-xs mt-1 text-gray-400">{{ t.description }}</p>
+        <label
+          v-for="t in visibleTemplates"
+          :key="t.id"
+          class="flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-colors"
+          :class="selectedIds.has(t.id) ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50'"
+        >
+          <input type="checkbox" class="mt-1 shrink-0" :checked="selectedIds.has(t.id)" @change="toggle(t.id)" />
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE }">
+                {{ (frameworksByKey as any)[t.framework]?.shortLabel || t.framework }}
+              </span>
+              <span class="text-[10px] font-medium text-gray-400">{{ t.controlRef }}</span>
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full uppercase" :style="{ backgroundColor: `${SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.medium}15`, color: SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.medium }">
+                {{ t.severity }}
+              </span>
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" :style="{ backgroundColor: t.targetPlatform ? '#0241E312' : '#9CA3AF15', color: t.targetPlatform ? PRIMARY_BLUE : '#9CA3AF' }">
+                {{ t.targetPlatform ? PLATFORM_LABELS[t.targetPlatform] ?? t.targetPlatform : "Common" }}
+              </span>
             </div>
-            <button class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 transition-colors" @click="useTemplate(t)">
-              <component :is="ICONS.ShieldCheck" :size="13" weight="Linear" /> Use template
-            </button>
+            <p class="text-sm font-medium mt-1.5 text-gray-900 dark:text-white">{{ t.title }}</p>
+            <p class="text-xs mt-1 text-gray-400">{{ t.description }}</p>
           </div>
-        </div>
+        </label>
         <p v-if="!isLoading && !error && visibleTemplates.length === 0" class="text-xs text-center py-8 text-gray-400">No templates for this framework yet.</p>
       </div>
+    </div>
+
+    <div class="flex items-center gap-3 pt-3 mt-3 border-t border-gray-200 dark:border-gray-700">
+      <p class="text-xs text-gray-400">
+        <template v-if="activeFramework === 'all' || activePlatform === 'all'">Pick a specific certification and platform above to merge templates into one policy.</template>
+        <template v-else>Creates one policy covering all {{ selectedIds.size }} selected aspect{{ selectedIds.size === 1 ? "" : "s" }} — review conditions before enabling autoRun.</template>
+      </p>
+      <button
+        :disabled="!canMerge"
+        class="ml-auto shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        @click="createUnifiedPolicy"
+      >
+        <component :is="ICONS.ShieldCheck" :size="13" weight="Linear" /> Create unified policy
+      </button>
     </div>
   </Modal>
 </template>
