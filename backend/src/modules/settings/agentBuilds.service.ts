@@ -175,7 +175,18 @@ export async function streamAgentBuild(platform: string, arch?: string | null): 
   const normalizedArch = normalizeArch(platform, arch);
   const row = await prisma.agentBuild.findUnique({ where: { platform_arch: { platform, arch: normalizedArch } } });
   if (!row) throw new HttpError(404, `No ${platform}/${normalizedArch} agent build has been published yet — the agent repo's CI publishes one automatically on every push to main.`);
-  return { filename: row.filename, contentType: row.contentType, data: row.data as unknown as Buffer };
+  // Prisma's Bytes field comes back as a plain Uint8Array, not a real Node
+  // Buffer instance — `row.data as unknown as Buffer` was a type-only
+  // assertion, not an actual conversion, so at runtime this was still a
+  // Uint8Array wearing a Buffer-shaped TypeScript label. That silently broke
+  // every download: the controller's res.send() checks Buffer.isBuffer()
+  // before writing raw bytes, that check is false for a plain Uint8Array, so
+  // Express fell through to res.json() and JSON-serialized the binary as
+  // `{"0":208,"1":207,...}` — a multi-MB text blob wearing an .msi/.pkg
+  // filename, which is exactly what "installation package could not be
+  // opened" looks like. Buffer.from() here produces a genuine Buffer so
+  // Buffer.isBuffer() actually passes downstream.
+  return { filename: row.filename, contentType: row.contentType, data: Buffer.from(row.data as unknown as Uint8Array) };
 }
 
 // Content-addressed, not version-addressed: two different pushes can land

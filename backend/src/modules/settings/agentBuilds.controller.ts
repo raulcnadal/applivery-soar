@@ -85,7 +85,15 @@ agentBuildsRouter.get(
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Length", String(data.length));
-    res.send(data);
+    // res.end(), not res.send() — res.send() decides how to serialize its
+    // argument based on Buffer.isBuffer(), and a non-Buffer binary-like
+    // object (see the comment on streamAgentBuild's return in
+    // agentBuilds.service.ts for exactly how that happened here before)
+    // silently gets JSON-stringified instead of written as raw bytes, with
+    // no error anywhere in the chain. res.end() always writes its Buffer
+    // argument as raw bytes, so this is safe even if streamAgentBuild's own
+    // guarantee is ever weakened again.
+    res.end(data);
   }),
 );
 
