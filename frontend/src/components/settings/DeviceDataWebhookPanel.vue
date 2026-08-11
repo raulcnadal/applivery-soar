@@ -96,19 +96,71 @@ const macosConfigSnippet = computed(() => {
     2,
   );
 });
-function downloadSnippet(platform: "windows" | "macos") {
-  const content = platform === "windows" ? windowsRegSnippet.value : macosConfigSnippet.value;
-  const filename = platform === "windows" ? "applivery-soar-agent.reg" : "es.mi-labs.soar.agent.json";
-  const blob = new Blob([content], { type: "text/plain" });
+// Applivery-native counterparts to the .reg/.json snippets above — instead
+// of a manually-imported file, these are ready to paste into Applivery
+// Dashboard > Resources > Scripts > Create Script, then assign to the
+// Policy covering the fleet (Scope: Machine, Execution: Once). Deploys to
+// every enrolled device at next sync — no per-device manual step, no UEM
+// custom-OMA-URI/ADMX authoring needed, since the agents already just read
+// a registry key / JSON file rather than a proper managed-preferences
+// domain.
+const windowsScriptSnippet = computed(() => {
+  const secret = store.status?.secret ?? "";
+  return `# Applivery SOAR Agent — Managed Configuration (PowerShell)
+# Deploy: Applivery Dashboard > Resources > Scripts > Create Script (language: PowerShell),
+# paste this, then assign it to the Policy covering this fleet — Scope: Machine, Execution: Once.
+$ErrorActionPreference = "Stop"
+$regPath = "HKLM:\\SOFTWARE\\Policies\\Applivery\\SOAR"
+New-Item -Path $regPath -Force | Out-Null
+Set-ItemProperty -Path $regPath -Name "BaseURL" -Value "${window.location.origin}" -Type String
+Set-ItemProperty -Path $regPath -Name "WorkspaceSlug" -Value "${auth.orgSlug}" -Type String
+Set-ItemProperty -Path $regPath -Name "ReportSecret" -Value "${secret}" -Type String
+Set-ItemProperty -Path $regPath -Name "ReportBitLocker" -Value 1 -Type DWord
+Set-ItemProperty -Path $regPath -Name "ReportFirewall" -Value 1 -Type DWord
+Set-ItemProperty -Path $regPath -Name "ReportApps" -Value 1 -Type DWord
+Set-ItemProperty -Path $regPath -Name "IntervalSec" -Value 3600 -Type DWord
+Write-Host "Applivery SOAR Agent managed configuration applied."
+`;
+});
+const macosScriptSnippet = computed(() => {
+  return `#!/bin/bash
+# Applivery SOAR Agent — Managed Configuration (shell)
+# Deploy: Applivery Dashboard > Resources > Scripts > Create Script (language: Shell/Bash),
+# paste this, then assign it to the Policy covering this fleet — Scope: Machine, Execution: Once.
+set -e
+mkdir -p /Library/Preferences
+cat > /Library/Preferences/es.mi-labs.soar.agent.json <<'SOAR_EOF'
+${macosConfigSnippet.value}
+SOAR_EOF
+chmod 644 /Library/Preferences/es.mi-labs.soar.agent.json
+echo "Applivery SOAR Agent managed configuration applied."
+`;
+});
+
+type SnippetKind = "windows-reg" | "windows-script" | "macos-json" | "macos-script";
+const SNIPPET_FILENAMES: Record<SnippetKind, string> = {
+  "windows-reg": "applivery-soar-agent.reg",
+  "windows-script": "applivery-soar-agent-managed-config.ps1",
+  "macos-json": "es.mi-labs.soar.agent.json",
+  "macos-script": "applivery-soar-agent-managed-config.sh",
+};
+function snippetContent(kind: SnippetKind): string {
+  if (kind === "windows-reg") return windowsRegSnippet.value;
+  if (kind === "windows-script") return windowsScriptSnippet.value;
+  if (kind === "macos-json") return macosConfigSnippet.value;
+  return macosScriptSnippet.value;
+}
+function downloadSnippet(kind: SnippetKind) {
+  const blob = new Blob([snippetContent(kind)], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename;
+  a.download = SNIPPET_FILENAMES[kind];
   a.click();
   URL.revokeObjectURL(url);
 }
-function copySnippet(platform: "windows" | "macos") {
-  navigator.clipboard.writeText(platform === "windows" ? windowsRegSnippet.value : macosConfigSnippet.value);
+function copySnippet(kind: SnippetKind) {
+  navigator.clipboard.writeText(snippetContent(kind));
 }
 
 async function saveGithubToken() {
@@ -286,18 +338,31 @@ onMounted(async () => {
             <div v-if="store.status?.configured" class="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-2">
               <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">Managed Configuration</p>
               <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-                Push this with your webhook URL, workspace, and secret already filled in. Windows: import the .reg file (or push the
-                same values via your UEM to <span class="font-mono">HKLM\SOFTWARE\Policies\Applivery\SOAR</span>). macOS: deploy as
+                Push this with your webhook URL, workspace, and secret already filled in. Fastest path — the Script
+                variant: paste it into Applivery Dashboard &gt; Resources &gt; Scripts &gt; Create Script, then assign it
+                to the Policy covering this fleet (Scope: Machine, Execution: Once) — it lands on every enrolled device
+                at next sync, no manual per-device import. Windows also accepts a manually-imported
+                <span class="font-mono">.reg</span> file (or the same values pushed via your UEM to
+                <span class="font-mono">HKLM\SOFTWARE\Policies\Applivery\SOAR</span>); macOS also accepts the raw
+                <span class="font-mono">.json</span> deployed to
                 <span class="font-mono">/Library/Preferences/es.mi-labs.soar.agent.json</span> via MDM Custom Settings.
               </p>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div class="flex gap-1.5">
-                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows')">Windows .reg</Button>
-                  <Button size="sm" variant="ghost" @click="copySnippet('windows')">Copy</Button>
+                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows-script')">Windows Script (.ps1)</Button>
+                  <Button size="sm" variant="ghost" @click="copySnippet('windows-script')">Copy</Button>
                 </div>
                 <div class="flex gap-1.5">
-                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('macos')">macOS .json</Button>
-                  <Button size="sm" variant="ghost" @click="copySnippet('macos')">Copy</Button>
+                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('macos-script')">macOS Script (.sh)</Button>
+                  <Button size="sm" variant="ghost" @click="copySnippet('macos-script')">Copy</Button>
+                </div>
+                <div class="flex gap-1.5">
+                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows-reg')">Windows .reg</Button>
+                  <Button size="sm" variant="ghost" @click="copySnippet('windows-reg')">Copy</Button>
+                </div>
+                <div class="flex gap-1.5">
+                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('macos-json')">macOS .json</Button>
+                  <Button size="sm" variant="ghost" @click="copySnippet('macos-json')">Copy</Button>
                 </div>
               </div>
             </div>
