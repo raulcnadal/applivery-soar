@@ -178,22 +178,38 @@ export async function streamAgentBuild(platform: string, arch?: string | null): 
   return { filename: row.filename, contentType: row.contentType, data: row.data as unknown as Buffer };
 }
 
-function buildToken(version: string): string {
-  return `[build:${version}]`;
+// Content-addressed, not version-addressed: two different pushes can land
+// on the same git commit/version string (e.g. the Windows agent repo's CI
+// publishes amd64 and arm64 from the SAME commit every run), and — the
+// scenario that actually bit this exact dedup check in production — a build
+// row can get its `data`/`filename` corrected after a transient ingest bug
+// without its `version` field changing at all. Keying the dedup token off
+// the binary's own sha256 instead means a stale Applivery asset uploaded
+// from bad data never blocks (or gets mistaken for) a fresh, corrected
+// re-publish: the fingerprint embedded in its description simply won't
+// match the current build's fingerprint, so `findExistingAsset` correctly
+// reports "no match" and a new upload proceeds — same end result as
+// deleting the stale asset by hand, without requiring that manual step.
+function buildFingerprint(sha256: string): string {
+  return sha256.slice(0, 16);
 }
 
-function descriptionFor(version: string): string {
-  return `Auto-published from Settings > Device Data Webhook. ${buildToken(version)}`;
+function buildToken(fingerprint: string): string {
+  return `[build:${fingerprint}]`;
+}
+
+function descriptionFor(fingerprint: string): string {
+  return `Auto-published from Settings > Device Data Webhook. ${buildToken(fingerprint)}`;
 }
 
 // ── Step 1: the MDM asset — dedup by exact name + description token before uploading ──
 
-/** GET {orgBase}/mdm/assets?subType=&name= — the `name` filter's match semantics aren't documented as exact, so this double-checks client-side for an exact name match with the version's `[build:...]` token present in the description, rather than trusting the first returned item. */
-async function findExistingAsset(headers: Record<string, string>, orgBase: string, platform: AgentPlatform, name: string, version: string): Promise<string | null> {
+/** GET {orgBase}/mdm/assets?subType=&name= — the `name` filter's match semantics aren't documented as exact, so this double-checks client-side for an exact name match with the current build's content-fingerprint token present in the description, rather than trusting the first returned item. */
+async function findExistingAsset(headers: Record<string, string>, orgBase: string, platform: AgentPlatform, name: string, fingerprint: string): Promise<string | null> {
   const res = await appliveryClient.get(`${orgBase}/mdm/assets`, { headers, params: { subType: platform, name, limit: 25 } });
   if (res.status >= 300) return null;
   const items = ((res.data as any)?.data?.items ?? []) as Array<{ id: string; name: string; description?: string }>;
-  const token = buildToken(version);
+  const token = buildToken(fingerprint);
   const match = items.find((it) => it.name === name && typeof it.description === "string" && it.description.includes(token));
   return match?.id ?? null;
 }
@@ -311,6 +327,7 @@ export async function publishAgentBuildToApplivery(authorization: string, worksp
   const build = await prisma.agentBuild.findUnique({ where: { platform_arch: { platform, arch } } });
   if (!build) throw new HttpError(404, `No ${platform}/${arch} agent build has been published yet — the agent repo's CI publishes one automatically on every push to main.`);
   const version = build.version || build.sha256.slice(0, 12);
+  const fingerprint = buildFingerprint(build.sha256);
   const appName = AGENT_APP_NAME[variantKey(platform, arch)];
 
   const headers = { Authorization: authorization, "Content-Type": "application/json" };
@@ -320,15 +337,17 @@ export async function publishAgentBuildToApplivery(authorization: string, worksp
   const state = await prisma.workspaceState.findUnique({ where: { workspaceSlug } });
   const existingAppId = existingApplicationIdFor(state, platform, arch);
 
-  // Step 1: has this exact platform+arch+version already been uploaded as
-  // an asset? If so, halt — no re-upload, no re-touching the application.
-  const existingAssetId = await findExistingAsset(headers, orgBase, platform, appName, version);
+  // Step 1: has this exact platform+arch+binary (by content fingerprint,
+  // not just version — see buildFingerprint's doc comment) already been
+  // uploaded as an asset? If so, halt — no re-upload, no re-touching the
+  // application.
+  const existingAssetId = await findExistingAsset(headers, orgBase, platform, appName, fingerprint);
   if (existingAssetId) {
-    const message = `${appName} build ${version} is already published to Applivery — an asset named "${appName}" for this exact version already exists. Remove it from Applivery's Assets list first if you need to force a re-upload.`;
+    const message = `${appName} build ${version} is already published to Applivery — an asset named "${appName}" for this exact build already exists. Remove it from Applivery's Assets list first if you need to force a re-upload.`;
     return { applicationId: existingAppId ?? "", assetId: existingAssetId, created: false, alreadyPublished: true, message };
   }
 
-  const assetId = await uploadBinaryAsset(authorization, uploadBase, appName, descriptionFor(version), build.filename, build.contentType, build.data as unknown as Buffer);
+  const assetId = await uploadBinaryAsset(authorization, uploadBase, appName, descriptionFor(fingerprint), build.filename, build.contentType, build.data as unknown as Buffer);
 
   const { id: applicationId, created } =
     platform === "windows" ? await upsertWindowsApp(headers, orgBase, assetId, version, existingAppId, appName) : await upsertMacosApp(headers, orgBase, assetId, existingAppId);
