@@ -108,7 +108,16 @@ async function remove(p: CompliancePolicy) {
           <component :is="ICONS.ShieldWarning" :size="16" weight="Linear" :style="{ color: WARNING }" />
         </div>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold truncate text-gray-900 dark:text-white">{{ p.name }}</p>
+          <!-- line-clamp-2, not truncate: template-generated names (a
+               framework/control-ref derived string, or a merged-template
+               name like "Esquema Nacional de Seguridad (ENS, RD 311/2022)
+               — Windows baseline") routinely run longer than one line fits
+               at this card width, and this is a CSS grid of uniformly-sized
+               cards -- growing one card to fit its title would break the
+               grid alignment of the whole row, unlike the tray's native
+               popup window, which can just resize itself. Wrapping onto a
+               second line is the actual correct web-native fix here. -->
+          <p class="text-sm font-semibold line-clamp-2 text-gray-900 dark:text-white">{{ p.name }}</p>
           <p class="text-xs truncate text-gray-400">{{ conditionSummary(p) }}</p>
         </div>
         <span

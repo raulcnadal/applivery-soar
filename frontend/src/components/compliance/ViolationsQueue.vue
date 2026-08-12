@@ -176,8 +176,12 @@ async function exportCsv() {
       </div>
     </div>
 
-    <!-- Recent activity -->
-    <div v-if="history.length > 0">
+    <!-- Recent activity. mb-8 matches "Awaiting review" above -- without it
+         (missed when this section was ported), this being the last thing
+         ViolationsQueue renders meant it sat flush against whatever
+         ComplianceView.vue puts directly below it (the Policies grid), no
+         gap at all, reading as an overlap. -->
+    <div v-if="history.length > 0" class="mb-8">
       <div class="flex items-center justify-between mb-3">
         <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Recent activity {{ store.violationsTotal ? `(${history.length} of ${store.violationsTotal})` : "" }}</p>
         <button class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="exportCsv">
