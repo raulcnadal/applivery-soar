@@ -127,22 +127,50 @@ watch(slug, load, { immediate: true });
 .help-doc-body :deep(table) { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.875rem; }
 .help-doc-body :deep(th) { text-align: left; font-weight: 600; padding: 0.5rem 0.75rem; font-size: 0.75rem; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
 .help-doc-body :deep(td) { padding: 0.5rem 0.75rem; vertical-align: top; border-top: 1px solid #f3f4f6; color: #374151; }
+</style>
 
-:global(.dark) .help-doc-body :deep(h1),
-:global(.dark) .help-doc-body :deep(h2),
-:global(.dark) .help-doc-body :deep(h3),
-:global(.dark) .help-doc-body :deep(h4),
-:global(.dark) .help-doc-body :deep(strong) { color: #ffffff; }
-:global(.dark) .help-doc-body :deep(h2) { border-top-color: #374151; }
-:global(.dark) .help-doc-body :deep(p),
-:global(.dark) .help-doc-body :deep(ul),
-:global(.dark) .help-doc-body :deep(ol),
-:global(.dark) .help-doc-body :deep(td) { color: #d1d5db; }
-:global(.dark) .help-doc-body :deep(a) { color: #7aaaff; }
-:global(.dark) .help-doc-body :deep(code) { background: rgba(255, 255, 255, 0.06); color: #d1d5db; }
-:global(.dark) .help-doc-body :deep(pre code) { border-color: #374151; }
-:global(.dark) .help-doc-body :deep(blockquote) { border-left-color: #374151; color: #9ca3af; }
-:global(.dark) .help-doc-body :deep(hr) { border-color: #374151; }
-:global(.dark) .help-doc-body :deep(th) { color: #9ca3af; border-bottom-color: #374151; }
-:global(.dark) .help-doc-body :deep(td) { border-top-color: #374151; }
+<!--
+  Dark-mode overrides for .help-doc-body, split into their own PLAIN
+  (unscoped) <style> block rather than living in the scoped block above
+  with `:global(.dark) ... :deep(...)`.
+
+  That combination was silently dropped by Vue's scoped-CSS compiler —
+  confirmed against the live production build: grepping the compiled CSS
+  for ".dark" + "help-doc-body" turned up zero rules, only the light-mode
+  :deep() ones above (which don't combine :global with :deep and compiled
+  fine). Whatever the exact interaction is between the two pseudo-selectors
+  in this Vue/postcss version, the practical effect was that dark mode fell
+  back to the light-mode colors — near-black heading/body text sitting
+  directly on the modal's dark:bg-gray-800 card, unreadable (confirmed live
+  via computed styles on soar.mi-labs.es: a heading's color computed to
+  rgb(17,24,39), the light-mode #111827, with `.dark` present on <html>).
+
+  A plain, unscoped block sidesteps the whole :global/:deep question: since
+  .help-doc-body's content is injected via v-html, none of it carries this
+  component's scope attribute regardless, so ordinary selectors here match
+  exactly the same elements the scoped :deep() rules above target — no
+  :deep()/:global() needed at all. `!important` on the color properties
+  specifically (not layout/spacing) guards against the otherwise-equal
+  specificity between "selector" here and "selector[data-v-x] rule" above
+  ever landing in the wrong cascade order after a future edit or a chunking
+  change moves these style blocks relative to each other.
+-->
+<style>
+.dark .help-doc-body h1,
+.dark .help-doc-body h2,
+.dark .help-doc-body h3,
+.dark .help-doc-body h4,
+.dark .help-doc-body strong { color: #ffffff !important; }
+.dark .help-doc-body h2 { border-top-color: #374151; }
+.dark .help-doc-body p,
+.dark .help-doc-body ul,
+.dark .help-doc-body ol,
+.dark .help-doc-body td { color: #d1d5db !important; }
+.dark .help-doc-body a { color: #7aaaff !important; }
+.dark .help-doc-body code { background: rgba(255, 255, 255, 0.06); color: #d1d5db !important; }
+.dark .help-doc-body pre code { border-color: #374151; }
+.dark .help-doc-body blockquote { border-left-color: #374151; color: #9ca3af !important; }
+.dark .help-doc-body hr { border-color: #374151; }
+.dark .help-doc-body th { color: #9ca3af !important; border-bottom-color: #374151; }
+.dark .help-doc-body td { border-top-color: #374151; }
 </style>

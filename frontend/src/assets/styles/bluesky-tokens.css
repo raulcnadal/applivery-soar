@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/* Tailwind v4 auto-detects template files by walking down from wherever the
+   CSS entry point lives (frontend/), which never reaches
+   packages/bluesky-vue/src — a sibling workspace package outside that tree,
+   aliased straight to source (see vite.config.ts). Any Tailwind class that
+   only ever appears literally inside that package's .vue files (never
+   duplicated verbatim somewhere under frontend/src) was silently never
+   scanned, so no CSS rule for it ever made it into the compiled bundle —
+   the class name still shows up in the DOM's `class` attribute, but
+   `getComputedStyle` shows the property's initial value as if the class
+   didn't exist. Confirmed via a live check against soar.mi-labs.es: Drawer.vue's
+   `z-[310]` computed as `z-index: auto` in the browser, so the mobile
+   Settings "Sections" drawer WAS opening (mobileNavOpen did flip to true,
+   confirmed via the Teleported node's presence in the DOM) but rendered
+   with no elevation at all, stacking below SettingsModal's `z-[300]` (which
+   happens to also appear verbatim in frontend/src/components/shared/
+   HelpModal.vue, so it composited into the output CSS by coincidence) —
+   reading as "nothing happens" since the drawer panel never became visible
+   above the modal card. Tooltip.vue's `z-[100]` has the exact same gap.
+   Explicitly telling Tailwind to also scan the package fixes every such
+   class at the source, rather than chasing each one that happens to only
+   ever be written once. */
+@source "../../../../packages/bluesky-vue/src";
+
 /* Manual, class-based dark mode (App.jsx's themeMode 'light'|'dark'|'system'
    toggle, ~2804-2919) rather than Tailwind v4's default media-query-only
    `dark:` variant — `dark:` classes now activate whenever a `.dark` class
