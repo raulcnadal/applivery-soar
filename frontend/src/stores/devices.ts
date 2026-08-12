@@ -180,10 +180,21 @@ export const useDevicesStore = defineStore("devices", () => {
     await api.post("/analytics/locations/sync", {});
   }
 
-  async function fetchDevices(refresh = false) {
-    if (refresh) isRefreshing.value = true;
-    else isLoading.value = true;
-    error.value = null;
+  // `silent` backs a background poll (see DevicesView.vue's onMounted) that
+  // re-checks for agent-originated/case-close changes every ~20s without
+  // flipping isLoading/isRefreshing — those drive a full "Loading device
+  // fleet…" skeleton / spinning Refresh button respectively, which would be
+  // a jarring flicker every 20s for a check that's cache-tolerant (refresh
+  // stays false) and usually comes back byte-identical. `error` is also
+  // left untouched on a silent miss — a background poll failing shouldn't
+  // blow away whatever's already on screen with an error banner; the next
+  // successful poll (or a manual Refresh) will recover silently.
+  async function fetchDevices(refresh = false, opts: { silent?: boolean } = {}) {
+    if (!opts.silent) {
+      if (refresh) isRefreshing.value = true;
+      else isLoading.value = true;
+    }
+    if (!opts.silent) error.value = null;
     try {
       const { api } = await import("../api/http");
       const res = await api.get("/devices", { params: refresh ? { refresh: "true" } : {} });
@@ -191,10 +202,12 @@ export const useDevicesStore = defineStore("devices", () => {
       total.value = res.data.total ?? devices.value.length;
       fetchedAt.value = res.data.fetchedAt ?? null;
     } catch (err: any) {
-      error.value = err?.response?.data?.detail || "Failed to load devices from Applivery.";
+      if (!opts.silent) error.value = err?.response?.data?.detail || "Failed to load devices from Applivery.";
     } finally {
-      isLoading.value = false;
-      isRefreshing.value = false;
+      if (!opts.silent) {
+        isLoading.value = false;
+        isRefreshing.value = false;
+      }
     }
   }
 

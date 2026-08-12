@@ -5,6 +5,16 @@ import { HttpError } from "../../utils/httpError";
 import { decryptSecret } from "../../utils/secretCipher";
 import { liveCacheGet } from "../../services/liveCache";
 import { DEVICES_CACHE_SOURCE } from "./devices.service";
+
+// invalidateDevicesCache is loaded dynamically (not a static top-level
+// import) below, same as compliance.service.ts/workflows.service.ts's own
+// calls to it — devices.service.ts already statically imports
+// loadDevicePushDataCache from this file, so a static import back here
+// would be a circular top-level dependency between the two modules.
+async function invalidateDevicesCacheFor(workspaceSlug: string): Promise<void> {
+  const { invalidateDevicesCache } = await import("./devices.service");
+  invalidateDevicesCache(workspaceSlug);
+}
 import { platformPathSegment } from "./deviceNormalize";
 import type { NormalizedDevice } from "./deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
@@ -52,6 +62,19 @@ function cachedDeviceBySerial(workspaceSlug: string, serialNumber: string): Norm
  * always holds the LATEST normalized attributes (mirrors the original's
  * dict-keyed-by-serial replace-in-place semantics) while `reportCount`
  * (carried inside payload) increments each call.
+ *
+ * Also invalidates the devices cache (see bottom) — getDevicesFull bakes
+ * this same push data into its cached blob (DEVICES_CACHE_TTL_SECONDS, 15
+ * min), so without this a device could self-report a real change (e.g.
+ * encryption flipping on) and the Devices/Compliance view would keep
+ * showing the old state for up to 15 more minutes even on a plain,
+ * cache-tolerant fetch. This does NOT force a live Applivery API pull —
+ * it only clears the cache entry, so the *next* request (whenever the
+ * frontend happens to make one) recomputes fresh instead of serving a
+ * stale blob; background polling that hasn't changed still lands on a warm
+ * cache exactly as before. Applivery's own rate limits are unaffected
+ * since this is data the device pushed to us directly, not something we
+ * had to go re-fetch from Applivery's API to learn.
  */
 export async function reportDeviceData(workspaceSlug: string, payload: DeviceReportPayload): Promise<{ status: string; serialNumber: string; attributesStored: number }> {
   if (!payload.serialNumber || !payload.serialNumber.trim()) {
@@ -93,6 +116,8 @@ export async function reportDeviceData(workspaceSlug: string, payload: DeviceRep
     targetType: "device", targetId: payload.serialNumber, targetName: deviceName,
     message: `Received self-reported data from "${deviceName}" (${payload.platform}) — ${Object.keys(normalized).length} attribute(s)`,
   });
+
+  await invalidateDevicesCacheFor(workspaceSlug);
 
   return { status: "ok", serialNumber: payload.serialNumber, attributesStored: Object.keys(normalized).length };
 }
@@ -150,6 +175,12 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
     // Clear any earlier pending report for this same serial, now that it's matched.
     await prisma.pendingAppReport.deleteMany({ where: { workspaceSlug, deviceId: payload.serialNumber } });
     matchedFlag = true;
+    // Same rationale as reportDeviceData above — installedAppsStore feeds
+    // vulnServiceStatus/appleAppUpdateStatus, both baked into the cached
+    // devices blob. Only worth doing on the matched branch: an unmatched
+    // report only touches PendingAppReport, which no currently-normalized
+    // device reads from yet.
+    await invalidateDevicesCacheFor(workspaceSlug);
   } else {
     // Not in our cached device list yet — buffer by serial number, upserted
     // in place (mirrors the original's dict-keyed-by-serial overwrite).

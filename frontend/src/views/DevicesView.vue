@@ -4,7 +4,7 @@
 // trend sparkline, and a Devices/Playground ViewSwitcher pill. Faithful
 // port of the original App.jsx Devices view (DevicesView.jsx, 325 lines).
 import { RouterLink, useRoute } from "vue-router";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import DeviceDetailDrawer from "../components/devices/DeviceDetailDrawer.vue";
@@ -63,12 +63,32 @@ function handleComplianceSourceChange(source: "applivery" | "policy") {
   store.setComplianceSource(source);
 }
 
+// Background poll — 20s, cache-tolerant (refresh stays false, so this never
+// forces a live Applivery pull; it only ever costs an Applivery API call
+// when the cache genuinely needs refilling) and silent (no loading
+// skeleton/spinner flicker). Exists so an agent self-report or a case
+// closing — both now invalidate the backend's devices cache the moment
+// they happen (deviceData.service.ts/cases.service.ts) — actually reaches
+// this view within ~20s instead of only on the next manual Refresh click,
+// per Raul's ask to keep device-originated changes close to real time
+// while leaving Applivery-API-sourced background syncs on their normal,
+// rate-limit-protecting cadence.
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
 onMounted(async () => {
   await Promise.all([store.fetchDevices(false), store.fetchPickers(), store.fetchPolicies(), store.fetchRiskTrend()]);
   // Arrived via a cross-link (e.g. Audit Logs' "Open {device}" row link) —
   // auto-open that device's drawer, same pattern as Cases' ?caseId= query.
   const deviceId = route.query.deviceId;
   if (typeof deviceId === "string" && deviceId) selectedDeviceId.value = deviceId;
+
+  pollTimer = setInterval(() => {
+    store.fetchDevices(false, { silent: true });
+  }, 20_000);
+});
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer);
 });
 </script>
 

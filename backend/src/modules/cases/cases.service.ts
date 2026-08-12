@@ -2,7 +2,7 @@ import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
 import { HttpError } from "../../utils/httpError";
 import { isKnownMitreTechnique } from "../compliance/complianceFields";
-import { getDevicesFull } from "../devices/devices.service";
+import { getDevicesFull, invalidateDevicesCache } from "../devices/devices.service";
 import { launchWorkflowRun, workflowHasDestructiveStep } from "../workflows/workflows.service";
 import type { WorkflowDeviceRefPayload } from "../workflows/workflows.schemas";
 import {
@@ -362,7 +362,16 @@ export async function updateCase(workspaceSlug: string, caseId: string, payload:
     message: `Case "${(data.title as string) ?? kase.title}" updated by ${actorEmail}`,
   });
 
-  if (notifyEvent) await dispatchAndAttachCaseEvent(workspaceSlug, caseId, notifyEvent);
+  if (notifyEvent) {
+    await dispatchAndAttachCaseEvent(workspaceSlug, caseId, notifyEvent);
+    // getDevicesFull bakes each device's openCasesByDevice into its cached
+    // blob (devices.service.ts, DEVICES_CACHE_TTL_SECONDS = 15 min) — an
+    // admin closing/reopening a case here doesn't touch that cache on its
+    // own, so without this the Devices view's case badge/risk score for
+    // this device would keep showing the pre-close state for up to 15 more
+    // minutes even on a plain refresh.
+    invalidateDevicesCache(workspaceSlug);
+  }
 
   const settings = await getCaseSlaSettings(workspaceSlug);
   const final = await prisma.case.findUniqueOrThrow({ where: { id: caseId } });
