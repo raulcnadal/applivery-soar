@@ -563,6 +563,21 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
       </template>
 
       <template v-else>
+        <!-- Editing an existing policy, or one that arrived pre-filled from a
+             Compliance Policy Template (see resetForm's startsWithTarget),
+             both skip straight to this "rules" screen -- for the template
+             case in particular that meant a predefined name (a framework/
+             control-ref derived string, sometimes a long regulatory
+             citation like "Esquema Nacional de Seguridad (ENS, RD 311/2022)
+             — Windows baseline") got created as-is unless the admin thought
+             to click "Change" above and go back to the details screen just
+             to find the name field. Surfacing the same name input here too
+             -- pre-populated, immediately visible, no extra navigation --
+             means every admin actually sees and can edit the name before
+             hitting Create, not just the ones who happen to go looking for
+             it on the details screen. -->
+        <input v-model="form.name" placeholder="Policy name, e.g. Stale or non-compliant devices" class="w-full mb-3 px-3 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" />
+
         <div class="flex items-center justify-between mb-5 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
           <div class="flex items-center gap-2 text-xs font-semibold text-gray-900 dark:text-white">
             <component :is="ICONS.CheckCircle" :size="14" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
