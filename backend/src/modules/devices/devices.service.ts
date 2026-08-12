@@ -283,8 +283,19 @@ export async function getDevicesFull(
         const policyId = key.slice(0, sepIdx);
         const deviceId = key.slice(sepIdx + 1);
         if (!deviceId) continue;
+        const policy = policiesById.get(policyId);
+        // Defense in depth: deleteCompliancePolicy (compliance.service.ts)
+        // now purges this policy's keys from complianceEvaluationState when
+        // it's deleted, but this table is a bare Json blob with no FK back
+        // to CompliancePolicy, so any key that predates that fix — or any
+        // future write path that misses it — would otherwise resolve to
+        // policyName: null and render as a permanent "Unknown policy"
+        // phantom violation on an otherwise fully-compliant device. Skipping
+        // unresolvable entries here means a stray key is just inert dead
+        // weight in the state blob instead of a visible bug.
+        if (!policy) continue;
         (policyViolationsByDevice[deviceId] ??= []).push({
-          policyId, policyName: policiesById.get(policyId)?.name ?? null,
+          policyId, policyName: policy.name,
           status: entry.status, lastDetectedAt: entry.lastDetectedAt,
         });
       }

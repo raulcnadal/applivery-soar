@@ -176,7 +176,31 @@ export async function deleteCompliancePolicy(workspaceSlug: string, policyId: st
   const deleted = await prisma.compliancePolicy.findFirst({ where: { workspaceSlug, id: policyId } });
   if (deleted) {
     await prisma.complianceViolation.deleteMany({ where: { workspaceSlug, policyId } });
+    // Also purge this policy's suppression-state keys ("{policyId}:{deviceId}")
+    // from complianceEvaluationState. Without this, a device this policy once
+    // flagged keeps an orphaned entry forever — getDevicesFull resolves its
+    // policyName via a live lookup against CompliancePolicy (devices.service.ts),
+    // which now fails since the policy is gone, so it renders as a permanent
+    // "Unknown policy" / stuck-status row on the device's Compliance tab even
+    // though the device is otherwise fully compliant (recovery is the only
+    // other code path that clears a key, and it only ever revisits policies
+    // still present in compliancePolicy, so a deleted policy's key is never
+    // reached again). Deleting the CompliancePolicy row itself has no FK
+    // cascade onto this table (it's a bare Json blob, not a relation), so
+    // this has to be done explicitly here.
+    const state = await loadComplianceState(workspaceSlug);
+    const prefix = `${policyId}:`;
+    let changed = false;
+    for (const key of Object.keys(state)) {
+      if (key.startsWith(prefix)) {
+        delete state[key];
+        changed = true;
+      }
+    }
+    if (changed) await saveComplianceState(workspaceSlug, state);
     await prisma.compliancePolicy.delete({ where: { id: policyId } });
+    const { invalidateDevicesCache } = await import("../devices/devices.service");
+    invalidateDevicesCache(workspaceSlug);
     await recordAuditEvent(workspaceSlug, {
       category: "policy", action: "policy_deleted", actor: actorEmail, severity: "warning",
       targetType: "policy", targetId: policyId, targetName: deleted.name,
