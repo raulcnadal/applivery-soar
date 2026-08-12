@@ -7,7 +7,7 @@
 import { Alert, Button, EmptyState, PageHeader } from "@applivery/bluesky-vue";
 import { GridLayout, GridItem } from "grid-layout-plus";
 import { ICONS, resolveIcon } from "../lib/solarIcons";
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useBreakpoint } from "../composables/useBreakpoint";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import WidgetCard from "../components/overview/WidgetCard.vue";
@@ -60,27 +60,41 @@ interface WidgetSlot {
 }
 const widgetSlots = reactive<Record<string, WidgetSlot>>({});
 
-async function loadWidget(w: DashboardWidget) {
+// `silent` backs the 60s background auto-refresh below — without it, every
+// widget flipped isLoading true/false every 60 seconds regardless of
+// whether anything actually changed, which read as the whole Dashboard
+// randomly reloading. User-initiated reloads (date range apply, segment
+// change, initial mount) keep the normal loading UX; only the interval tick
+// goes through silently.
+async function loadWidget(w: DashboardWidget, opts: { silent?: boolean } = {}) {
   widgetSlots[w.id] = widgetSlots[w.id] ?? { data: null, isLoading: true, error: null };
-  widgetSlots[w.id].isLoading = true;
-  widgetSlots[w.id].error = null;
+  if (!opts.silent) {
+    widgetSlots[w.id].isLoading = true;
+    widgetSlots[w.id].error = null;
+  }
   try {
     const dateIni = dateRange.value.from.toISOString().slice(0, 10);
     const dateEnd = dateRange.value.to.toISOString().slice(0, 10);
     // Segment scoping — merged into each widget's own filters, same shape
     // the backend already expects (App.jsx:3543-3573's filters.segmentId).
     const segmentId = String(segmentsStore.selectedSegment.id) !== "0" ? segmentsStore.selectedSegment.id : undefined;
-    widgetSlots[w.id].data = await fetchWidgetData(w.stat, { ...w.filters, segmentId }, dateIni, dateEnd);
+    const data = await fetchWidgetData(w.stat, { ...w.filters, segmentId }, dateIni, dateEnd);
+    widgetSlots[w.id].data = data;
+    if (opts.silent) widgetSlots[w.id].error = null; // clear a stale error silently once fresh data lands
   } catch (err: any) {
-    widgetSlots[w.id].error = err?.response?.data?.detail || "Failed to load.";
+    if (!opts.silent) widgetSlots[w.id].error = err?.response?.data?.detail || "Failed to load.";
+    // A silent background refresh that fails just leaves the last-good data
+    // on screen rather than surfacing an error banner over it.
   } finally {
-    widgetSlots[w.id].isLoading = false;
+    if (!opts.silent) widgetSlots[w.id].isLoading = false;
   }
 }
 
-async function loadAllWidgets() {
-  await Promise.all(widgets.value.map((w) => loadWidget(w)));
+async function loadAllWidgets(opts: { silent?: boolean } = {}) {
+  await Promise.all(widgets.value.map((w) => loadWidget(w, opts)));
 }
+
+let widgetRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
   if (!store.isLoaded) await store.fetchState();
@@ -93,8 +107,15 @@ onMounted(async () => {
   // can't just read back layout.value at comparison time.
   lastLayoutSnapshot = snapshotLayout(layout.value);
   await loadAllWidgets();
-  // Same 60s auto-refresh as the original's setInterval(fetchWidgetData, 60000).
-  window.setInterval(loadAllWidgets, 60_000);
+  // Same 60s auto-refresh as the original's setInterval(fetchWidgetData,
+  // 60000), now silent (see loadWidget's comment) and actually cleared on
+  // unmount — previously nothing ever called clearInterval, so navigating
+  // away and back to Overview stacked up a new timer on every visit.
+  widgetRefreshTimer = setInterval(() => loadAllWidgets({ silent: true }), 60_000);
+});
+
+onUnmounted(() => {
+  if (widgetRefreshTimer) clearInterval(widgetRefreshTimer);
 });
 
 // Re-fetch every widget when the Segments panel selection changes

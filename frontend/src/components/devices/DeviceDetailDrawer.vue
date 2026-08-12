@@ -30,6 +30,7 @@ import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ICONS } from "../../lib/solarIcons";
 import { useDevicesStore, type NormalizedDevice } from "../../stores/devices";
+import { useComplianceStore } from "../../stores/compliance";
 import type { Workflow } from "../../stores/workflows";
 import { useWorkflowsStore } from "../../stores/workflows";
 import { flattenSegments } from "../../lib/segments";
@@ -65,6 +66,7 @@ const props = defineProps<{ device: Record<string, any> | null }>();
 const emit = defineEmits<{ close: [] }>();
 
 const store = useDevicesStore();
+const complianceStore = useComplianceStore();
 const workflowsStore = useWorkflowsStore();
 const router = useRouter();
 
@@ -133,7 +135,28 @@ function signalPct(strength: number | null | undefined): number | null {
 
 watch(
   () => props.device,
-  async (d) => {
+  async (d, prevD) => {
+    // DevicesView's background poll (stores/devices.ts's fetchDevices) and
+    // any post-mutation fetchDevices(true) replace store.devices with brand
+    // new object references every time, even when nothing about THIS device
+    // actually changed — since `selectedDevice` is a `.find()` over that
+    // array, props.device gets a new reference on every such refresh while
+    // the drawer is sitting open on the same device. Before this guard, that
+    // reference change alone was enough to re-run the full reset below —
+    // jumping the admin back to the Overview tab, closing whatever picker
+    // was open, and re-firing the locations/network/logs/firewall fetches —
+    // every ~20s while just looking at a device, which read as the whole
+    // modal randomly reloading. Only run the full reset for an actual
+    // identity change (a different device opened, or the drawer closing);
+    // a same-device refresh just patches resolvedDevice in place so tabs
+    // like Compliance still pick up fresh policy/violation data live.
+    const newId = d ? rawDeviceId(d) : null;
+    const prevId = prevD ? rawDeviceId(prevD) : null;
+    if (d && newId && newId === prevId) {
+      if (typeof d.platformDeviceId === "string") resolvedDevice.value = d as NormalizedDevice;
+      return;
+    }
+
     tab.value = "overview";
     activePicker.value = null;
     error.value = null;
@@ -149,6 +172,11 @@ watch(
     // Devices view already populates this on mount (fetchPickers), but
     // Playground/Overview never had a reason to before.
     if (store.segments.length === 0) store.fetchPickers().catch(() => undefined);
+    // Same reasoning for the Compliance tab's "assigned policies" list below
+    // — DevicesView never loads SOAR's own Compliance Policies (that's
+    // ComplianceView's job), so Playground/Overview/Devices entry points
+    // alike need it fetched here.
+    if (complianceStore.policies.length === 0) complianceStore.fetchPolicies().catch(() => undefined);
 
     if (typeof d.platformDeviceId === "string") {
       // Already a full NormalizedDevice — the Devices view's own fast
@@ -178,6 +206,32 @@ watch(
   },
   { immediate: true },
 );
+
+// Which of SOAR's own Compliance Policies (not Applivery's device policy
+// assignments — that's the separate "activePolicies" picker below) actually
+// apply to this device, each with a live green/red posture — not just the
+// ones currently violated. Mirrors runComplianceEvaluation's own scoping
+// exactly (compliance.service.ts: targetDeviceAudienceId membership if set,
+// AND targetPlatform match if set — targetDeploymentModel is deliberately
+// not used to filter, same as the backend), so this list is never wider or
+// narrower than what's actually being evaluated against the device. Posture
+// comes from device.policyViolations (the live, self-clearing
+// complianceEvaluationState list) — a policy id NOT present there is
+// compliant, matching how policyCompliant itself is derived
+// (devices.service.ts: `policyViolations.length === 0`).
+const assignedCompliancePolicies = computed(() => {
+  const d = device.value;
+  if (!d) return [];
+  const violationByPolicyId = new Map((d.policyViolations || []).map((v) => [v.policyId, v]));
+  return complianceStore.policies
+    .filter((p) => p.enabled)
+    .filter((p) => !p.targetDeviceAudienceId || (d.deviceAudiences || []).some((a) => String(a.id) === String(p.targetDeviceAudienceId)))
+    .filter((p) => !p.targetPlatform || p.targetPlatform === d.platform)
+    .map((p) => {
+      const violation = violationByPolicyId.get(p.id);
+      return { id: p.id, name: p.name, severity: p.severity, compliant: !violation, status: violation?.status ?? null };
+    });
+});
 
 const segmentName = computed(() => {
   if (!device.value) return "Global";
@@ -764,17 +818,26 @@ function logBody(l: Record<string, any>): string {
 
             <div class="mb-6">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">
-                Compliance Policy Violations{{ (device.policyViolations || []).length ? ` (${device.policyViolations.length})` : "" }}
+                Compliance Policies{{ assignedCompliancePolicies.length ? ` (${assignedCompliancePolicies.length})` : "" }}
               </p>
-              <div v-if="(device.policyViolations || []).length > 0" class="space-y-1.5">
-                <div v-for="(v, i) in device.policyViolations" :key="v.policyId || i" class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm bg-gray-50 dark:bg-gray-900/50">
-                  <span class="truncate text-gray-900 dark:text-white">{{ v.policyName || "Unknown policy" }}</span>
-                  <span class="text-[10px] font-semibold shrink-0 uppercase" :style="{ color: v.status === 'pending' ? WARNING : v.status === 'auto_fired' ? PRIMARY_BLUE : '#9CA3AF' }">
-                    {{ String(v.status || "").replace("_", " ") || "—" }}
+              <!-- Every SOAR Compliance Policy in scope for this device (platform +
+                   audience match), not just the ones currently violated — a policy
+                   this device is passing previously had no presence here at all,
+                   so "is this device even covered by a policy" wasn't answerable
+                   from this tab. Green/red posture per row instead of only
+                   surfacing red ones. -->
+              <div v-if="assignedCompliancePolicies.length > 0" class="space-y-1.5">
+                <div v-for="p in assignedCompliancePolicies" :key="p.id" class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm bg-gray-50 dark:bg-gray-900/50">
+                  <span class="flex items-center gap-2 min-w-0">
+                    <span class="w-2 h-2 rounded-full shrink-0" :style="{ backgroundColor: p.compliant ? SUCCESS : DANGER }" />
+                    <span class="truncate text-gray-900 dark:text-white">{{ p.name }}</span>
+                  </span>
+                  <span class="text-[10px] font-semibold shrink-0 uppercase" :style="{ color: p.compliant ? SUCCESS : (p.status === 'pending' ? WARNING : p.status === 'auto_fired' ? PRIMARY_BLUE : DANGER) }">
+                    {{ p.compliant ? "Compliant" : (String(p.status || "").replace("_", " ") || "Violating") }}
                   </span>
                 </div>
               </div>
-              <p v-else class="text-xs" :style="{ color: SUCCESS }">No open Compliance Policy violations for this device.</p>
+              <p v-else class="text-xs text-gray-400">No Compliance Policies are currently scoped to this device (platform/device audience).</p>
             </div>
 
             <div v-if="(device.activeViolations || []).length > 0" class="mb-6">
