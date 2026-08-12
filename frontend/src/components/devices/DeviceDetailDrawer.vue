@@ -213,15 +213,29 @@ function handleSegmentSelect(segment: { id: string | number; name: string }) {
   });
 }
 
+// Applivery Policy Composition priority is a real per-assignment number
+// (lower wins conflicts against other assigned policies), not array order —
+// see stores/devices.ts's ActivePolicy comment. This picker has no priority
+// selector, so a manually-added policy defaults to "yields to whatever's
+// already on the device" (a number higher than every existing numbered
+// assignment) rather than accidentally outranking policies the admin didn't
+// touch. 100 mirrors Applivery's own default foundation-policy priority,
+// used only when the device has no numbered assignments yet to react to.
+const DEFAULT_PRIORITY_BASELINE = 100;
+const PRIORITY_STEP = 10;
+
 function handleAddPolicy(policy: { id: string; name: string }) {
   activePicker.value = null;
   const d = device.value!;
-  const updated = [...(d.activePolicies || []), { id: policy.id, name: policy.name, platform: d.platform }];
+  const existing = d.activePolicies || [];
+  const numberedPriorities = existing.map((p) => p.priority).filter((n): n is number => typeof n === "number");
+  const newPriority = (numberedPriorities.length ? Math.max(...numberedPriorities) : DEFAULT_PRIORITY_BASELINE) + PRIORITY_STEP;
+  const updated = [...existing, { id: policy.id, name: policy.name, platform: d.platform, priority: newPriority, isPrimary: false }];
   runMutation(async () => {
     await store.updatePolicies(
       d.platformDeviceId,
       platform.value,
-      updated.map((p) => ({ id: p.id, name: p.name })),
+      updated.map((p) => ({ id: p.id, name: p.name, priority: p.priority, isPrimary: p.isPrimary })),
     );
     resolvedDevice.value = { ...d, activePolicies: updated };
   });
@@ -229,12 +243,14 @@ function handleAddPolicy(policy: { id: string; name: string }) {
 
 function handleRemovePolicy(policyToRemove: { id: string | null }) {
   const d = device.value!;
+  // Every remaining policy keeps its own real priority/isPrimary untouched —
+  // removing one policy shouldn't renumber or reorder any of the others.
   const updated = (d.activePolicies || []).filter((p) => p.id !== policyToRemove.id);
   runMutation(async () => {
     await store.updatePolicies(
       d.platformDeviceId,
       platform.value,
-      updated.map((p) => ({ id: p.id, name: p.name })),
+      updated.map((p) => ({ id: p.id, name: p.name, priority: p.priority, isPrimary: p.isPrimary })),
     );
     resolvedDevice.value = { ...d, activePolicies: updated };
   });

@@ -14,10 +14,17 @@ export const tagsUpdateSchema = z.object({
 });
 export type TagsUpdatePayload = z.infer<typeof tagsUpdateSchema>;
 
-// Port of PolicyRef (main.py:3653).
+// Port of PolicyRef (main.py:3653). priority/isPrimary are optional so old
+// callers that only ever sent {id, name} still validate — applyDevicePolicies
+// (devices.service.ts) falls back to array-position behavior when they're
+// absent, but every current caller (workflow remediation steps + the device
+// drawer's Add/Remove policy buttons) now round-trips the real values it got
+// from GET so an add/remove doesn't clobber every other policy's priority.
 export const policyRefSchema = z.object({
   id: z.string().nullish(),
   name: z.string().nullish(),
+  priority: z.number().nullish(),
+  isPrimary: z.boolean().nullish(),
 });
 export type PolicyRef = z.infer<typeof policyRefSchema>;
 

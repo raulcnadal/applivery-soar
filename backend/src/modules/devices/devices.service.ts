@@ -524,17 +524,30 @@ export async function updateDeviceTags(authorization: string, workspaceSlug: str
 
 /**
  * Push a device's policy stack — port of `_apply_device_policies`
- * (main.py:4196). Shared by the manual reassignment endpoint below and,
- * later, the Workflow engine's policy_replace/policy_add/policy_restore
- * steps (Phase 4) — this is the one place that knows the per-platform
- * payload shape.
+ * (main.py:4196). Shared by the manual reassignment endpoint below and the
+ * Workflow engine's policy_replace/policy_add/policy_restore steps.
+ *
+ * Applivery's Policy Composition (docs.applivery.com/en/device-management/
+ * general-settings/policy-composition) gives every *PolicyAssignments entry
+ * its own explicit integer `priority` (lower number = higher priority) —
+ * it's a real per-assignment value, not a function of array position. The
+ * previous version of this function ignored that and recomputed
+ * `priority: i + 1` from scratch on every call, which silently renumbered
+ * (and thus reordered the effective precedence of) every OTHER policy
+ * already on the device any time one policy was added, removed, or
+ * quarantine-swapped — including on policy_restore, where it meant "restore
+ * the original stack" didn't actually restore the original priorities.
+ * Callers now pass each policy's real `priority`/`isPrimary` (as read off
+ * the device by extractActivePolicies) straight through here instead of
+ * this function inventing new ones; `priority` is only defaulted by
+ * position for the rare legacy/partial caller that omits it.
  */
 export async function applyDevicePolicies(
   authorization: string,
   workspaceSlug: string,
   platform: string,
   deviceId: string,
-  policies: Array<{ id?: string | null; name?: string | null }>,
+  policies: Array<{ id?: string | null; name?: string | null; priority?: number | null; isPrimary?: boolean | null }>,
 ): Promise<{ ok: boolean; detail: string }> {
   const platformPath = platformPathSegment(platform);
   if (!platformPath || !["apple", "android", "windows"].includes(platformPath)) {
@@ -545,8 +558,14 @@ export async function applyDevicePolicies(
   const assignKey = { apple: "admPolicyAssignments", android: "emmPolicyAssignments", windows: "winPolicyAssignments" }[platformPath as "apple" | "android" | "windows"];
   const assignIdKey = { apple: "admPolicyId", android: "emmPolicyId", windows: "winPolicyId" }[platformPath as "apple" | "android" | "windows"];
 
-  const primaryId = policies.length > 0 ? policies[0].id : null;
-  const assignments = policies.slice(1).map((p, i) => ({ [assignIdKey]: p.id, priority: i + 1 }));
+  // Whichever entry is flagged isPrimary keeps the single top-level
+  // "primary policy" slot; if none is flagged (caller didn't have that
+  // info), fall back to the previous behavior of treating the first entry
+  // as primary so old/partial callers don't break.
+  const primaryIdx = policies.findIndex((p) => p.isPrimary);
+  const primaryId = primaryIdx >= 0 ? policies[primaryIdx].id : policies.length > 0 ? policies[0].id : null;
+  const rest = primaryIdx >= 0 ? policies.filter((_, i) => i !== primaryIdx) : policies.slice(1);
+  const assignments = rest.map((p, i) => ({ [assignIdKey]: p.id, priority: typeof p.priority === "number" ? p.priority : i + 1 }));
   const body: Record<string, unknown> = { [primaryKey]: primaryId, [assignKey]: assignments };
 
   const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };

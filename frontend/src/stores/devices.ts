@@ -12,6 +12,12 @@ export interface ActivePolicy {
   id: string | null;
   name: string;
   platform: string;
+  // Real Applivery Policy Composition priority (lower number wins conflicts
+  // against other assigned policies) — null for the device's single legacy
+  // "primary policy" slot, which has no priority number of its own. See
+  // deviceNormalize.ts's matching ActivePolicy comment on the backend.
+  priority: number | null;
+  isPrimary: boolean;
 }
 
 export interface NormalizedDevice {
@@ -246,7 +252,7 @@ export const useDevicesStore = defineStore("devices", () => {
     await fetchDevices(true);
   }
 
-  async function updatePolicies(platformDeviceId: string, platform: string, policyList: Array<{ id?: string | null; name?: string | null }>) {
+  async function updatePolicies(platformDeviceId: string, platform: string, policyList: Array<{ id?: string | null; name?: string | null; priority?: number | null; isPrimary?: boolean | null }>) {
     const { api } = await import("../api/http");
     await api.put(`/devices/${platformDeviceId}/policies`, { platform, policies: policyList });
     await fetchDevices(true);

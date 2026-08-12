@@ -70,14 +70,28 @@ export interface ActivePolicy {
   id: string | null;
   name: string;
   platform: string;
+  // Real Applivery Policy Composition priority (lower number = higher
+  // priority — see docs.applivery.com's Policy Composition guide; a
+  // device's single-policy-model "primary" slot below has no priority of
+  // its own, so this is only ever populated for entries that came off an
+  // *PolicyAssignments array, where Applivery's PUT device payload requires
+  // an explicit integer priority per assignment). null for a primary-slot
+  // entry or anything we couldn't find a priority on.
+  priority: number | null;
+  // True if this entry came from the single "primary policy" key
+  // (admPolicyId/emmPolicyId/winPolicyId) rather than the *PolicyAssignments
+  // array — applyDevicePolicies (devices.service.ts) needs this to know
+  // which entry (if any) to keep in that top-level slot when re-submitting,
+  // instead of collapsing everything down to array position like before.
+  isPrimary: boolean;
 }
 
-/** Clean, de-duplicated [{id, name, platform}] list of currently-applied policies (main.py:2908 _extract_active_policies). */
+/** Clean, de-duplicated [{id, name, platform, priority, isPrimary}] list of currently-applied policies (main.py:2908 _extract_active_policies, extended to carry each assignment's real priority so callers can compute a new policy's priority relative to what's actually on the device instead of guessing from array position). */
 export function extractActivePolicies(raw: Record<string, any>): ActivePolicy[] {
   const found: ActivePolicy[] = [];
   const seen = new Set<string>();
 
-  const add = (p: any, platform: string) => {
+  const add = (p: any, platform: string, priority: number | null, isPrimary: boolean) => {
     if (!p) return;
     let pid: string | null = null;
     let name: string | null = null;
@@ -93,11 +107,11 @@ export function extractActivePolicies(raw: Record<string, any>): ActivePolicy[] 
     const key = `${platform}:${pid ?? name}`;
     if (seen.has(key)) return;
     seen.add(key);
-    found.push({ id: pid, name: String(name).trim(), platform });
+    found.push({ id: pid, name: String(name).trim(), platform, priority, isPrimary });
   };
 
   for (const [key, platform] of SINGLE_POLICY_KEYS) {
-    add(raw[key], platform);
+    add(raw[key], platform, null, true);
   }
   for (const [key, platform] of ARRAY_POLICY_KEYS) {
     const items = raw[key];
@@ -105,9 +119,11 @@ export function extractActivePolicies(raw: Record<string, any>): ActivePolicy[] 
       for (const entry of items) {
         if (entry && typeof entry === "object") {
           const nested = entry.admPolicy || entry.emmPolicy || entry.winPolicy;
-          add(nested || entry, platform);
+          const rawPriority = entry.priority;
+          const priority = typeof rawPriority === "number" && Number.isFinite(rawPriority) ? rawPriority : null;
+          add(nested || entry, platform, priority, false);
         } else {
-          add(entry, platform);
+          add(entry, platform, null, false);
         }
       }
     }

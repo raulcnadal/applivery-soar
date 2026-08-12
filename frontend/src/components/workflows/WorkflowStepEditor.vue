@@ -406,13 +406,16 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
           :model-value="step.config.priority || 'bottom'"
           type="select"
           :options="[
-            { value: 'top', label: 'Primary (top priority)' },
-            { value: 'bottom', label: 'Lowest priority (fallback)' },
+            { value: 'top', label: 'Top priority (outranks existing policies)' },
+            { value: 'bottom', label: 'Lowest priority (fallback, yields to existing policies)' },
           ]"
           label="Priority"
           @update:model-value="step.config.priority = $event"
         />
-        <p class="text-xs text-gray-500 dark:text-gray-400">Adds alongside existing policies — doesn't replace them. The pre-change stack is snapshotted the same way, in case this needs undoing later.</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+          Adds alongside existing policies — doesn't replace them. We check the real priority numbers already on the device and place this one just above (Top priority) or just below (Lowest priority) them, so its settings actually
+          win or lose conflicts as expected instead of just reordering a list. The pre-change stack is snapshotted the same way, in case this needs undoing later.
+        </p>
       </template>
     </div>
 

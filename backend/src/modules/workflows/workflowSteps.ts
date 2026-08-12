@@ -188,7 +188,31 @@ export async function executePolicyReplaceStep(
   return { ok: true, detail: `Quarantined — replaced ${priorCount} ${noun} with '${policyName}'` };
 }
 
-/** Port of `_execute_policy_add_step` (main.py:6690) — add one policy alongside whatever's already assigned, at admin-chosen priority. */
+// Applivery's own Policy Composition priority bands (docs.applivery.com)
+// treat ~100 as a typical foundation-policy value — used only as the
+// neighbor point when a device has no numbered assignments yet to react to
+// (e.g. its only policy today is a legacy single "primary" assignment,
+// which carries no priority number of its own).
+const DEFAULT_PRIORITY_BASELINE = 100;
+const PRIORITY_STEP = 10;
+const PRIORITY_MIN = 0;
+const PRIORITY_MAX = 10000;
+
+/**
+ * Port of `_execute_policy_add_step` (main.py:6690) — add one policy
+ * alongside whatever's already assigned, at admin-chosen priority.
+ *
+ * Applivery priority is a real per-assignment integer (lower number = wins
+ * conflicts against other assigned policies — confirmed against Applivery's
+ * device PUT API + Policy Composition docs), not just array order. So
+ * "top priority" here doesn't mean "put it first in the list we resubmit" —
+ * it means giving the new policy a priority number lower than every
+ * existing numbered assignment on the device, so it actually outranks them;
+ * "lower priority" gives it a number higher than all of them, so it only
+ * fills in gaps none of the existing policies already cover. Every existing
+ * assignment keeps its own real priority untouched (see applyDevicePolicies'
+ * doc comment) — this step only ever picks a value for the NEW entry.
+ */
 export async function executePolicyAddStep(
   authorization: string,
   workspaceSlug: string,
@@ -206,18 +230,40 @@ export async function executePolicyAddStep(
   await snapshotPoliciesIfNeeded(workspaceSlug, device.id, deviceFull, workflowId);
 
   const current = deviceFull.activePolicies ?? [];
-  const currentIds = current.filter((p: any) => p.id).map((p: any) => ({ id: p.id }));
-  const newEntry = { id: policyId };
-  const newStack = priority === "top" ? [newEntry, ...currentIds] : [...currentIds, newEntry];
+  const currentValid = current.filter((p) => p.id);
+  const numberedPriorities = currentValid.map((p) => p.priority).filter((n): n is number => typeof n === "number");
+
+  let newPriority: number;
+  if (priority === "top") {
+    const lowest = numberedPriorities.length ? Math.min(...numberedPriorities) : DEFAULT_PRIORITY_BASELINE;
+    newPriority = Math.max(PRIORITY_MIN, lowest - PRIORITY_STEP);
+  } else {
+    const highest = numberedPriorities.length ? Math.max(...numberedPriorities) : DEFAULT_PRIORITY_BASELINE;
+    newPriority = Math.min(PRIORITY_MAX, highest + PRIORITY_STEP);
+  }
+
+  const newEntry = { id: policyId, priority: newPriority, isPrimary: false };
+  const newStack = [...currentValid, newEntry];
 
   const { ok, detail } = await applyDevicePolicies(authorization, workspaceSlug, device.platform, device.platformDeviceId, newStack);
   if (!ok) return { ok: false, detail };
   const policyName = config?.policyName || policyId;
   const noun = newStack.length === 1 ? "policy" : "policies";
-  return { ok: true, detail: `Added '${policyName}' as ${priority === "top" ? "primary" : "lowest-priority fallback"} (${newStack.length} ${noun} total)` };
+  return { ok: true, detail: `Added '${policyName}' at priority ${newPriority} (${priority === "top" ? "outranks" : "yields to"} the ${numberedPriorities.length ? "existing" : "device's"} policies, ${newStack.length} ${noun} total)` };
 }
 
-/** Port of `_execute_policy_restore_step` (main.py:6718) — put back exactly the policy stack that was in place before the first quarantine step touched this device, then clear the snapshot. */
+/**
+ * Port of `_execute_policy_restore_step` (main.py:6718) — put back exactly
+ * the policy stack that was in place before the first quarantine step
+ * touched this device, then clear the snapshot. The snapshot was captured
+ * by snapshotPoliciesIfNeeded straight off `deviceFull.activePolicies`,
+ * which (since extractActivePolicies now carries each entry's real
+ * priority/isPrimary) preserves the ORIGINAL priority numbers too — restore
+ * round-trips them back to applyDevicePolicies as-is instead of collapsing
+ * to bare {id}s and letting them get renumbered by array position, which
+ * previously meant "restore" quietly changed every policy's precedence
+ * instead of truly reverting the device to its pre-quarantine state.
+ */
 export async function executePolicyRestoreStep(
   authorization: string,
   workspaceSlug: string,
@@ -226,7 +272,9 @@ export async function executePolicyRestoreStep(
   const snapshot = await prisma.policyQuarantineEntry.findUnique({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId: device.id } } });
   if (!snapshot) return { ok: false, detail: "No saved policy snapshot for this device — nothing to restore" };
 
-  const policies = ((snapshot.policies as any[]) ?? []).filter((p) => p?.id).map((p) => ({ id: p.id }));
+  const policies = ((snapshot.policies as any[]) ?? [])
+    .filter((p) => p?.id)
+    .map((p) => ({ id: p.id, priority: typeof p.priority === "number" ? p.priority : null, isPrimary: p.isPrimary === true }));
   const { ok, detail } = await applyDevicePolicies(authorization, workspaceSlug, device.platform, device.platformDeviceId, policies);
   if (!ok) return { ok: false, detail };
   await prisma.policyQuarantineEntry.delete({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId: device.id } } });
