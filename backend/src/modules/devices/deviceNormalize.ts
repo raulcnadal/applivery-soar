@@ -190,6 +190,13 @@ export interface NormalizedDevice {
   policyViolations?: Array<Record<string, any>>;
   policyCompliant?: boolean;
   osUpdateStatus?: Record<string, any> | null;
+  // Windows-only — the human-readable feature-update name (e.g. "Windows
+  // 11, version 25H2") for this device's raw osVersion build number.
+  // Applivery's own inventory only ever reports the bare build string (e.g.
+  // "10.0.26200.5074"), never a marketing name — computed independently of
+  // osUpdateStatus (a pure sync lookup, no MSRC catalog dependency) so it's
+  // always available even when the update-intelligence catalog itself isn't.
+  windowsVersionLabel?: string | null;
   vulnStatus?: Record<string, any> | null;
   osLifecycleStatus?: Record<string, any> | null;
   appleAppUpdateStatus?: Record<string, any> | null;

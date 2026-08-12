@@ -72,6 +72,10 @@ export interface NormalizedDevice {
   vulnServiceStatus: Record<string, any> | null;
   osLifecycleStatus: Record<string, any> | null;
   appleAppUpdateStatus: Record<string, any> | null;
+  // Windows-only feature-update name (e.g. "Windows 11, version 25H2") for
+  // this device's raw osVersion build number — Applivery's own inventory
+  // never reports a marketing name, only the bare build string.
+  windowsVersionLabel?: string | null;
 }
 
 export interface PickerItem {

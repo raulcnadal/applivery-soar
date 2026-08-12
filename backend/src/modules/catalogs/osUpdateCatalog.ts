@@ -13,6 +13,14 @@ const MONTHS_BACK = 15;
 export const OS_UPDATE_TICK_MS = 86_400_000; // daily
 
 export const WINDOWS_BUILD_TO_FEATURE: Record<number, string> = {
+  // 28000/26200 verified against Microsoft's own windows11-release-information
+  // doc (learn.microsoft.com) as of 2026-08 — 26H1 is a hardware-scoped
+  // release (new devices only, not offered as an in-place update on existing
+  // 24H2/25H2 machines), and 25H2 is delivered as an enablement package on
+  // top of 24H2's servicing branch (26100 and 26200 both keep receiving the
+  // same monthly cumulative updates).
+  28000: "Windows 11, version 26H1",
+  26200: "Windows 11, version 25H2",
   26100: "Windows 11, version 24H2",
   22631: "Windows 11, version 23H2",
   22621: "Windows 11, version 22H2",
@@ -25,6 +33,8 @@ export const WINDOWS_BUILD_TO_FEATURE: Record<number, string> = {
   17763: "Windows Server 2019 / version 1809",
 };
 const WINDOWS_PRODUCT_KEYWORDS: Record<number, string[]> = {
+  28000: ["windows 11", "26h1"],
+  26200: ["windows 11", "25h2"],
   26100: ["windows 11", "24h2"],
   22631: ["windows 11", "23h2"],
   22621: ["windows 11", "22h2"],

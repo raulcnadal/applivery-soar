@@ -495,9 +495,21 @@ function logBody(l: Record<string, any>): string {
 
             <div class="mb-6">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Hardware &amp; OS</p>
+              <!-- "Windows version" cross-references the raw osVersion build
+                   number above (Applivery's inventory only ever reports e.g.
+                   "10.0.28000.2704", never a marketing name) against
+                   windowsVersionLabel, the backend's build-to-feature-name
+                   lookup (osUpdateCatalog.ts). Edition (Pro/Enterprise/
+                   Enterprise LTSC/...) has no Applivery equivalent at all —
+                   it only appears once the SOAR Agent has reported it
+                   (selfReported.attributes.osEdition), so this row degrades
+                   gracefully to just the version name until then. -->
               <div v-for="row in [
                 ['Model', device.manufacturer ? `${device.manufacturer} ${device.model}`.trim() : device.model],
                 ['OS version', device.osVersion],
+                ['Windows version', (device as any).windowsVersionLabel
+                  ? `${(device as any).windowsVersionLabel}${(device.selfReported as any)?.attributes?.osEdition ? ` · ${(device.selfReported as any).attributes.osEdition}` : ''}`
+                  : null],
                 ['MAC address', (device as any).macAddress],
                 ['IP address', (device as any).ipAddress],
                 ['Management mode', (device as any).managementMode],

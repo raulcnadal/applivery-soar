@@ -17,7 +17,7 @@ import {
   type NormalizedDevice,
 } from "./deviceNormalize";
 import type { BulkReattestPayload, PoliciesUpdatePayload, SegmentUpdatePayload, TagsUpdatePayload } from "./devices.schemas";
-import { loadOsUpdateCatalog, computeWindowsPendingUpdates } from "../catalogs/osUpdateCatalog";
+import { loadOsUpdateCatalog, computeWindowsPendingUpdates, windowsDeviceBuild } from "../catalogs/osUpdateCatalog";
 import { loadVulnCatalog, computeApplePendingVulns, computeAndroidPendingVulns } from "../catalogs/vulnCatalog";
 import { loadOsLifecycleCatalog, computeOsLifecycleStatus } from "../catalogs/osLifecycleCatalog";
 import { loadGdmfCatalog } from "../catalogs/gdmfCatalog";
@@ -326,6 +326,7 @@ export async function getDevicesFull(
     d.policyCompliant = policyViolations.length === 0;
 
     d.osUpdateStatus = d.platform === "windows" ? computeWindowsPendingUpdates(d.osVersion, osUpdateCatalog) : null;
+    d.windowsVersionLabel = d.platform === "windows" ? windowsDeviceBuild(d.osVersion)?.featureLabel ?? null : null;
     if (d.platform === "apple" || d.platform === "macos") {
       d.vulnStatus = computeApplePendingVulns(d.platform, d.osVersion, vulnCatalog);
     } else if (d.platform === "android") {

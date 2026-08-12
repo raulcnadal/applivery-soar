@@ -19,6 +19,7 @@ export const WINDOWS_ATTR_ALIASES: Record<string, string> = {
   AntivirusUpToDate: "antivirusUpToDate",
   OsBuild: "osBuildNumber",
   OsBuildNumber: "osBuildNumber",
+  OsEdition: "osEdition",
   PendingUpdatesCount: "pendingOsUpdates",
   DomainJoined: "domainJoined",
   AzureAdJoined: "entraJoined",
