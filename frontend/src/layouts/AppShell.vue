@@ -301,8 +301,18 @@ function onCloned() {
     <!-- Mobile nav (<768px) — compact bar (hamburger + logo + settings), all
          other chrome from the desktop nav/footer (tabs, workspace switcher,
          audit logs, theme, sign out) lives in the slide-out drawer below,
-         since there's no room for it in a 56px bar. -->
-    <nav v-else class="h-14 min-h-14 flex items-center justify-between px-3 z-50 shrink-0" :style="{ backgroundColor: PRIMARY_BLUE }">
+         since there's no room for it in a 56px bar.
+
+         `relative` matters here as much as `z-50` does: without a position
+         value this nav is `position: static`, and per CSS stacking rules
+         static content always paints BELOW any positioned descendant
+         elsewhere on the page (step 3 vs step 6 of the stacking order),
+         regardless of z-index or DOM order. Views that lean on
+         `relative`/`absolute` for full-bleed layout (Playground's globe/map,
+         most visibly) were painting over this bar and swallowing clicks on
+         the hamburger button as a result — the desktop nav above already has
+         `relative` for the same reason, this one was missing it. -->
+    <nav v-else class="h-14 min-h-14 flex items-center justify-between px-3 z-50 shrink-0 relative" :style="{ backgroundColor: PRIMARY_BLUE }">
       <div class="flex items-center gap-2">
         <button
           type="button"

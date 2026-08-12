@@ -170,7 +170,14 @@ onMounted(async () => {
         </div>
         <p class="text-sm mt-1 text-gray-400">Policies watch device conditions and fire a linked Workflow the moment a device falls out of compliance.</p>
       </div>
-      <div class="flex items-center gap-2 shrink-0 ml-auto flex-wrap">
+      <!-- w-full sm:w-auto matches the same fix already applied to
+           DevicesView/WorkflowsView/ReportingView's header action row: this
+           div's own flex-wrap only has room to wrap its buttons onto
+           multiple lines once the div itself is allowed to take the full
+           header width on mobile — shrink-0 alone left it hugging its
+           unwrapped content width, which is wider than the viewport, so the
+           whole header scrolled horizontally instead of stacking. -->
+      <div class="flex items-center gap-2 shrink-0 ml-auto flex-wrap w-full sm:w-auto">
         <select
           v-model="evaluateScopePolicyId"
           :disabled="isEvaluating"
