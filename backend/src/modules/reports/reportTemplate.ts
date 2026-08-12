@@ -14,6 +14,18 @@ import type { WidgetResponse } from "../analytics/widgets.service";
  * inlined directly into the page so PDF generation needs no network access
  * at runtime (the container may not have one, and shouldn't need one just
  * to render a report).
+ *
+ * Branding assets follow the same "vendor it, inline it, no network at
+ * render time" rule: the wordmark (assets/vendor/applivery-logo.svg, the
+ * same white-fill SVG LoginView.vue uses) is inlined as raw markup in the
+ * top bar, and Outfit — the BlueSky design system's --font-sans, normally
+ * pulled from Google Fonts via a <link> in frontend/index.html — is
+ * vendored locally as three woff2 weights (400/600/700, via
+ * @fontsource/outfit, OFL-1.1 licensed — see assets/vendor/fonts/) and
+ * embedded as base64 data-URI @font-face rules. A <link> to Google Fonts
+ * would work fine when Puppeteer's container does have egress, but silently
+ * depending on that would quietly break this exact "no network needed"
+ * property for anyone running it without one.
  */
 
 export interface ReportDisplayOptions {
@@ -26,6 +38,10 @@ export interface ReportDisplayOptions {
 }
 
 const CHART_JS_SOURCE = fs.readFileSync(path.resolve(__dirname, "../../../assets/vendor/chart.umd.js"), "utf-8");
+const APPLIVERY_LOGO_SVG = fs.readFileSync(path.resolve(__dirname, "../../../assets/vendor/applivery-logo.svg"), "utf-8");
+const OUTFIT_400_B64 = fs.readFileSync(path.resolve(__dirname, "../../../assets/vendor/fonts/outfit-400.woff2")).toString("base64");
+const OUTFIT_600_B64 = fs.readFileSync(path.resolve(__dirname, "../../../assets/vendor/fonts/outfit-600.woff2")).toString("base64");
+const OUTFIT_700_B64 = fs.readFileSync(path.resolve(__dirname, "../../../assets/vendor/fonts/outfit-700.woff2")).toString("base64");
 
 const PALETTE = ["#0E4FF5", "#A855F7", "#0078D4", "#EC4899", "#14B8A6", "#F59E0B", "#EF4444", "#3DDC84"];
 
@@ -109,6 +125,19 @@ interface ReportSection {
   chartConfig: Record<string, unknown> | null;
   tableHtml: string | null;
   fullWidth: boolean;
+  // Set only for donut/pie charts — a hand-built HTML legend (colored
+  // square swatch + label + value) that replaces Chart.js's own default
+  // legend entirely, matching the app's own dashboard widget style (see
+  // WidgetCard.vue's isDonutPie branch: chart left, legend list right)
+  // rather than Chart.js's plain top-of-chart legend row.
+  legendItems?: Array<{ name: string; value: number; color: string }>;
+  // Set only for actual donut charts (not pie — pie's hollow-less radius
+  // has no room for it, same rule WidgetCard.vue's graphic overlay uses):
+  // the sum of all slice values, overlaid as centered "N / Total" text in
+  // the donut's hole via CSS absolute positioning rather than a Chart.js
+  // plugin (simpler, and doesn't depend on plugin-registration API shape
+  // matching whatever Chart.js version happens to be vendored).
+  donutTotal?: number | null;
 }
 
 let chartCanvasCounter = 0;
@@ -142,7 +171,12 @@ function buildSections(reportData: Record<string, WidgetResponse | { error: stri
         },
         options: { animation: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true } } },
       };
-    } else if ((display.donut ?? true) && chartData.length) {
+    }
+
+    let legendItems: Array<{ name: string; value: number; color: string }> | undefined;
+    let donutTotal: number | null | undefined;
+
+    if (!chartConfig && (display.donut ?? true) && chartData.length) {
       const filtered = chartData.slice(0, 8).filter((d) => Number(d.value) > 0);
       if (filtered.length > 1) {
         canvasId = `chart-${chartCanvasCounter++}`;
@@ -154,10 +188,21 @@ function buildSections(reportData: Record<string, WidgetResponse | { error: stri
           chartConfig = { type: "radar", data: { labels, datasets: [{ label: cleanTitle, data: values, borderColor: "#0E4FF5", backgroundColor: "rgba(14,79,245,0.25)" }] }, options: { animation: false, plugins: { legend: { display: false } } } };
         } else if (distType === "bar") {
           chartConfig = { type: "bar", data: { labels, datasets: [{ label: cleanTitle, data: values, backgroundColor: colors }] }, options: { animation: false, plugins: { legend: { display: false } } } };
-        } else if (distType === "pie") {
-          chartConfig = { type: "pie", data: { labels, datasets: [{ data: values, backgroundColor: colors }] }, options: { animation: false } };
         } else {
-          chartConfig = { type: "doughnut", data: { labels, datasets: [{ data: values, backgroundColor: colors }] }, options: { animation: false, cutout: "55%" } };
+          // pie/donut: Chart.js's own default legend (a horizontal row of
+          // swatches crammed above the chart) is what the report screenshot
+          // showed as "a mess on top of the chart" -- plugins.legend.display
+          // is now explicitly false on both, and legendItems/donutTotal
+          // below drive a hand-built HTML legend + center-total overlay
+          // instead, styled to match WidgetCard.vue's own donut/pie widget
+          // (chart left, colored-swatch/label/value list right).
+          legendItems = labels.map((name, i) => ({ name: titleCase(name), value: Number(values[i]) || 0, color: colors[i] }));
+          if (distType === "pie") {
+            chartConfig = { type: "pie", data: { labels, datasets: [{ data: values, backgroundColor: colors }] }, options: { animation: false, plugins: { legend: { display: false } } } };
+          } else {
+            donutTotal = values.reduce((sum, v) => sum + (Number(v) || 0), 0);
+            chartConfig = { type: "doughnut", data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] }, options: { animation: false, cutout: "59%", plugins: { legend: { display: false } } } };
+          }
         }
       }
     }
@@ -168,7 +213,7 @@ function buildSections(reportData: Record<string, WidgetResponse | { error: stri
 
     if (chartConfig && canvasId) canvasConfigs.push({ id: canvasId, config: chartConfig });
     if (chartConfig || html) {
-      sections.push({ title: cleanTitle, chartConfig: chartConfig ? { canvasId } : null, tableHtml: html, fullWidth });
+      sections.push({ title: cleanTitle, chartConfig: chartConfig ? { canvasId } : null, tableHtml: html, fullWidth, legendItems, donutTotal });
     }
   }
 
@@ -225,14 +270,41 @@ export function buildReportHtml(params: BuildReportHtmlParams): string {
 
   const cardsHtml = sections
     .map((s) => {
-      const canvasHtml = s.chartConfig ? `<div class="chart-container"><canvas id="${(s.chartConfig as any).canvasId}"></canvas></div>` : "";
-      return `<div class="card${s.fullWidth ? " card-full" : ""}"><h2>${escapeHtml(s.title)}</h2>${canvasHtml}${s.tableHtml ? `<div class="table-container">${s.tableHtml}</div>` : ""}</div>`;
+      let chartHtml = "";
+      if (s.chartConfig) {
+        const canvasId = (s.chartConfig as any).canvasId;
+        const canvasEl = `<canvas id="${canvasId}"></canvas>`;
+        if (s.legendItems?.length) {
+          // Widget-style layout (WidgetCard.vue's isDonutPie branch): the
+          // chart sits in a fixed, roughly-square box on the left with the
+          // hand-built legend list filling the rest of the row on the
+          // right, instead of Chart.js's own default legend squeezed above
+          // a full-width chart.
+          const centerHtml = s.donutTotal != null ? `<div class="donut-center"><div class="donut-center-value">${s.donutTotal.toLocaleString()}</div><div class="donut-center-label">Total</div></div>` : "";
+          const legendHtml = s.legendItems
+            .map(
+              (li) =>
+                `<div class="legend-row"><span class="legend-left"><span class="legend-swatch" style="background:${li.color}"></span><span class="legend-label">${escapeHtml(li.name)}</span></span><span class="legend-value">${li.value.toLocaleString()}</span></div>`,
+            )
+            .join("");
+          chartHtml = `<div class="donut-row"><div class="donut-chart-wrap">${canvasEl}${centerHtml}</div><div class="chart-legend">${legendHtml}</div></div>`;
+        } else {
+          chartHtml = `<div class="chart-container">${canvasEl}</div>`;
+        }
+      }
+      return `<div class="card${s.fullWidth ? " card-full" : ""}"><h2>${escapeHtml(s.title)}</h2>${chartHtml}${s.tableHtml ? `<div class="table-container">${s.tableHtml}</div>` : ""}</div>`;
     })
     .join("");
 
   const chartsScript = `<script>${CHART_JS_SOURCE}</script>
 <script>
   window.addEventListener('load', function () {
+    // Outfit everywhere, including whatever text Chart.js itself draws onto
+    // the canvas (trend-chart axis ticks, tooltips) -- CSS @font-face alone
+    // only covers real DOM text, not canvas-rendered glyphs.
+    if (window.Chart && Chart.defaults && Chart.defaults.font) {
+      Chart.defaults.font.family = "'Outfit', system-ui, sans-serif";
+    }
     var configs = ${JSON.stringify(canvasConfigs)};
     configs.forEach(function (c) {
       var el = document.getElementById(c.id);
@@ -247,9 +319,13 @@ export function buildReportHtml(params: BuildReportHtmlParams): string {
 <head>
 <meta charset="utf-8" />
 <style>
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; background:#F4F7FB; margin:0; padding:0; color:#263238; }
+  @font-face { font-family: 'Outfit'; font-style: normal; font-weight: 400; font-display: swap; src: url(data:font/woff2;base64,${OUTFIT_400_B64}) format('woff2'); }
+  @font-face { font-family: 'Outfit'; font-style: normal; font-weight: 600; font-display: swap; src: url(data:font/woff2;base64,${OUTFIT_600_B64}) format('woff2'); }
+  @font-face { font-family: 'Outfit'; font-style: normal; font-weight: 700; font-display: swap; src: url(data:font/woff2;base64,${OUTFIT_700_B64}) format('woff2'); }
+  body { font-family: 'Outfit', 'Helvetica Neue', Arial, sans-serif; background:#F4F7FB; margin:0; padding:0; color:#263238; }
   .top-bar { background:#0E4FF5; padding:24px 40px; display:flex; align-items:center; justify-content:space-between; }
-  .top-bar .tool-name { color:#fff; font-size:20px; font-weight:600; letter-spacing:0.5px; }
+  .top-bar .tool-logo { line-height:0; }
+  .top-bar .tool-logo svg { height:22px; width:auto; display:block; }
   .top-bar .header-badge { color:#fff; background:rgba(255,255,255,0.15); padding:8px 16px; border-radius:20px; font-size:13px; font-weight:600; text-transform:uppercase; }
   .report-container { padding:40px; box-sizing:border-box; }
   .report-title { color:#0E4FF5; font-size:32px; font-weight:700; margin:0 0 10px 0; }
@@ -261,6 +337,22 @@ export function buildReportHtml(params: BuildReportHtmlParams): string {
   .card { background:#fff; border-radius:10px; padding:32px; border:1px solid #EAECEF; margin-bottom:32px; break-inside:avoid; page-break-inside:avoid; }
   .card h2 { margin-top:0; font-size:18px; color:#0E4FF5; border-bottom:2px solid #F4F7FB; padding-bottom:16px; margin-bottom:24px; text-transform:uppercase; letter-spacing:0.5px; }
   .chart-container { width:100%; height:280px; margin-bottom:24px; }
+  /* Donut/pie layout — 1:1 port of the app's own WidgetCard.vue
+     isDonutPie branch: a roughly-square chart on the left, a hand-built
+     colored-swatch/label/value legend filling the rest of the row on the
+     right, replacing Chart.js's own default legend entirely. */
+  .donut-row { display:flex; align-items:center; gap:28px; margin-bottom:8px; }
+  .donut-chart-wrap { position:relative; flex:0 0 220px; width:220px; height:220px; }
+  .donut-chart-wrap canvas { width:100% !important; height:100% !important; }
+  .donut-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; }
+  .donut-center-value { font-size:28px; font-weight:700; color:#263238; line-height:1; }
+  .donut-center-label { font-size:11px; font-weight:400; color:#64748B; margin-top:6px; }
+  .chart-legend { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .legend-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:5px 8px; border-radius:8px; }
+  .legend-left { display:flex; align-items:center; gap:8px; min-width:0; }
+  .legend-swatch { width:11px; height:11px; border-radius:3px; flex-shrink:0; }
+  .legend-label { font-size:13px; font-weight:400; color:#64748B; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .legend-value { font-size:13px; font-weight:600; color:#263238; flex-shrink:0; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th { text-align:left; padding:14px; background:#F8FAFC; border-bottom:2px solid #CBD5E1; color:#334155; font-weight:700; text-transform:uppercase; font-size:12px; }
   td { padding:14px; border-bottom:1px solid #F1F5F9; color:#334155; font-weight:500; }
@@ -270,7 +362,7 @@ export function buildReportHtml(params: BuildReportHtmlParams): string {
 </style>
 </head>
 <body>
-  <div class="top-bar"><span class="tool-name">Applivery SOAR</span><div class="header-badge">${escapeHtml(params.workspaceName)} — Automated Report</div></div>
+  <div class="top-bar"><div class="tool-logo">${APPLIVERY_LOGO_SVG}</div><div class="header-badge">${escapeHtml(params.workspaceName)} — Automated Report</div></div>
   <div class="report-container">
     <h1 class="report-title">${escapeHtml(params.reportTitle)}</h1>
     <div class="report-date">Generated on: ${escapeHtml(params.generatedDate)} | Time Lapse: ${escapeHtml(params.timeLapse)}</div>
