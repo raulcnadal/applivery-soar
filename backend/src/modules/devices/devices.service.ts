@@ -104,6 +104,12 @@ async function ensureReattestLibraryEntry(authorization: string, orgBase: string
 
 export const DEVICES_CACHE_SOURCE = "devices_full";
 
+// Separate, longer-lived cache entry — see the doc comment at its liveCacheSet
+// call site (inside getDevicesFull) for why this must NOT share a cache key
+// with DEVICES_CACHE_SOURCE.
+export const DEVICE_SERIAL_INDEX_SOURCE = "devices_serial_index";
+export const DEVICE_SERIAL_INDEX_TTL_SECONDS = 86_400; // 24h
+
 // Port of `CASE_OPEN_STATUSES` (main.py:11801) — Cases don't exist yet
 // (Phase 5), so this always yields zero rows for now; kept as the real
 // query shape so wiring in Phase 5 is additive, not a rewrite.
@@ -377,6 +383,29 @@ export async function getDevicesFull(
   };
 
   liveCacheSet(slugKey, DEVICES_CACHE_SOURCE, responseData, DEVICES_CACHE_TTL_SECONDS);
+
+  // Serial → {id, displayName} index for the device self-report webhooks
+  // (deviceData.service.ts's cachedDeviceBySerial) — deliberately a SEPARATE
+  // cache entry from DEVICES_CACHE_SOURCE above, with its own much longer
+  // TTL, so it survives invalidateDevicesCache(). Without this separation,
+  // every successful attributes report (POST /api/device-data/report)
+  // invalidates DEVICES_CACHE_SOURCE at the end of reportDeviceData — and
+  // since the Windows/macOS agent always sends its app-inventory report
+  // (POST /api/device-data/report-apps) immediately afterward in the same
+  // cycle, that second call's cachedDeviceBySerial lookup would find the
+  // cache just-emptied and fail to match the very same serial number that
+  // matched moments earlier, permanently buffering the report into
+  // PendingAppReport (see reportDeviceApps's doc comment) — a real,
+  // deterministic bug this index exists to close off. 24h TTL is safe here:
+  // this is a pure identity lookup (serial->id/displayName), not device
+  // state, so staleness only means a very recently renamed device shows its
+  // old name in an audit log line for a while, never a matching failure.
+  const serialIndex: Record<string, { id: string; displayName: string | null }> = {};
+  for (const d of normalized) {
+    if (d.serialNumber) serialIndex[d.serialNumber] = { id: d.id, displayName: d.displayName ?? null };
+  }
+  liveCacheSet(slugKey, DEVICE_SERIAL_INDEX_SOURCE, serialIndex, DEVICE_SERIAL_INDEX_TTL_SECONDS);
+
   return responseData;
 }
 

@@ -44,6 +44,17 @@ export async function runInstalledAppsRefresherTick(): Promise<void> {
       const devicesResp = await getDevicesFull(bearer, workspaceSlug, false);
       const devices = devicesResp.items;
 
+      // Flush any self-reported app inventory buffered in PendingAppReport
+      // (deviceData.service.ts's reportDeviceApps) now that we have a fresh,
+      // real device list in hand — see reconcilePendingAppReports's doc
+      // comment for why this can't happen inside the report webhook itself.
+      const { reconcilePendingAppReports } = await import("../devices/deviceData.service");
+      try {
+        await reconcilePendingAppReports(workspaceSlug, devices);
+      } catch (e) {
+        console.warn(`[Installed Apps Refresher] reconcilePendingAppReports for ${workspaceSlug} failed: ${e}`);
+      }
+
       const targetIds = appListScopedDeviceIds(devices, policies as any);
       if (!targetIds.size) continue;
 

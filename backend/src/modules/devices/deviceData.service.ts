@@ -4,7 +4,7 @@ import { recordAuditEvent } from "../../services/auditLog";
 import { HttpError } from "../../utils/httpError";
 import { decryptSecret } from "../../utils/secretCipher";
 import { liveCacheGet } from "../../services/liveCache";
-import { DEVICES_CACHE_SOURCE } from "./devices.service";
+import { DEVICE_SERIAL_INDEX_SOURCE } from "./devices.service";
 
 // invalidateDevicesCache is loaded dynamically (not a static top-level
 // import) below, same as compliance.service.ts/workflows.service.ts's own
@@ -49,11 +49,23 @@ export async function verifyDeviceReportSecret(workspaceSlug: string, providedSe
   }
 }
 
-/** Best-effort device name lookup from whatever's already in the (possibly stale) in-memory devices cache — never a live Applivery call from a webhook handler. */
-function cachedDeviceBySerial(workspaceSlug: string, serialNumber: string): NormalizedDevice | null {
-  const cached = liveCacheGet<{ items: NormalizedDevice[] }>(workspaceSlug, DEVICES_CACHE_SOURCE);
-  if (!cached) return null;
-  return cached.items.find((d) => d.serialNumber === serialNumber) ?? null;
+/**
+ * Best-effort serial -> {id, displayName} lookup for the self-report
+ * webhooks below — never a live Applivery call from a webhook handler (no
+ * bearer token available in this request context, only the device-report
+ * secret). Reads DEVICE_SERIAL_INDEX_SOURCE specifically, NOT the volatile
+ * DEVICES_CACHE_SOURCE devices.service.ts's admin-facing reads use: that
+ * cache gets invalidated at the end of every successful reportDeviceData
+ * call (below), and since the Windows/macOS agent always sends its
+ * app-inventory report immediately afterward in the same cycle, reading the
+ * same cache key here would mean reportDeviceApps's lookup finds the entry
+ * just-emptied and fails to match the very serial number that matched
+ * moments earlier — a real bug this split was added to close (see
+ * DEVICE_SERIAL_INDEX_SOURCE's doc comment in devices.service.ts).
+ */
+function cachedDeviceBySerial(workspaceSlug: string, serialNumber: string): { id: string; displayName: string | null } | null {
+  const index = liveCacheGet<Record<string, { id: string; displayName: string | null }>>(workspaceSlug, DEVICE_SERIAL_INDEX_SOURCE);
+  return index?.[serialNumber] ?? null;
 }
 
 /**
@@ -201,6 +213,52 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
   });
 
   return { status: "ok", serialNumber: payload.serialNumber, appsReported: identifiers.length, matched: matchedFlag };
+}
+
+/**
+ * Flushes any app-inventory reports buffered in PendingAppReport (see
+ * reportDeviceApps above) that can now be matched against `devices` — the
+ * reconciler promised-but-never-implemented in this file's earlier history
+ * ("the (not yet ported) installed-apps rolling refresher to reconcile").
+ * Callers pass in a `devices` list they already fetched live (real Applivery
+ * credentials, not the ephemeral cache reportDeviceApps itself is limited
+ * to) — installedAppsJobs.ts's 30s refresher tick is the natural home for
+ * this, since it already loads a fresh device list every tick for its own
+ * budgeted-refresh work. A device usually only stays "pending" for one
+ * report cycle now that DEVICE_SERIAL_INDEX_SOURCE (devices.service.ts) is
+ * decoupled from the volatile devices-blob cache, but this closes the loop
+ * for the genuinely first-ever report from a brand-new device, or any
+ * workspace without an installed-apps refresher pass running yet.
+ */
+export async function reconcilePendingAppReports(workspaceSlug: string, devices: NormalizedDevice[]): Promise<number> {
+  const pending = await prisma.pendingAppReport.findMany({ where: { workspaceSlug } });
+  if (!pending.length) return 0;
+
+  const bySerial = new Map(devices.filter((d) => d.serialNumber).map((d) => [d.serialNumber, d]));
+  const nowIso = new Date().toISOString();
+  let reconciled = 0;
+
+  for (const row of pending) {
+    const device = bySerial.get(row.deviceId);
+    if (!device) continue;
+    await prisma.installedAppInventory.upsert({
+      where: { workspaceSlug_deviceId: { workspaceSlug, deviceId: device.id } },
+      create: { workspaceSlug, deviceId: device.id, apps: row.payload as any, reportedAt: new Date(nowIso) },
+      update: { apps: row.payload as any, reportedAt: new Date(nowIso) },
+    });
+    await prisma.pendingAppReport.delete({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId: row.deviceId } } });
+    reconciled++;
+  }
+
+  if (reconciled > 0) {
+    await invalidateDevicesCacheFor(workspaceSlug);
+    await recordAuditEvent(workspaceSlug, {
+      category: "system", action: "device_apps_reconciled", actor: "system",
+      targetType: "device", targetId: "bulk", targetName: `${reconciled} device(s)`,
+      message: `Reconciled ${reconciled} previously-buffered self-reported app inventory report(s) now that the device(s) matched Applivery's fleet.`,
+    });
+  }
+  return reconciled;
 }
 
 /**
