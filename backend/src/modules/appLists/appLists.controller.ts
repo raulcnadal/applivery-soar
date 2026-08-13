@@ -16,6 +16,8 @@ import {
   updateAppList,
 } from "./appCatalog.service";
 import { searchApps } from "./appSearch.service";
+import { fetchWindowsApplicationDetail, fetchWindowsApplications, matchWindowsApplication } from "./windowsAppCatalog.service";
+import { resolveOrgBase } from "../auth/rbac.service";
 import {
   getAppleAppUpdatesStatus,
   getInstalledAppsStatus,
@@ -177,6 +179,37 @@ appListsRouter.get(
     requireCreds(authorization, workspaceSlug);
     const devicesResp = await getDevicesFull(authorization, workspaceSlug!, false);
     res.json(await getReportedAppsOverview(workspaceSlug!, devicesResp.items));
+  }),
+);
+
+// ── Windows app catalog lookup (Apps view detail modal) ──
+appListsRouter.get(
+  "/api/app-lists/windows-app-detail",
+  ...readCompliance,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    const name = typeof req.query.name === "string" ? req.query.name.trim() : "";
+    if (!name) {
+      res.json({ matched: false, application: null });
+      return;
+    }
+    const headers = { Authorization: authorization, "Content-Type": "application/json" };
+    const orgBase = await resolveOrgBase(headers, workspaceSlug!);
+    const items = await fetchWindowsApplications(headers, orgBase);
+    const match = matchWindowsApplication(items, name);
+    if (!match) {
+      res.json({ matched: false, application: null });
+      return;
+    }
+    // Re-fetch via the single-application endpoint rather than returning the
+    // list item directly — same data today, but this is the documented,
+    // intended way to load one application's full detail (docs.applivery.com
+    // Windows > Applications > Get Application) and leaves room for that
+    // endpoint to return more than the list embed does in the future.
+    const detail = await fetchWindowsApplicationDetail(headers, orgBase, match.id);
+    res.json({ matched: true, application: detail ?? match });
   }),
 );
 

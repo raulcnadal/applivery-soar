@@ -514,6 +514,17 @@ export const useComplianceStore = defineStore("compliance", () => {
     return { items: res.data.items ?? [], error: res.data.error ?? null };
   }
 
+  // Best-effort lookup against Applivery's own Windows App Distribution/MDM
+  // application library (a different thing from installedApps.service.ts's
+  // per-device inventory) — GET /api/app-lists/windows-app-detail, backed by
+  // windowsAppCatalog.service.ts. Matched by name since there's no shared id
+  // between what a device reports installed and Applivery's own catalog.
+  async function fetchWindowsAppDetail(name: string): Promise<{ matched: boolean; application: Record<string, any> | null }> {
+    const { api } = await import("../api/http");
+    const res = await api.get("/app-lists/windows-app-detail", { params: { name } });
+    return res.data;
+  }
+
   async function fetchInstalledAppsStatus() {
     const { api } = await import("../api/http");
     try {
@@ -662,6 +673,7 @@ export const useComplianceStore = defineStore("compliance", () => {
     refreshInstalledAppsNow,
     setInstalledAppsBudget,
     fetchReportedApps,
+    fetchWindowsAppDetail,
     customChecks,
     isLoadingCustomChecks,
     customChecksError,

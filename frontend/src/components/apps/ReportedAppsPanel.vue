@@ -5,11 +5,14 @@
 // getReportedAppsOverview), which aggregates every device's
 // InstalledAppInventory row regardless of whether any Compliance Policy
 // references it — independent of App List/App Catalog authoring, this is
-// purely "what does SOAR currently see".
+// purely "what does SOAR currently see". Clicking a row opens
+// AppDetailModal.vue for the per-device breakdown, App List membership, and
+// (Windows only) a best-effort Applivery application-catalog lookup.
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useComplianceStore, type ReportedAppSummary } from "../../stores/compliance";
+import AppDetailModal from "./AppDetailModal.vue";
 
 const store = useComplianceStore();
 
@@ -27,8 +30,8 @@ const SOURCE_LABELS: Record<string, string> = { self_reported: "Self-reported", 
 
 const filterPlatform = ref("");
 const searchQuery = ref("");
-const expandedKey = ref<string | null>(null);
 const isRefreshing = ref(false);
+const selectedApp = ref<ReportedAppSummary | null>(null);
 
 const filtered = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
@@ -42,10 +45,6 @@ const filtered = computed(() => {
 function appKey(app: ReportedAppSummary): string {
   return `${app.platform}:${app.identifier}`;
 }
-function toggleExpanded(app: ReportedAppSummary) {
-  const key = appKey(app);
-  expandedKey.value = expandedKey.value === key ? null : key;
-}
 function formatAge(iso: string | null): string {
   if (!iso) return "—";
   const minutes = (Date.now() - new Date(iso).getTime()) / 60000;
@@ -56,8 +55,8 @@ function formatAge(iso: string | null): string {
   return `${(hours / 24).toFixed(1)}d ago`;
 }
 // Single version -> show it directly; multiple -> the version drift itself
-// is the useful signal, shown as a count (expand for the per-device
-// breakdown of which device has which).
+// is the useful signal, shown as a count (open the detail modal for the
+// per-device breakdown of which device has which).
 function versionLabel(app: ReportedAppSummary): string {
   if (app.versions.length === 0) return "—";
   if (app.versions.length === 1) return app.versions[0];
@@ -87,6 +86,11 @@ async function refresh() {
 
 onMounted(() => {
   store.fetchReportedApps();
+  // The detail modal's "App Lists" section needs these — loaded here too
+  // (not just AppCatalogPanel.vue's own onMounted) since an admin may open
+  // Reported Apps without ever visiting the App Catalog sub-view first.
+  if (!store.appCatalog.length) store.fetchAppCatalog();
+  if (!store.appLists.length) store.fetchAppLists();
 });
 </script>
 
@@ -114,7 +118,7 @@ onMounted(() => {
 
     <p class="text-[10px] text-gray-400 flex items-start gap-1">
       <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
-      "Self-reported" comes from the SOAR Agent's App Inventory Reporting; "Applivery UEM" comes from Applivery's own device-management API. "Update available" is currently only reported by Applivery for iOS/iPadOS/macOS apps — it flags that an update exists but Applivery doesn't expose the target version number.
+      "Self-reported" comes from the SOAR Agent's App Inventory Reporting; "Applivery UEM" comes from Applivery's own device-management API. "Update available" is currently only reported by Applivery for iOS/iPadOS/macOS apps — it flags that an update exists but Applivery doesn't expose the target version number. Click a row for per-device detail, App List membership, and (Windows) a lookup against Applivery's own application library.
     </p>
 
     <Alert v-if="store.reportedAppsError" type="danger">{{ store.reportedAppsError }}</Alert>
@@ -134,65 +138,48 @@ onMounted(() => {
       </div>
       <p v-if="filtered.length === 0" class="text-xs text-gray-400 px-3 py-3">No apps match "{{ searchQuery }}".</p>
       <div class="divide-y divide-gray-100 dark:divide-gray-700">
-        <div v-for="app in filtered" :key="appKey(app)">
-          <button
-            type="button"
-            class="w-full grid grid-cols-2 sm:grid-cols-[1fr_140px_120px_120px_90px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40"
-            @click="toggleExpanded(app)"
-          >
-            <div class="min-w-0 col-span-2 sm:col-span-1">
-              <p class="text-sm text-gray-900 dark:text-white truncate flex items-center gap-1.5">
-                {{ app.name }}
-                <component
-                  v-if="firstFetchError(app)"
-                  :is="ICONS.DangerTriangle"
-                  :size="11"
-                  weight="Linear"
-                  class="text-amber-500 shrink-0"
-                  :title="`Last live fetch error: ${firstFetchError(app)}`"
-                />
-              </p>
-              <p class="text-[11px] text-gray-400 truncate">{{ PLATFORM_LABELS[app.platform] || app.platform }} · {{ app.identifier }}</p>
-            </div>
-            <div class="text-xs text-gray-700 dark:text-gray-300 truncate" :title="app.versions.join(', ')">{{ versionLabel(app) }}</div>
-            <div>
-              <span
-                class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-                :class="app.sources.includes('self_reported') && app.sources.length === 1 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : app.sources.length > 1 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
-              >
-                {{ sourceLabel(app) }}
-              </span>
-            </div>
-            <div>
-              <span v-if="app.devicesWithPendingUpdate > 0" class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                {{ app.devicesWithPendingUpdate }} pending
-              </span>
-              <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
-            </div>
-            <div class="text-right text-xs font-semibold text-gray-900 dark:text-white">{{ app.deviceCount }}</div>
-            <component :is="expandedKey === appKey(app) ? ICONS.AltArrowUp : ICONS.AltArrowDown" :size="14" weight="Linear" class="text-gray-400 justify-self-end" />
-          </button>
-          <div v-if="expandedKey === appKey(app)" class="px-3 pb-3 -mt-1">
-            <div class="border border-gray-100 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700">
-              <div v-for="d in app.devices" :key="d.deviceId" class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
-                <span class="text-gray-900 dark:text-white truncate">{{ d.deviceName }}</span>
-                <span class="flex items-center gap-2 shrink-0 text-gray-400">
-                  <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500" title="Update available" />
-                  <span class="font-mono">{{ d.version || "—" }}</span>
-                  <span
-                    class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
-                    :class="d.source === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
-                  >
-                    {{ SOURCE_LABELS[d.source] || d.source }}
-                  </span>
-                  <span>{{ formatAge(d.fetchedAt) }}</span>
-                  <component v-if="d.lastFetchError" :is="ICONS.DangerTriangle" :size="11" weight="Linear" class="text-amber-500" :title="d.lastFetchError" />
-                </span>
-              </div>
-            </div>
+        <button
+          v-for="app in filtered"
+          :key="appKey(app)"
+          type="button"
+          class="w-full grid grid-cols-2 sm:grid-cols-[1fr_140px_120px_120px_90px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40"
+          @click="selectedApp = app"
+        >
+          <div class="min-w-0 col-span-2 sm:col-span-1">
+            <p class="text-sm text-gray-900 dark:text-white truncate flex items-center gap-1.5">
+              {{ app.name }}
+              <component
+                v-if="firstFetchError(app)"
+                :is="ICONS.DangerTriangle"
+                :size="11"
+                weight="Linear"
+                class="text-amber-500 shrink-0"
+                :title="`Last live fetch error: ${firstFetchError(app)}`"
+              />
+            </p>
+            <p class="text-[11px] text-gray-400 truncate">{{ PLATFORM_LABELS[app.platform] || app.platform }} · {{ app.identifier }}</p>
           </div>
-        </div>
+          <div class="text-xs text-gray-700 dark:text-gray-300 truncate" :title="app.versions.join(', ')">{{ versionLabel(app) }}</div>
+          <div>
+            <span
+              class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+              :class="app.sources.includes('self_reported') && app.sources.length === 1 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : app.sources.length > 1 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+            >
+              {{ sourceLabel(app) }}
+            </span>
+          </div>
+          <div>
+            <span v-if="app.devicesWithPendingUpdate > 0" class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 whitespace-nowrap">
+              {{ app.devicesWithPendingUpdate }} pending
+            </span>
+            <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
+          </div>
+          <div class="text-right text-xs font-semibold text-gray-900 dark:text-white">{{ app.deviceCount }}</div>
+          <component :is="ICONS.AltArrowRight" :size="14" weight="Linear" class="text-gray-400 justify-self-end" />
+        </button>
       </div>
     </div>
+
+    <AppDetailModal :open="!!selectedApp" :app="selectedApp" @close="selectedApp = null" />
   </div>
 </template>
