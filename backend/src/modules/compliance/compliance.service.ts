@@ -34,7 +34,15 @@ import { getAutomationBearer } from "../settings/automationCredential.service";
 // ── Bounds/constants (main.py:10806-10815, 10972, 6620) ──
 
 export const RISK_TIER_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
-const COMPLIANCE_MIN_EVAL_INTERVAL_MINUTES = 60;
+// Lowered from a hard 60-minute floor — the scheduler tick itself
+// (complianceJobs.ts's COMPLIANCE_SCHEDULER_TICK_MS) already runs every
+// 60s, so 5 minutes is the fastest an autonomous per-policy interval could
+// ever actually matter. "Evaluate now" / device-side "Force evaluate"
+// remain the right tool for true immediate feedback — this floor only
+// governs the unattended background cadence. The frontend surfaces a
+// warning below this same value (PolicyBuilderDrawer.vue) since a fleet
+// evaluated every few minutes multiplies Applivery API calls accordingly.
+const COMPLIANCE_MIN_EVAL_INTERVAL_MINUTES = 5;
 const COMPLIANCE_MAX_EVAL_INTERVAL_MINUTES = 1440;
 const AUTORUN_CIRCUIT_BREAKER_THRESHOLD = 3;
 const COMPLIANCE_WRITE_CONCURRENCY = 20;

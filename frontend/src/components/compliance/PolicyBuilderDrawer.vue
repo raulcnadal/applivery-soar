@@ -14,7 +14,7 @@
 // policy, matching whatever was selected in the Segments panel when
 // "Create" was clicked; defaults to the currently-selected segment for new
 // policies, an existing policy keeps its own assigned segment untouched.
-import { Modal } from "@applivery/bluesky-vue";
+import { Alert, Modal } from "@applivery/bluesky-vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useComplianceStore, type CompliancePolicy, type ConditionRule, type MatchedDevice, type MatchedDevicesDiagnostics } from "../../stores/compliance";
@@ -245,6 +245,23 @@ onMounted(async () => {
   ]);
 });
 
+// Mirrors compliance.service.ts's COMPLIANCE_MIN_EVAL_INTERVAL_MINUTES (5)
+// — lowered from a hard 60-minute floor since the user asked for faster
+// autonomous re-checks. Values below this still work but multiply
+// Applivery API calls proportionally across the fleet, so surfaced as a
+// warning rather than silently allowed.
+const EVAL_INTERVAL_WARN_BELOW_MINUTES = 30;
+const evalIntervalMinutesComputed = computed(() => {
+  if (form.evalAmount === "") return null;
+  const n = Number(form.evalAmount);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * (form.evalUnit === "hours" ? 60 : 1));
+});
+const evalIntervalWarning = computed(() => {
+  const m = evalIntervalMinutesComputed.value;
+  return m !== null && m > 0 && m < EVAL_INTERVAL_WARN_BELOW_MINUTES;
+});
+
 const needsDeploymentModel = computed(() => ["apple", "macos", "android"].includes(form.targetPlatform));
 const modelOptions = computed(() => DEPLOYMENT_MODELS[form.targetPlatform] ?? []);
 const modelLabel = computed(() => modelOptions.value.find((m) => m.value === form.targetDeploymentModel)?.label ?? form.targetDeploymentModel);
@@ -430,8 +447,8 @@ async function save() {
   let evaluationIntervalMinutes: number | null = null;
   if (form.evalAmount !== "") {
     const minutes = Math.round(Number(form.evalAmount) * (form.evalUnit === "hours" ? 60 : 1));
-    if (!Number.isFinite(minutes) || minutes < 60 || minutes > 1440) {
-      saveError.value = "Evaluation frequency must be between 1 hour and 24 hours.";
+    if (!Number.isFinite(minutes) || minutes < 5 || minutes > 1440) {
+      saveError.value = "Evaluation frequency must be between 5 minutes and 24 hours.";
       return;
     }
     evaluationIntervalMinutes = minutes;
@@ -678,8 +695,11 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
           <button v-if="form.evalAmount !== ''" class="text-xs font-medium text-gray-400" @click="form.evalAmount = ''">Reset to default</button>
         </div>
         <p class="text-[11px] mt-1.5 leading-relaxed text-gray-400">
-          How often the background scheduler automatically re-checks this policy. Leave blank to use the org default (60 minutes). Must be between 1 hour and 24 hours. "Evaluate now" always runs immediately regardless of this setting.
+          How often the background scheduler automatically re-checks this policy. Leave blank to use the org default (60 minutes). Must be between 5 minutes and 24 hours. "Evaluate now" always runs immediately regardless of this setting.
         </p>
+        <Alert v-if="evalIntervalWarning" type="warning" class="mt-1.5">
+          Under {{ EVAL_INTERVAL_WARN_BELOW_MINUTES }} minutes means significantly more Applivery API calls for every device this policy covers — fine for a small pilot fleet, but for production-sized fleets prefer "Evaluate now" / device-side "Force evaluate" for on-demand checks instead of lowering the default fleet-wide.
+        </Alert>
       </div>
 
       <div class="flex items-center justify-between mb-2">

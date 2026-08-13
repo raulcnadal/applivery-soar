@@ -61,6 +61,35 @@ function copyHeaders() {
   navigator.clipboard.writeText(`X-Workspace-Slug: ${auth.orgSlug}\nX-Device-Report-Secret: ${secret}`);
 }
 
+// Report interval — how often the Windows/macOS native agent wakes up to
+// report attributes + (if enabled) app inventory. Both agents already read
+// this from Managed Configuration each cycle (registry_windows.go /
+// config.go); the only thing that ever hardcoded 3600s was this snippet
+// generator. Floor of 1 minute mirrors both agents' own client-side clamp
+// (any value under 30s silently falls back to their built-in 3600s
+// default — see each repo's README "values under 30 fall back to the
+// default" row) with a little headroom so a typo like "20" (seconds
+// mistaken for minutes) doesn't silently no-op.
+const REPORT_INTERVAL_MIN_MINUTES = 1;
+const REPORT_INTERVAL_MAX_MINUTES = 1440;
+const REPORT_INTERVAL_WARN_BELOW_MINUTES = 5;
+const reportIntervalMinutes = ref(60);
+const reportIntervalSeconds = computed(() => {
+  const clamped = Math.min(REPORT_INTERVAL_MAX_MINUTES, Math.max(REPORT_INTERVAL_MIN_MINUTES, Number(reportIntervalMinutes.value) || 60));
+  return Math.round(clamped * 60);
+});
+const reportIntervalWarning = computed(() => reportIntervalMinutes.value > 0 && reportIntervalMinutes.value < REPORT_INTERVAL_WARN_BELOW_MINUTES);
+
+// IntervalSec changes only take effect after the agent service restarts —
+// it's read once at process start to size the reporting ticker (see
+// runAgentLoop's doc comment in telemetry_windows.go/telemetry_macos.go),
+// unlike every other Managed Configuration key which is re-read every
+// cycle. Surfaced in the UI copy below so lowering this doesn't look like
+// it silently did nothing.
+function secondsToRegDword(seconds: number): string {
+  return `dword:${Math.max(0, Math.round(seconds)).toString(16).padStart(8, "0")}`;
+}
+
 // Managed Configuration snippets for the native agents — generated entirely
 // client-side, same trust model as downloadScript() above: the plaintext
 // secret is already sitting in store.status.secret, nothing new to fetch.
@@ -77,7 +106,7 @@ const windowsRegSnippet = computed(() => {
 "ReportBitLocker"=dword:00000001
 "ReportFirewall"=dword:00000001
 "ReportApps"=dword:00000001
-"IntervalSec"=dword:00000e10
+"IntervalSec"=${secondsToRegDword(reportIntervalSeconds.value)}
 `;
 });
 const macosConfigSnippet = computed(() => {
@@ -87,7 +116,7 @@ const macosConfigSnippet = computed(() => {
       base_url: window.location.origin,
       workspace_slug: auth.orgSlug,
       report_secret: secret,
-      interval_sec: 3600,
+      interval_sec: reportIntervalSeconds.value,
       report_bitlocker: true,
       report_firewall: true,
       report_apps: true,
@@ -118,7 +147,7 @@ Set-ItemProperty -Path $regPath -Name "ReportSecret" -Value "${secret}" -Type St
 Set-ItemProperty -Path $regPath -Name "ReportBitLocker" -Value 1 -Type DWord
 Set-ItemProperty -Path $regPath -Name "ReportFirewall" -Value 1 -Type DWord
 Set-ItemProperty -Path $regPath -Name "ReportApps" -Value 1 -Type DWord
-Set-ItemProperty -Path $regPath -Name "IntervalSec" -Value 3600 -Type DWord
+Set-ItemProperty -Path $regPath -Name "IntervalSec" -Value ${reportIntervalSeconds.value} -Type DWord
 Write-Host "Applivery SOAR Agent managed configuration applied."
 `;
 });
@@ -347,6 +376,27 @@ onMounted(async () => {
                 <span class="font-mono">.json</span> deployed to
                 <span class="font-mono">/Library/Preferences/es.mi-labs.soar.agent.json</span> via MDM Custom Settings.
               </p>
+
+              <div>
+                <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Report interval</label>
+                <div class="flex items-center gap-2">
+                  <Input v-model.number="reportIntervalMinutes" type="number" min="1" max="1440" class="w-28" />
+                  <span class="text-[11px] text-gray-500 dark:text-gray-400">minutes</span>
+                </div>
+                <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
+                  How often the agent wakes up to report attributes and (if enabled) app inventory. Takes effect on the
+                  device's next service restart or reboot after the new Managed Configuration lands — it isn't picked up
+                  mid-cycle like other settings. Values under 30 seconds are ignored by the agent and fall back to its
+                  own built-in 1-hour default.
+                </p>
+                <Alert v-if="reportIntervalWarning" type="warning" class="mt-1.5">
+                  Under {{ REPORT_INTERVAL_WARN_BELOW_MINUTES }} minutes generates significant extra load — one HTTPS
+                  request per device per interval, plus a full app inventory scan if App Inventory Reporting is on. Fine
+                  for a small pilot fleet; for production-sized fleets, pair a short interval with "Force report" /
+                  "Force evaluate" on individual devices instead of lowering the default fleet-wide.
+                </Alert>
+              </div>
+
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div class="flex gap-1.5">
                   <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows-script')">Windows Script (.ps1)</Button>
