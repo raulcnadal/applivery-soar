@@ -3,6 +3,7 @@ import { prisma } from "../../services/prisma";
 import { resolveOrgBase } from "../auth/rbac.service";
 import { extractItems } from "../../utils/extractItems";
 import { platformPathSegment, type NormalizedDevice } from "../devices/deviceNormalize";
+import { fetchWindowsDeviceMsiApps } from "./windowsDeviceApps.service";
 
 type Headers = Record<string, string>;
 
@@ -75,51 +76,72 @@ export function appleAppUpdateDeviceIds(devices: NormalizedDevice[]): Set<string
  * endpoint — port of `_fetch_and_store_installed_apps` (main.py:9183).
  * Writes straight to Prisma (an upsert) since this app has no in-memory
  * per-batch store object to hand back and forth the way Python's dict does.
+ *
+ * Windows is a special case: it does NOT call the generic
+ * `/mdm/{platform}/enterprise/devices/{id}/applications` endpoint below —
+ * that endpoint errors persistently for every Windows device in this org
+ * (undocumented/empty response schema). Instead it calls the Windows
+ * device-detail endpoint and parses the MSI CSP sub-tree out of its `config`
+ * blob — see windowsDeviceApps.service.ts's doc comment for the full
+ * rationale, including why the also-available Appx/UWP inventory blob is
+ * deliberately NOT parsed (zero third-party-app signal on real data).
  */
 export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: string, device: NormalizedDevice, workspaceSlug: string): Promise<Set<string>> {
   const deviceId = device.id;
   const platformPath = platformPathSegment(device.platform);
   if (!deviceId || !platformPath || !["apple", "android", "aosp", "windows"].includes(platformPath)) return new Set();
 
-  const url = `${orgBase}/mdm/${platformPath}/enterprise/devices/${deviceId}/applications`;
   const identifiers = new Set<string>();
   let error: string | null = null;
   const applePendingApps: Array<Record<string, any>> = [];
   let appleTotalApps = 0;
   const versionedApps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean }> = [];
 
-  try {
-    const res = await appliveryClient.get<any>(url, { headers });
-    if (res.status < 300) {
-      for (const item of extractItems(res.data)) {
-        if (!item || typeof item !== "object") continue;
-        let ident: string | undefined;
-        if (platformPath === "apple") {
-          ident = item.Identifier ?? item.identifier;
-          appleTotalApps += 1;
-          const version = item.ShortVersion ?? item.Version;
-          if (item.HasUpdateAvailable) {
-            applePendingApps.push({ identifier: ident, name: item.Name, installedVersion: version, build: item.Version, isBetaApp: Boolean(item.BetaApp) });
-          }
-          if (ident && version) versionedApps.push({ identifier: String(ident).toLowerCase(), name: item.Name, version: String(version), updateAvailable: Boolean(item.HasUpdateAvailable) });
-        } else if (platformPath === "android" || platformPath === "aosp") {
-          ident = item.packageName;
-          if (item.state !== "REMOVED") {
-            const version = item.versionName;
-            if (ident && version) versionedApps.push({ identifier: String(ident).toLowerCase(), name: item.displayName, version: String(version) });
-          }
-        } else {
-          ident = item.packageName ?? item.Identifier ?? item.id ?? item.productId ?? item.name;
-          const version = item.Version ?? item.version ?? item.DisplayVersion ?? item.AppVersion ?? item.versionName;
-          if (ident && version) versionedApps.push({ identifier: String(ident).toLowerCase(), name: item.DisplayName ?? item.displayName ?? item.Name, version: String(version) });
-        }
-        if (ident) identifiers.add(String(ident).toLowerCase());
-      }
-    } else {
-      error = `Applivery returned ${res.status}`;
+  if (platformPath === "windows") {
+    const { apps, error: msiError } = await fetchWindowsDeviceMsiApps(headers, orgBase, deviceId);
+    error = msiError;
+    for (const app of apps) {
+      // Lowercased Name is the identifier convention — it's what the Windows
+      // agent's self-report registry fallback also uses (apps_windows.go's
+      // getAppsViaRegistry), so an app tracked here and self-reported on the
+      // same device resolve to the same identifier rather than silently
+      // creating two separate entries for one app.
+      const identifier = app.name.toLowerCase();
+      versionedApps.push({ identifier, name: app.name, version: app.version });
+      identifiers.add(identifier);
     }
-  } catch (e) {
-    error = String(e);
+  } else {
+    const url = `${orgBase}/mdm/${platformPath}/enterprise/devices/${deviceId}/applications`;
+    try {
+      const res = await appliveryClient.get<any>(url, { headers });
+      if (res.status < 300) {
+        for (const item of extractItems(res.data)) {
+          if (!item || typeof item !== "object") continue;
+          let ident: string | undefined;
+          if (platformPath === "apple") {
+            ident = item.Identifier ?? item.identifier;
+            appleTotalApps += 1;
+            const version = item.ShortVersion ?? item.Version;
+            if (item.HasUpdateAvailable) {
+              applePendingApps.push({ identifier: ident, name: item.Name, installedVersion: version, build: item.Version, isBetaApp: Boolean(item.BetaApp) });
+            }
+            if (ident && version) versionedApps.push({ identifier: String(ident).toLowerCase(), name: item.Name, version: String(version), updateAvailable: Boolean(item.HasUpdateAvailable) });
+          } else {
+            // android / aosp
+            ident = item.packageName;
+            if (item.state !== "REMOVED") {
+              const version = item.versionName;
+              if (ident && version) versionedApps.push({ identifier: String(ident).toLowerCase(), name: item.displayName, version: String(version) });
+            }
+          }
+          if (ident) identifiers.add(String(ident).toLowerCase());
+        }
+      } else {
+        error = `Applivery returned ${res.status}`;
+      }
+    } catch (e) {
+      error = String(e);
+    }
   }
 
   const existing = await prisma.installedAppInventory.findUnique({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId } } });
