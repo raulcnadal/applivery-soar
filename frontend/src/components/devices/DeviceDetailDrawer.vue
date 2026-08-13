@@ -609,6 +609,47 @@ function logBody(l: Record<string, any>): string {
               <p v-else class="text-xs" :style="{ color: SUCCESS }">Up to date with the latest known security update for this build.</p>
             </div>
 
+            <!-- OS Updates (Apple / macOS) — mirrors the Windows section
+                 above but sourced differently: Apple's GDMF feed (already
+                 behind osLifecycleStatus.onLatestVersion/latestKnownVersion)
+                 tells us whether the device is on the newest signed release;
+                 it never carries a CVE list itself (confirmed against live
+                 GDMF data — every release entry's cveIds came back empty),
+                 so the CVE detail here is the same EUVD-derived vulnStatus
+                 already computed for the Compliance tab's Vulnerabilities
+                 section, just reframed around "how far behind is this
+                 device" rather than general risk. Per user request, this is
+                 additive — the Compliance tab's own Vulnerabilities section
+                 stays exactly as-is. -->
+            <div v-if="(device.platform === 'apple' || device.platform === 'macos') && (device.osLifecycleStatus || device.vulnStatus)" class="mb-6">
+              <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">OS Updates</p>
+              <p v-if="!device.osLifecycleStatus || (device.osLifecycleStatus as any).confidence === 'unknown' || (device.osLifecycleStatus as any).latestKnownVersion == null" class="text-xs text-gray-400">
+                No confirmed patch-level comparison available yet for this OS version — Apple's software lookup service (GDMF) hasn't published a signed release we could match against it.
+              </p>
+              <div v-else-if="(device.osLifecycleStatus as any).onLatestVersion === false" class="space-y-1.5">
+                <p class="text-xs font-medium" :style="{ color: WARNING }">
+                  Not on the latest signed release — latest known: {{ (device.osLifecycleStatus as any).latestKnownVersion }}{{ (device.osLifecycleStatus as any).latestKnownBuild ? ` (build ${(device.osLifecycleStatus as any).latestKnownBuild})` : "" }}
+                </p>
+                <template v-if="(device.vulnStatus as any)?.pendingCount > 0">
+                  <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                    <span class="text-gray-900 dark:text-white">
+                      <a v-if="vulnLink(c.cveId)" :href="vulnLink(c.cveId)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.cveId }}</a>
+                      <template v-else>{{ c.cveId }}</template>
+                      <span class="text-gray-400"> · fixed in {{ c.fixedVersion }}</span>
+                    </span>
+                    <span class="font-semibold shrink-0" :style="{ color: c.exploited || c.baseSeverity === 'Critical' ? DANGER : WARNING }">
+                      {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}{{ typeof c.epss === "number" ? ` · EPSS ${(c.epss * 100).toFixed(0)}%` : "" }}
+                    </span>
+                  </div>
+                  <p class="text-[10px] text-gray-400">
+                    Showing the top {{ Math.min((device.vulnStatus as any).pendingCves.length, 10) }} of {{ (device.vulnStatus as any).pendingCount }} known CVEs fixed in a newer version, by severity.
+                  </p>
+                </template>
+                <p v-else class="text-[10px] text-gray-400">A newer signed release is available, but there's no confirmed CVE data for this specific version gap yet.</p>
+              </div>
+              <p v-else class="text-xs" :style="{ color: SUCCESS }">Up to date with the latest known signed release for this device.</p>
+            </div>
+
             <!-- OS Lifecycle -->
             <div v-if="device.osLifecycleStatus && (device.osLifecycleStatus as any).confidence !== 'unknown' && (device.osLifecycleStatus as any).isEol !== null && (device.osLifecycleStatus as any).isEol !== undefined" class="mb-6">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">OS Lifecycle</p>

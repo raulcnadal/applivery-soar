@@ -21,6 +21,7 @@ import { loadOsUpdateCatalog, computeWindowsPendingUpdates, windowsDeviceBuild }
 import { loadVulnCatalog, computeApplePendingVulns, computeAndroidPendingVulns } from "../catalogs/vulnCatalog";
 import { loadOsLifecycleCatalog, computeOsLifecycleStatus } from "../catalogs/osLifecycleCatalog";
 import { loadGdmfCatalog } from "../catalogs/gdmfCatalog";
+import { loadAppleDeviceIdentifiers } from "../catalogs/appleDeviceIdentifiers";
 import { loadInstalledAppsStore, type InstalledAppsEntry } from "../appLists/installedApps.service";
 import { getVulnServiceConfig, computeVulnServiceStatus } from "../catalogs/vulnService";
 import { loadDevicePushDataCache } from "./deviceData.service";
@@ -314,11 +315,12 @@ export async function getDevicesFull(
 
   // Intelligence catalogs — loaded once per fleet-wide call, same batching
   // philosophy. Port of main.py:3521-3550.
-  const [osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, installedAppsStore, vulnServiceCfg] = await Promise.all([
+  const [osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, appleIdCatalog, installedAppsStore, vulnServiceCfg] = await Promise.all([
     loadOsUpdateCatalog(),
     loadVulnCatalog(),
     loadOsLifecycleCatalog(),
     loadGdmfCatalog(),
+    loadAppleDeviceIdentifiers(),
     loadInstalledAppsStore(slugKey),
     getVulnServiceConfig(slugKey),
   ]);
@@ -354,7 +356,7 @@ export async function getDevicesFull(
     } else {
       d.vulnStatus = null;
     }
-    d.osLifecycleStatus = computeOsLifecycleStatus(d.platform, d.osVersion, osLifecycleCatalog, d.model, gdmfCatalog);
+    d.osLifecycleStatus = computeOsLifecycleStatus(d.platform, d.osVersion, osLifecycleCatalog, d.model, gdmfCatalog, appleIdCatalog);
 
     // installedAppsStore carries a versioned "apps" list for every platform,
     // not just Apple — appleAppUpdateStatus stays Apple-only (sourced from

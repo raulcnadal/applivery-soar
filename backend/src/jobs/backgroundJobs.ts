@@ -3,6 +3,7 @@ import { refreshOsUpdateCatalog, OS_UPDATE_TICK_MS } from "../modules/catalogs/o
 import { refreshVulnCatalog, VULN_CATALOG_TICK_MS } from "../modules/catalogs/vulnCatalog";
 import { refreshOsLifecycleCatalog, OS_LIFECYCLE_TICK_MS } from "../modules/catalogs/osLifecycleCatalog";
 import { refreshGdmfCatalog, GDMF_TICK_MS } from "../modules/catalogs/gdmfCatalog";
+import { refreshAppleDeviceIdentifiers, APPLE_DEVICE_IDENTIFIERS_TICK_MS } from "../modules/catalogs/appleDeviceIdentifiers";
 import { refreshMitreCatalog, MITRE_CATALOG_TICK_MS } from "../modules/catalogs/mitreCatalog";
 import { runVulnServiceRefresherTick, VULN_SERVICE_TICK_MS } from "../modules/catalogs/vulnService";
 import { resumeDueWorkflowSteps } from "../modules/workflows/durableEngine";
@@ -54,6 +55,13 @@ import { releaseJobSlot, tryAcquireJobSlot } from "./jobReentrancyGuard";
  * exceeding Applivery's API budget at large fleet sizes. See
  * locationsRefresh.service.ts's doc comment for the full design rationale.
  *
+ * Post-migration addition (19th job): the Apple hardware-identifier
+ * resolver (appleDeviceIdentifiers.ts) — a weekly fetch of api.ipsw.me's
+ * free marketing-name → hardware-identifier feed, so GDMF's SupportedDevices
+ * matching (osLifecycleCatalog.ts's "Hardware match" field) can resolve real
+ * iPhone/iPad identifiers instead of always falling back to a fleet-wide
+ * comparison.
+ *
  * Post-migration scale review: with REDIS_URL configured, every job below
  * instead runs as a BullMQ repeatable job (queue/backgroundQueue.ts) so
  * exactly one instance of each job runs cluster-wide even with multiple
@@ -84,6 +92,7 @@ export const JOBS: readonly CatalogJob[] = [
   { jobKey: "catalog:vuln", tickMs: VULN_CATALOG_TICK_MS, run: refreshVulnCatalog },
   { jobKey: "catalog:os-lifecycle", tickMs: OS_LIFECYCLE_TICK_MS, run: refreshOsLifecycleCatalog },
   { jobKey: "catalog:gdmf", tickMs: GDMF_TICK_MS, run: refreshGdmfCatalog },
+  { jobKey: "catalog:apple-device-identifiers", tickMs: APPLE_DEVICE_IDENTIFIERS_TICK_MS, run: refreshAppleDeviceIdentifiers },
   { jobKey: "catalog:mitre", tickMs: MITRE_CATALOG_TICK_MS, run: refreshMitreCatalog },
   { jobKey: "workflow_wait_resumer", tickMs: WORKFLOW_RESUMER_TICK_MS, run: () => resumeDueWorkflowSteps() },
   { jobKey: "script_log_reconciler", tickMs: SCRIPT_RUN_RECONCILE_TICK_MS, run: runScriptLogReconcilerTick },

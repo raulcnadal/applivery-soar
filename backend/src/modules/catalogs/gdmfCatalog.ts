@@ -80,14 +80,20 @@ export async function refreshGdmfCatalog(): Promise<GdmfCatalog> {
   return catalog;
 }
 
-/** Port of `_gdmf_best_target` (main.py:17459). */
-export function gdmfBestTarget(platform: string, deviceModel: string | null, catalog: GdmfCatalog | null): Record<string, any> | null {
+/**
+ * Port of `_gdmf_best_target` (main.py:17459). `deviceIdentifiers` is the
+ * device's *hardware* identifier(s) (e.g. "iPhone12,5"), resolved via
+ * appleDeviceIdentifiers.ts — GDMF's own SupportedDevices lists are never
+ * keyed by marketing name, so passing a raw model name here would silently
+ * never match (see appleDeviceIdentifiers.ts's module doc comment).
+ */
+export function gdmfBestTarget(platform: string, deviceIdentifiers: string[] | null, catalog: GdmfCatalog | null): Record<string, any> | null {
   if (!catalog) return null;
   let entries = ((catalog.platforms ?? {})[platform] ?? []).filter((e) => !e.isExpired);
   if (!entries.length) return null;
   let hardwareMatched = false;
-  if (deviceModel) {
-    const matched = entries.filter((e) => (e.supportedDevices ?? []).includes(deviceModel));
+  if (deviceIdentifiers && deviceIdentifiers.length) {
+    const matched = entries.filter((e) => (e.supportedDevices ?? []).some((sd: string) => deviceIdentifiers.includes(sd)));
     if (matched.length) {
       entries = matched;
       hardwareMatched = true;
@@ -108,14 +114,14 @@ function cmpVersions(a: string | undefined, b: string | undefined): number {
   return 0;
 }
 
-/** Port of `_gdmf_active_rsr` (main.py:17482). */
-export function gdmfActiveRsr(platform: string, baseProductVersion: string | null, deviceModel: string | null, catalog: GdmfCatalog | null): Record<string, any> | null {
+/** Port of `_gdmf_active_rsr` (main.py:17482). See gdmfBestTarget's doc comment re: `deviceIdentifiers`. */
+export function gdmfActiveRsr(platform: string, baseProductVersion: string | null, deviceIdentifiers: string[] | null, catalog: GdmfCatalog | null): Record<string, any> | null {
   if (!catalog || !baseProductVersion) return null;
   const rsrEntries = (catalog.rapidSecurityResponses ?? {})[platform] ?? [];
   if (!rsrEntries.length) return { available: false };
   let candidates = rsrEntries.filter((e) => !e.isExpired && String(e.productVersion ?? "").startsWith(String(baseProductVersion)));
-  if (deviceModel) {
-    const hwMatched = candidates.filter((e) => (e.supportedDevices ?? []).includes(deviceModel));
+  if (deviceIdentifiers && deviceIdentifiers.length) {
+    const hwMatched = candidates.filter((e) => (e.supportedDevices ?? []).some((sd: string) => deviceIdentifiers.includes(sd)));
     if (hwMatched.length) candidates = hwMatched;
   }
   if (!candidates.length) return { available: false };

@@ -3,6 +3,7 @@ import { loadGlobalCatalog, saveGlobalCatalog } from "../../services/globalCatal
 import { versionTuple } from "../compliance/complianceEvaluate";
 import { windowsDeviceBuild } from "./osUpdateCatalog";
 import { gdmfBestTarget, gdmfActiveRsr, type GdmfCatalog } from "./gdmfCatalog";
+import { resolveAppleHardwareIdentifiers, type AppleDeviceIdentifiersCatalog } from "./appleDeviceIdentifiers";
 
 /** OS Lifecycle (endoflife.date) — port of main.py:17239-17596. Global, not per-workspace. */
 
@@ -75,6 +76,7 @@ export function computeOsLifecycleStatus(
   catalog: OsLifecycleCatalog,
   deviceModel?: string | null,
   gdmfCatalog?: GdmfCatalog | null,
+  appleIdCatalog?: AppleDeviceIdentifiersCatalog | null,
 ): Record<string, any> | null {
   if (!osVersion) return null;
   const releases = (catalog.platforms ?? {})[platform] ?? [];
@@ -114,7 +116,12 @@ export function computeOsLifecycleStatus(
     onLatestVersion: null, latestKnownVersion: match.latestVersion, eolFrom: match.eolFrom, esuUntil: null, confidence: "version",
   };
   if (platform === "apple" || platform === "macos") {
-    const gdmfTarget = gdmfCatalog ? gdmfBestTarget(platform, deviceModel ?? null, gdmfCatalog) : null;
+    // Only resolves for iOS-family hardware (see appleDeviceIdentifiers.ts's
+    // doc comment) — null for Macs or an unrecognized model, in which case
+    // gdmfBestTarget/gdmfActiveRsr fall back to the same fleet-wide
+    // comparison this always used before hardwareMatched existed.
+    const deviceIdentifiers = platform === "apple" ? resolveAppleHardwareIdentifiers(deviceModel, appleIdCatalog ?? null) : null;
+    const gdmfTarget = gdmfCatalog ? gdmfBestTarget(platform, deviceIdentifiers, gdmfCatalog) : null;
     if (gdmfTarget?.productVersion) {
       result.latestKnownVersion = gdmfTarget.productVersion;
       result.latestKnownBuild = gdmfTarget.build;
@@ -122,7 +129,7 @@ export function computeOsLifecycleStatus(
       result.hardwareMatched = gdmfTarget.hardwareMatched;
     }
     result.onLatestVersion = result.latestKnownVersion ? versionCompareGte(osVersion, result.latestKnownVersion) : null;
-    result.rapidSecurityResponse = gdmfCatalog ? gdmfActiveRsr(platform, osVersion, deviceModel ?? null, gdmfCatalog) : null;
+    result.rapidSecurityResponse = gdmfCatalog ? gdmfActiveRsr(platform, osVersion, deviceIdentifiers, gdmfCatalog) : null;
   }
   return result;
 }

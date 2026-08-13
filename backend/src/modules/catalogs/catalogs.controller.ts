@@ -7,6 +7,7 @@ import { loadOsUpdateCatalog, refreshOsUpdateCatalog } from "./osUpdateCatalog";
 import { loadVulnCatalog, refreshVulnCatalog } from "./vulnCatalog";
 import { loadOsLifecycleCatalog, refreshOsLifecycleCatalog } from "./osLifecycleCatalog";
 import { loadGdmfCatalog, refreshGdmfCatalog } from "./gdmfCatalog";
+import { loadAppleDeviceIdentifiers, refreshAppleDeviceIdentifiers } from "./appleDeviceIdentifiers";
 import { getMitreTechniques, refreshMitreCatalog } from "./mitreCatalog";
 import { getVulnServiceConfig, refreshVulnServiceNow, testVulnServiceConfig, updateVulnServiceConfig } from "./vulnService";
 import { z } from "zod";
@@ -76,6 +77,18 @@ catalogsRouter.post(
   "/api/gdmf/refresh",
   ...manageCompliance,
   asyncHandler(async (_req, res) => res.json(await refreshGdmfCatalog())),
+);
+
+// ── Apple hardware-identifier resolver (marketing name → GDMF identifier) ──
+catalogsRouter.get(
+  "/api/apple-device-identifiers/catalog",
+  ...readCompliance,
+  asyncHandler(async (_req, res) => res.json(await loadAppleDeviceIdentifiers())),
+);
+catalogsRouter.post(
+  "/api/apple-device-identifiers/refresh",
+  ...manageCompliance,
+  asyncHandler(async (_req, res) => res.json(await refreshAppleDeviceIdentifiers())),
 );
 
 // ── MITRE ATT&CK ──
