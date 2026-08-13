@@ -199,6 +199,28 @@ export interface InstalledAppsStatus {
   estimatedFullCycleHours: number;
 }
 
+// The Apps main-nav view's fleet-wide "what's actually installed, on which
+// devices, at which version" table — GET /api/app-lists/reported-apps
+// (installedApps.service.ts's getReportedAppsOverview). Independent of the
+// App Catalog/App Lists (those are policy-authoring inputs); this is a
+// read-only troubleshooting surface over the same underlying
+// InstalledAppInventory data every device already reports into.
+export interface ReportedAppDeviceRef {
+  deviceId: string;
+  deviceName: string;
+  version: string | null;
+  source: string;
+  fetchedAt: string;
+}
+export interface ReportedAppSummary {
+  identifier: string;
+  name: string;
+  platform: string;
+  deviceCount: number;
+  versions: string[];
+  devices: ReportedAppDeviceRef[];
+}
+
 export const useComplianceStore = defineStore("compliance", () => {
   const policies = ref<CompliancePolicy[]>([]);
   const isLoadingPolicies = ref(false);
@@ -224,6 +246,12 @@ export const useComplianceStore = defineStore("compliance", () => {
   const appLists = ref<AppList[]>([]);
   const installedAppsStatus = ref<InstalledAppsStatus | null>(null);
   const installedAppsStatusError = ref<string | null>(null);
+
+  const reportedApps = ref<ReportedAppSummary[]>([]);
+  const reportedAppsDevicesWithData = ref(0);
+  const reportedAppsLastRefreshedAt = ref<string | null>(null);
+  const isLoadingReportedApps = ref(false);
+  const reportedAppsError = ref<string | null>(null);
 
   const smartAttributeNames = ref<string[]>([]);
   const selfReportedAttributeNames = ref<string[]>([]);
@@ -505,6 +533,22 @@ export const useComplianceStore = defineStore("compliance", () => {
     await fetchInstalledAppsStatus();
   }
 
+  async function fetchReportedApps() {
+    const { api } = await import("../api/http");
+    isLoadingReportedApps.value = true;
+    reportedAppsError.value = null;
+    try {
+      const res = await api.get("/app-lists/reported-apps");
+      reportedApps.value = res.data.apps ?? [];
+      reportedAppsDevicesWithData.value = res.data.devicesWithData ?? 0;
+      reportedAppsLastRefreshedAt.value = res.data.lastRefreshedAt ?? null;
+    } catch (err: any) {
+      reportedAppsError.value = err?.response?.data?.detail || "Could not load reported apps.";
+    } finally {
+      isLoadingReportedApps.value = false;
+    }
+  }
+
   // ── Custom Device Checks — Settings > Device Data Webhook. See backend's
   // customChecks.service.ts module doc for the full design. ──
 
@@ -571,6 +615,11 @@ export const useComplianceStore = defineStore("compliance", () => {
     appLists,
     installedAppsStatus,
     installedAppsStatusError,
+    reportedApps,
+    reportedAppsDevicesWithData,
+    reportedAppsLastRefreshedAt,
+    isLoadingReportedApps,
+    reportedAppsError,
     smartAttributeNames,
     selfReportedAttributeNames,
     smartAttributes,
@@ -608,6 +657,7 @@ export const useComplianceStore = defineStore("compliance", () => {
     fetchInstalledAppsStatus,
     refreshInstalledAppsNow,
     setInstalledAppsBudget,
+    fetchReportedApps,
     customChecks,
     isLoadingCustomChecks,
     customChecksError,

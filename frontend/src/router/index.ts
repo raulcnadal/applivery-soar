@@ -14,6 +14,7 @@ const router = createRouter({
     { path: "/playground", name: "playground", component: () => import("../views/PlaygroundView.vue") },
     { path: "/devices", name: "devices", component: () => import("../views/DevicesView.vue") },
     { path: "/compliance", name: "compliance", component: () => import("../views/ComplianceView.vue") },
+    { path: "/apps", name: "apps", component: () => import("../views/AppsView.vue") },
     { path: "/workflows", name: "workflows", component: () => import("../views/WorkflowsView.vue") },
     { path: "/cases", name: "cases", component: () => import("../views/CasesView.vue") },
     { path: "/reporting", name: "reporting", component: () => import("../views/ReportingView.vue") },

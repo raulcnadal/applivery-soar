@@ -5,7 +5,7 @@
 // workspace switcher + avatar dropdown (Audit Logs / workspace list / sign out) on
 // the right — replacing the earlier left-sidebar layout, which never matched the
 // original design.
-import { Widget, Smartphone, ShieldWarning, Folder, Routing, FileText, Settings, History, Logout, List as MenuIcon } from "@solar-icons/vue";
+import { Widget, Smartphone, ShieldWarning, Box, Folder, Routing, FileText, Settings, History, Logout, List as MenuIcon } from "@solar-icons/vue";
 import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import { Drawer } from "@applivery/bluesky-vue";
@@ -125,6 +125,7 @@ const NAV_TABS: NavTab[] = [
   { id: "overview", label: "Overview", icon: Widget },
   { id: "devices", label: "Devices", icon: Smartphone, area: "devices" },
   { id: "compliance", label: "Compliance", icon: ShieldWarning, area: "compliance" },
+  { id: "apps", label: "Apps", icon: Box, area: "compliance" },
   { id: "cases", label: "Cases", icon: Folder, area: "cases" },
   { id: "workflows", label: "Workflows", icon: Routing, area: "workflows" },
   { id: "reporting", label: "Reporting", icon: FileText, area: "reporting" },

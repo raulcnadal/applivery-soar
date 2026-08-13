@@ -19,6 +19,7 @@ import { searchApps } from "./appSearch.service";
 import {
   getAppleAppUpdatesStatus,
   getInstalledAppsStatus,
+  getReportedAppsOverview,
   manualRefreshInstalledApps,
   appListScopedDeviceIds,
   appleAppUpdateDeviceIds,
@@ -163,6 +164,19 @@ appListsRouter.post(
     // the response returns immediately with the queued count.
     void manualRefreshInstalledApps(Array.from(targetIds), devicesResp.items, authorization, workspaceSlug!);
     res.json({ queued: targetIds.size });
+  }),
+);
+
+// ── Reported apps overview (Apps main-nav view) ──
+appListsRouter.get(
+  "/api/app-lists/reported-apps",
+  ...readCompliance,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    const devicesResp = await getDevicesFull(authorization, workspaceSlug!, false);
+    res.json(await getReportedAppsOverview(workspaceSlug!, devicesResp.items));
   }),
 );
 

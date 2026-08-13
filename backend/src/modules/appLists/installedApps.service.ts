@@ -249,6 +249,70 @@ export async function setInstalledAppsBudget(workspaceSlug: string, budgetPerHou
   return { installedAppsRefreshBudgetPerHour: clamped };
 }
 
+export interface ReportedAppDeviceRef {
+  deviceId: string;
+  deviceName: string;
+  version: string | null;
+  source: string;
+  fetchedAt: string;
+}
+export interface ReportedAppSummary {
+  identifier: string;
+  name: string;
+  platform: string;
+  deviceCount: number;
+  versions: string[];
+  devices: ReportedAppDeviceRef[];
+}
+
+/**
+ * GET /api/app-lists/reported-apps — the data source for the new "Apps"
+ * main-nav view (troubleshooting aid: "which exact version of X is on
+ * which device, and what does SOAR currently see fleet-wide"). Unlike
+ * getInstalledAppsStatus above (which only ever looks at devices in scope
+ * of an app-list compliance condition), this aggregates every device this
+ * workspace has ANY installed-app data for — self-reported or MDM-fetched
+ * — regardless of whether a policy references it, since the whole point is
+ * visibility independent of compliance enforcement.
+ */
+export async function getReportedAppsOverview(workspaceSlug: string, devices: NormalizedDevice[]): Promise<{ apps: ReportedAppSummary[]; devicesWithData: number; lastRefreshedAt: string | null }> {
+  const store = await loadInstalledAppsStore(workspaceSlug);
+  const devicesById = new Map(devices.map((d) => [d.id, d]));
+  const byIdentifier = new Map<string, ReportedAppSummary>();
+  let devicesWithData = 0;
+  let lastRefreshedAt: string | null = null;
+
+  for (const [deviceId, entry] of Object.entries(store)) {
+    if (!entry?.fetchedAt) continue;
+    devicesWithData += 1;
+    if (!lastRefreshedAt || new Date(entry.fetchedAt) > new Date(lastRefreshedAt)) lastRefreshedAt = entry.fetchedAt;
+    const device = devicesById.get(deviceId);
+    const deviceName = device?.displayName || deviceId;
+    const platform = entry.platform;
+    for (const app of entry.apps ?? []) {
+      const key = `${platform}:${app.identifier}`;
+      let summary = byIdentifier.get(key);
+      if (!summary) {
+        summary = { identifier: app.identifier, name: app.name || app.identifier, platform, deviceCount: 0, versions: [], devices: [] };
+        byIdentifier.set(key, summary);
+      }
+      if (app.name && summary.name === summary.identifier) summary.name = app.name;
+      summary.deviceCount += 1;
+      if (app.version && !summary.versions.includes(app.version)) summary.versions.push(app.version);
+      summary.devices.push({ deviceId, deviceName, version: app.version ?? null, source: entry.source, fetchedAt: entry.fetchedAt });
+    }
+  }
+
+  const apps = Array.from(byIdentifier.values());
+  for (const app of apps) {
+    app.versions.sort();
+    app.devices.sort((a, b) => a.deviceName.localeCompare(b.deviceName));
+  }
+  apps.sort((a, b) => b.deviceCount - a.deviceCount || a.name.localeCompare(b.name));
+
+  return { apps, devicesWithData, lastRefreshedAt };
+}
+
 /** GET /api/apple-app-updates/status (main.py:9569). */
 export async function getAppleAppUpdatesStatus(workspaceSlug: string, devices: NormalizedDevice[]) {
   const targetIds = appleAppUpdateDeviceIds(devices);
