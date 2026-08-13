@@ -69,6 +69,72 @@ const WINDOWS_PRODUCT_KEYWORDS: Record<number, string[]> = {
 const SEVERITY_RANK: Record<string, number> = { low: 0, moderate: 1, important: 2, critical: 3 };
 const BUILD_REVISION_RE = new RegExp(`\\b(${Object.keys(WINDOWS_BUILD_TO_FEATURE).join("|")})\\.(\\d{1,6})\\b`);
 
+/**
+ * Microsoft's MSRC CVRF bulletins (fetchMsrcMonth below) never actually carry
+ * the fixed OS build revision number — confirmed against production data:
+ * 0 of 574 real kbEntries had a non-null fixedUbr, across every single build
+ * major, not just the newly-added ones. Also confirmed against Microsoft's
+ * own MSRC-Microsoft-Security-Updates-API PowerShell module: its Remediation
+ * objects expose only Description/URL/ProductID/RestartRequired — no build
+ * field anywhere. BUILD_REVISION_RE above was ported from main.py assuming
+ * the revision was embedded in remediation/notes text; it never is, so
+ * `computeWindowsPendingUpdates` always fell back to confidence: "unknown".
+ *
+ * The one place Microsoft *does* publish "this KB fixes OS Build X.Y" is its
+ * public Windows release-health update-history pages — plain HTML, no auth,
+ * and (verified 2026-08) the Windows 11, version 25H2 page's own sidebar
+ * cross-lists every currently- and recently-serviced Windows 11 feature
+ * version (26H1, 25H2, 24H2, 23H2, 22H2, back through 21H2) with a full
+ * KB → OS Build history for each, so one fetch backfills all of them.
+ * fetchReleaseHealthBuildRevisions below scrapes that page as a second,
+ * independent enrichment pass over the kbEntries the CVRF fetch already
+ * produced (matched by KB number + build major) — it doesn't discover new
+ * KBs or CVEs, only fills in the fixedUbr the CVRF feed can't provide.
+ */
+const WINDOWS11_RELEASE_HEALTH_URL = "https://support.microsoft.com/en-us/servicing/os/windows-11/2025/07/windows-11-version-25h2-update-history";
+
+/**
+ * Parses "<Month> <Day>, <Year>—KB<number> (OS Build[s] <major>.<ubr>[ and
+ * <major>.<ubr>])" occurrences out of a release-health page's raw HTML
+ * (matched against the whole page text, so it survives whatever markup
+ * surrounds each link). A single KB commonly patches two build majors at
+ * once (a shared servicing branch, e.g. 26200 and 26100 both getting the
+ * same monthly cumulative update) — captures both when present.
+ */
+function parseReleaseHealthBuildRevisions(html: string): Array<{ kb: string; buildMajor: number; ubr: number }> {
+  const text = html.replace(/<[^>]+>/g, " ");
+  const re = /KB(\d{5,8})\s*\(OS Builds?\s+(\d{4,6})\.(\d{1,6})(?:\s+and\s+(\d{4,6})\.(\d{1,6}))?\)/g;
+  const out: Array<{ kb: string; buildMajor: number; ubr: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const kb = m[1];
+    out.push({ kb, buildMajor: Number(m[2]), ubr: Number(m[3]) });
+    if (m[4] && m[5]) out.push({ kb, buildMajor: Number(m[4]), ubr: Number(m[5]) });
+  }
+  return out;
+}
+
+/** Fetch + parse the release-health page — returns null (not throw) on any
+ * failure so a hiccup here never blocks the core CVRF refresh above. */
+async function fetchReleaseHealthBuildRevisions(): Promise<Map<string, number> | null> {
+  try {
+    const resp = await axios.get(WINDOWS11_RELEASE_HEALTH_URL, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; ApplierySOAR/1.0)", Accept: "text/html" },
+      timeout: 30000,
+      validateStatus: () => true,
+    });
+    if (resp.status >= 300) throw new Error(`HTTP ${resp.status}`);
+    const rows = parseReleaseHealthBuildRevisions(String(resp.data));
+    if (rows.length === 0) throw new Error("parsed 0 KB→build rows — page layout may have changed");
+    const map = new Map<string, number>();
+    for (const row of rows) map.set(`${row.kb}:${row.buildMajor}`, row.ubr);
+    return map;
+  } catch (e: any) {
+    console.warn(`[OS Update Catalog] Release-health fetch failed: ${e?.message ?? e}`);
+    return null;
+  }
+}
+
 function matchWindowsBuildMajor(productName: string): number | null {
   const name = (productName ?? "").toLowerCase();
   for (const [buildMajor, keywords] of Object.entries(WINDOWS_PRODUCT_KEYWORDS)) {
@@ -300,6 +366,30 @@ export async function refreshOsUpdateCatalog(): Promise<OsUpdateCatalog> {
   } else if (!catalog.kbEntries?.length) {
     catalog.lastError = fetchErrors.length ? fetchErrors.slice(0, 3).join(" | ") : "No MSRC data fetched yet — check network access to api.msrc.microsoft.com";
   }
+
+  // Backfill fixedUbr from the release-health page (see its doc comment) —
+  // runs every refresh regardless of CATALOG_VERSION/monthsFetched, since it
+  // re-derives from a live page each time rather than anything cached.
+  const releaseHealthMap = await fetchReleaseHealthBuildRevisions();
+  if (releaseHealthMap) {
+    let backfilled = 0;
+    for (const entry of catalog.kbEntries ?? []) {
+      if (entry.fixedUbr) continue;
+      const ubr = releaseHealthMap.get(`${entry.kb}:${entry.buildMajor}`);
+      if (ubr) {
+        entry.fixedUbr = ubr;
+        backfilled++;
+      }
+    }
+    if (backfilled > 0) console.warn(`[OS Update Catalog] Backfilled fixedUbr on ${backfilled} entries from release-health page`);
+  } else if (!(catalog.kbEntries ?? []).some((e) => e.fixedUbr)) {
+    // Only worth surfacing if we still have zero patch-level data overall —
+    // if some entries already have fixedUbr from a previous successful
+    // backfill, a transient fetch failure here isn't worth alarming over.
+    const suffix = "release-health page fetch failed — patch-level (fixedUbr) comparison unavailable this run";
+    catalog.lastError = catalog.lastError ? `${catalog.lastError} | ${suffix}` : suffix;
+  }
+
   await saveGlobalCatalog("os_update_catalog", catalog);
   return catalog;
 }
