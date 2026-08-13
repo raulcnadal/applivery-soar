@@ -19,6 +19,13 @@ import { appListScopedDeviceIds, clampInstalledAppsBudget, loadInstalledAppsStor
 export const INSTALLED_APPS_REFRESH_TICK_MS = 30_000;
 const TICKS_PER_HOUR = 3_600_000 / INSTALLED_APPS_REFRESH_TICK_MS; // 120
 
+// A self-reported entry is considered "fresh" for 2.5x the agent's default
+// report interval (1h, DeviceDataWebhookPanel.vue's generated snippets) —
+// generous enough to not thrash right at the boundary between report
+// cycles, while still eventually falling back to a live MDM fetch if a
+// device's agent stops reporting altogether.
+const SELF_REPORT_FRESH_MINUTES = 150;
+
 async function workspacesWithEnabledPolicies(): Promise<string[]> {
   const rows = await prisma.compliancePolicy.findMany({
     where: { enabled: true },
@@ -63,7 +70,22 @@ export async function runInstalledAppsRefresherTick(): Promise<void> {
       const perTickBudget = Math.max(1, Math.round(budgetPerHour / TICKS_PER_HOUR));
 
       const store = await loadInstalledAppsStore(workspaceSlug);
-      const ranked = Array.from(targetIds).sort((a, b) => {
+      // Devices already self-reporting fresh app inventory (deviceData.service.ts's
+      // reportDeviceApps) don't need the live/paid MDM applications fetch —
+      // attempting it anyway was actively harmful: on a device that errors on
+      // that endpoint (e.g. not enrolled for it), every tick would re-run the
+      // fetch, fail, and (pre-fix) wipe out the good self-reported identifiers.
+      // The fetch is now non-destructive on error (installedApps.service.ts),
+      // but it's still pointless work and a misleading permanent "fetch error"
+      // for a device that's actually fully in sync via self-report — so skip
+      // it outright while the self-report is still fresh.
+      const candidateIds = Array.from(targetIds).filter((id) => {
+        const entry = store[id];
+        if (!entry?.fetchedAt || entry.source !== "self_reported") return true;
+        const ageMinutes = (Date.now() - new Date(entry.fetchedAt).getTime()) / 60000;
+        return ageMinutes > SELF_REPORT_FRESH_MINUTES;
+      });
+      const ranked = candidateIds.sort((a, b) => {
         const aAt = store[a]?.fetchedAt ? new Date(store[a].fetchedAt).getTime() : 0;
         const bAt = store[b]?.fetchedAt ? new Date(store[b].fetchedAt).getTime() : 0;
         return aAt - bAt; // never-synced (epoch 0) sorts first, then oldest-fetched-first

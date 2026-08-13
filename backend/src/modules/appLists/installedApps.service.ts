@@ -120,13 +120,23 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
   const existing = await prisma.installedAppInventory.findUnique({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId } } });
   const existingEntry = existing?.apps as unknown as InstalledAppsEntry | undefined;
 
+  // On error, this must NOT clobber a previously-good entry — in
+  // particular a self-reported one (source: "self_reported") written by
+  // reportDeviceApps (deviceData.service.ts). Before this fix, an errored
+  // MDM live-fetch (e.g. a device not enrolled for the paid app-inventory
+  // endpoint) unconditionally reset identifiers to an empty set and source
+  // to "server_fetch" regardless of error, permanently wiping out good
+  // self-reported data on every refresher tick (installedAppsJobs.ts runs
+  // every 30s) and making requiredAppList/disallowedAppList compliance
+  // conditions (which read identifiers straight off this entry via
+  // readInstalledAppsFromStore) never see the device's real installed apps.
   const entry: InstalledAppsEntry = {
-    identifiers: Array.from(identifiers).sort(),
+    identifiers: error === null ? Array.from(identifiers).sort() : existingEntry?.identifiers ?? [],
     apps: error === null ? versionedApps.sort((a, b) => a.identifier.localeCompare(b.identifier)) : existingEntry?.apps ?? [],
     platform: platformPath,
     fetchedAt: new Date().toISOString(),
     error,
-    source: "server_fetch",
+    source: error === null ? "server_fetch" : existingEntry?.source ?? "server_fetch",
     appleAppUpdates:
       platformPath === "apple"
         ? error === null
