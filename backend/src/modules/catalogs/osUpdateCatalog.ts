@@ -12,6 +12,26 @@ import { versionTuple } from "../compliance/complianceEvaluate";
 const MONTHS_BACK = 15;
 export const OS_UPDATE_TICK_MS = 86_400_000; // daily
 
+/**
+ * Bump whenever WINDOWS_BUILD_TO_FEATURE/WINDOWS_PRODUCT_KEYWORDS gains a
+ * new build major. `kbEntries` only ever stores rows `matchWindowsBuildMajor`
+ * recognized *at fetch time* — a month fetched before a given build major
+ * was added to those maps silently dropped every row for it (see the
+ * `buildMajor === null` skip in fetchMsrcMonth's parse loop) and that raw
+ * data is gone; the rolled-up KB entries are all `refreshOsUpdateCatalog`
+ * keeps. The incremental refresh below only ever re-fetches the 2 most
+ * recent months once a month is in `monthsFetched` (`idx >= 2` guard), so
+ * without this version check, older months stay permanently blind to any
+ * build added after they were first cached — exactly what happened to
+ * builds 26200 (25H2) and 28000 (26H1): both were added to the maps above
+ * well after most of the rolling 15-month window had already been fetched,
+ * so real, currently-serviced devices on those builds got zero matching
+ * kbEntries and were stuck reporting confidence: "unknown" indefinitely.
+ * A version bump forces every month to be re-fetched once, the only way to
+ * recover rows that were dropped rather than cached.
+ */
+const CATALOG_VERSION = 2;
+
 export const WINDOWS_BUILD_TO_FEATURE: Record<number, string> = {
   // 28000/26200 verified against Microsoft's own windows11-release-information
   // doc (learn.microsoft.com) as of 2026-08 — 26H1 is a hardware-scoped
@@ -80,27 +100,47 @@ interface OsUpdateCatalog {
   monthsFetched: string[];
   lastFetchedAt: string | null;
   lastError: string | null;
+  catalogVersion?: number;
 }
 
 const MONTH_ABBR = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export async function loadOsUpdateCatalog(): Promise<OsUpdateCatalog> {
-  return loadGlobalCatalog("os_update_catalog", () => ({ kbEntries: [], monthsFetched: [], lastFetchedAt: null, lastError: null }));
+  return loadGlobalCatalog("os_update_catalog", () => ({ kbEntries: [], monthsFetched: [], lastFetchedAt: null, lastError: null, catalogVersion: CATALOG_VERSION }));
+}
+
+interface FetchMsrcMonthResult {
+  entries: Array<Record<string, any>> | null;
+  /** Set only for genuine failures (bad shape, network error, non-404 HTTP
+   * status) — never for a 404, which just means MSRC hasn't published a
+   * bulletin for that month (a perfectly normal, silent no-op). Surfacing
+   * this lets refreshOsUpdateCatalog report a real `lastError` instead of
+   * quietly degrading to zero entries with no diagnostic trail. */
+  error?: string;
 }
 
 /** Fetch + parse one month's MSRC CVRF bulletin — port of `_fetch_msrc_month` (main.py:16279). */
-async function fetchMsrcMonth(year: number, month: number): Promise<Array<Record<string, any>> | null> {
+async function fetchMsrcMonth(year: number, month: number): Promise<FetchMsrcMonthResult> {
   const monthCode = `${year}-${MONTH_ABBR[month]}`;
   const url = `https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/${monthCode}`;
   let doc: any;
   try {
     const resp = await axios.get(url, { headers: { Accept: "application/json" }, timeout: 30000, validateStatus: () => true });
-    if (resp.status === 404) return null;
+    if (resp.status === 404) return { entries: null };
     if (resp.status >= 300) throw new Error(`HTTP ${resp.status}`);
     doc = resp.data;
-  } catch (e) {
-    console.warn(`[OS Update Catalog] Failed to fetch ${monthCode}: ${e}`);
-    return null;
+    // MSRC's content negotiation is header-driven (Accept: application/json
+    // above) rather than always honored — a proxy/CDN hiccup or an API
+    // change could hand back XML or an HTML error page instead. Catch that
+    // here rather than silently treating `doc.ProductTree ?? {}` /
+    // `doc.Vulnerability ?? []` as "zero entries this month".
+    if (typeof doc !== "object" || doc === null || Array.isArray(doc) || !("ProductTree" in doc || "Vulnerability" in doc)) {
+      throw new Error(`unexpected response shape for ${monthCode} (Content-Type: ${resp.headers?.["content-type"] ?? "unknown"}) — MSRC may have changed its API`);
+    }
+  } catch (e: any) {
+    const message = `Failed to fetch ${monthCode}: ${e?.message ?? e}`;
+    console.warn(`[OS Update Catalog] ${message}`);
+    return { entries: null, error: message };
   }
 
   const productNames = new Map<string, string>();
@@ -162,7 +202,7 @@ async function fetchMsrcMonth(year: number, month: number): Promise<Array<Record
       });
     }
   }
-  return entries;
+  return { entries };
 }
 
 interface KbRollupEntry {
@@ -206,6 +246,19 @@ function rollupKbEntries(rawEntries: Array<Record<string, any>>): Array<Record<s
 /** Port of `_refresh_os_update_catalog` (main.py:16418). */
 export async function refreshOsUpdateCatalog(): Promise<OsUpdateCatalog> {
   const catalog = await loadOsUpdateCatalog();
+
+  if (catalog.catalogVersion !== CATALOG_VERSION) {
+    // See CATALOG_VERSION's doc comment — a build major was added to
+    // WINDOWS_BUILD_TO_FEATURE/WINDOWS_PRODUCT_KEYWORDS after some of these
+    // months were already cached, so those months need to be re-parsed from
+    // scratch to pick up rows for the newly-recognized build(s). Clearing
+    // monthsFetched (not kbEntries) forces every month in the window through
+    // the `idx >= 2` fetch below on this run; existing kbEntries for months
+    // that fail to refetch are kept as-is via the `kept` filter further down.
+    catalog.monthsFetched = [];
+    catalog.catalogVersion = CATALOG_VERSION;
+  }
+
   const now = new Date();
   const monthsToFetch: Array<[number, number]> = [];
   for (let i = 0; i < MONTHS_BACK; i++) {
@@ -219,14 +272,16 @@ export async function refreshOsUpdateCatalog(): Promise<OsUpdateCatalog> {
   }
 
   const allEntriesByMonth = new Map<string, Array<Record<string, any>>>();
+  const fetchErrors: string[] = [];
   for (let idx = 0; idx < monthsToFetch.length; idx++) {
     const [y, m] = monthsToFetch[idx];
     const monthCode = `${y}-${MONTH_ABBR[m]}`;
     const alreadyHave = (catalog.monthsFetched ?? []).includes(monthCode);
     if (alreadyHave && idx >= 2) continue;
-    const entries = await fetchMsrcMonth(y, m);
-    if (entries === null) continue;
-    allEntriesByMonth.set(monthCode, entries);
+    const result = await fetchMsrcMonth(y, m);
+    if (result.error) fetchErrors.push(result.error);
+    if (result.entries === null) continue;
+    allEntriesByMonth.set(monthCode, result.entries);
     if (!catalog.monthsFetched.includes(monthCode)) catalog.monthsFetched.push(monthCode);
   }
 
@@ -237,9 +292,13 @@ export async function refreshOsUpdateCatalog(): Promise<OsUpdateCatalog> {
     for (const entries of allEntriesByMonth.values()) newRolled.push(...rollupKbEntries(entries));
     catalog.kbEntries = [...kept, ...newRolled];
     catalog.lastFetchedAt = new Date().toISOString();
-    catalog.lastError = null;
+    // Even on a partly-successful run, a real failure is worth surfacing —
+    // the old code only ever set lastError when *every* month failed, so a
+    // broken current month (the one that matters most for freshness) could
+    // fail silently forever as long as older months still fetched fine.
+    catalog.lastError = fetchErrors.length ? `${fetchErrors.length} of ${monthsToFetch.length} months failed to fetch: ${fetchErrors.slice(0, 3).join(" | ")}` : null;
   } else if (!catalog.kbEntries?.length) {
-    catalog.lastError = "No MSRC data fetched yet — check network access to api.msrc.microsoft.com";
+    catalog.lastError = fetchErrors.length ? fetchErrors.slice(0, 3).join(" | ") : "No MSRC data fetched yet — check network access to api.msrc.microsoft.com";
   }
   await saveGlobalCatalog("os_update_catalog", catalog);
   return catalog;
