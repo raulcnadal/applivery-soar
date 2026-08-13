@@ -8,7 +8,12 @@ type Headers = Record<string, string>;
 
 export interface InstalledAppsEntry {
   identifiers: string[];
-  apps: Array<{ identifier: string; name?: string | null; version: string }>;
+  // updateAvailable is only ever populated for platform "apple" — Applivery's
+  // Applications API returns a HasUpdateAvailable boolean for iOS/iPadOS/
+  // macOS apps but no target/new-version number, and no equivalent flag at
+  // all for Android or Windows (self-reported Windows apps have no update
+  // signal today; Android's MDM fetch doesn't surface one either).
+  apps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean }>;
   platform: string;
   fetchedAt: string;
   error: string | null;
@@ -81,7 +86,7 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
   let error: string | null = null;
   const applePendingApps: Array<Record<string, any>> = [];
   let appleTotalApps = 0;
-  const versionedApps: Array<{ identifier: string; name?: string | null; version: string }> = [];
+  const versionedApps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean }> = [];
 
   try {
     const res = await appliveryClient.get<any>(url, { headers });
@@ -96,7 +101,7 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
           if (item.HasUpdateAvailable) {
             applePendingApps.push({ identifier: ident, name: item.Name, installedVersion: version, build: item.Version, isBetaApp: Boolean(item.BetaApp) });
           }
-          if (ident && version) versionedApps.push({ identifier: String(ident).toLowerCase(), name: item.Name, version: String(version) });
+          if (ident && version) versionedApps.push({ identifier: String(ident).toLowerCase(), name: item.Name, version: String(version), updateAvailable: Boolean(item.HasUpdateAvailable) });
         } else if (platformPath === "android" || platformPath === "aosp") {
           ident = item.packageName;
           if (item.state !== "REMOVED") {
@@ -255,6 +260,16 @@ export interface ReportedAppDeviceRef {
   version: string | null;
   source: string;
   fetchedAt: string;
+  updateAvailable: boolean;
+  // Last live-MDM-fetch error for this device, if any — carried over even
+  // when the apps shown for it came from self-report (installedApps.service.ts's
+  // error-preservation fix keeps a self-reported entry's data intact through
+  // a failing live fetch, but the `error` field itself is still recorded so
+  // it's visible here rather than silently disappearing). Explains cases
+  // like "why does this device only ever show self-reported data" — surfaces
+  // the actual reason (e.g. Applivery's own API returning a non-2xx for this
+  // device/platform) instead of leaving it a mystery.
+  lastFetchError: string | null;
 }
 export interface ReportedAppSummary {
   identifier: string;
@@ -262,6 +277,8 @@ export interface ReportedAppSummary {
   platform: string;
   deviceCount: number;
   versions: string[];
+  sources: string[];
+  devicesWithPendingUpdate: number;
   devices: ReportedAppDeviceRef[];
 }
 
@@ -293,19 +310,30 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
       const key = `${platform}:${app.identifier}`;
       let summary = byIdentifier.get(key);
       if (!summary) {
-        summary = { identifier: app.identifier, name: app.name || app.identifier, platform, deviceCount: 0, versions: [], devices: [] };
+        summary = { identifier: app.identifier, name: app.name || app.identifier, platform, deviceCount: 0, versions: [], sources: [], devicesWithPendingUpdate: 0, devices: [] };
         byIdentifier.set(key, summary);
       }
       if (app.name && summary.name === summary.identifier) summary.name = app.name;
       summary.deviceCount += 1;
       if (app.version && !summary.versions.includes(app.version)) summary.versions.push(app.version);
-      summary.devices.push({ deviceId, deviceName, version: app.version ?? null, source: entry.source, fetchedAt: entry.fetchedAt });
+      if (!summary.sources.includes(entry.source)) summary.sources.push(entry.source);
+      if (app.updateAvailable) summary.devicesWithPendingUpdate += 1;
+      summary.devices.push({
+        deviceId,
+        deviceName,
+        version: app.version ?? null,
+        source: entry.source,
+        fetchedAt: entry.fetchedAt,
+        updateAvailable: Boolean(app.updateAvailable),
+        lastFetchError: entry.error,
+      });
     }
   }
 
   const apps = Array.from(byIdentifier.values());
   for (const app of apps) {
     app.versions.sort();
+    app.sources.sort();
     app.devices.sort((a, b) => a.deviceName.localeCompare(b.deviceName));
   }
   apps.sort((a, b) => b.deviceCount - a.deviceCount || a.name.localeCompare(b.name));

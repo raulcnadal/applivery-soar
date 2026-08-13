@@ -211,6 +211,8 @@ export interface ReportedAppDeviceRef {
   version: string | null;
   source: string;
   fetchedAt: string;
+  updateAvailable: boolean;
+  lastFetchError: string | null;
 }
 export interface ReportedAppSummary {
   identifier: string;
@@ -218,6 +220,8 @@ export interface ReportedAppSummary {
   platform: string;
   deviceCount: number;
   versions: string[];
+  sources: string[];
+  devicesWithPendingUpdate: number;
   devices: ReportedAppDeviceRef[];
 }
 
