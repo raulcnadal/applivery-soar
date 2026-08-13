@@ -76,6 +76,14 @@ export interface NormalizedDevice {
   // this device's raw osVersion build number — Applivery's own inventory
   // never reports a marketing name, only the bare build string.
   windowsVersionLabel?: string | null;
+  // "SOAR Agent" (our own Windows/macOS agent) is distinct from Applivery's
+  // own "Applivery Agent" (their MDM enrollment agent, which is what backs
+  // isCompliant/activePolicies/etc.) — keep the naming precise anywhere
+  // this is surfaced. `soarAgentReporting` is only true if the last
+  // self-report was recent (see backend's SOAR_AGENT_STALE_THRESHOLD_MS);
+  // a device that reported once and went quiet reads as stale, not reporting.
+  soarAgentReporting?: boolean;
+  soarAgentLastReportedAt?: string | null;
 }
 
 export interface PickerItem {

@@ -233,6 +233,25 @@ const assignedCompliancePolicies = computed(() => {
     });
 });
 
+// "SOAR Agent" (our own Windows/macOS agent) vs. Applivery's separate
+// "Applivery Agent" (their own MDM enrollment agent) — named explicitly in
+// every label below so this never reads as a claim about Applivery's own
+// agent status. Three states rather than a plain yes/no: a device that
+// self-reported once and then went quiet reads as "stale", not lumped in
+// with "never installed" (device.soarAgentReporting is only true within
+// SOAR_AGENT_STALE_THRESHOLD_MS of the last report — devices.service.ts).
+const soarAgentBadge = computed(() => {
+  const d = device.value;
+  if (!d) return { label: "No SOAR Agent", color: "#9CA3AF", detail: "" };
+  if (d.soarAgentReporting) {
+    return { label: "SOAR Agent reporting", color: SUCCESS, detail: d.soarAgentLastReportedAt ? `Last reported ${new Date(d.soarAgentLastReportedAt).toLocaleString()}` : "" };
+  }
+  if (d.soarAgentLastReportedAt) {
+    return { label: "SOAR Agent stale", color: WARNING, detail: `Last reported ${new Date(d.soarAgentLastReportedAt).toLocaleString()} — hasn't reported recently` };
+  }
+  return { label: "No SOAR Agent", color: "#9CA3AF", detail: "This device has never self-reported to Applivery SOAR" };
+});
+
 const segmentName = computed(() => {
   if (!device.value) return "Global";
   const flat = flattenSegments(store.segments as any);
@@ -736,6 +755,14 @@ function logBody(l: Record<string, any>): string {
                 </span>
                 <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" :style="{ backgroundColor: `${riskMeta(device.riskTier).color}15`, color: riskMeta(device.riskTier).color }">
                   {{ riskMeta(device.riskTier).label }} risk · {{ device.riskScore }}
+                </span>
+                <span
+                  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                  :style="{ backgroundColor: `${soarAgentBadge.color}15`, color: soarAgentBadge.color }"
+                  :title="soarAgentBadge.detail"
+                >
+                  <component :is="ICONS.Cpu" :size="12" weight="Linear" />
+                  {{ soarAgentBadge.label }}
                 </span>
               </div>
               <div v-if="typeof device.riskScore === 'number'">

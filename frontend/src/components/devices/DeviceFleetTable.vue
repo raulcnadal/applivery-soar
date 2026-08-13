@@ -263,6 +263,21 @@ function toggleRiskSort() {
 }
 
 // ── Cell helpers ──
+// "SOAR Agent" (our own Windows/macOS agent) vs. Applivery's separate
+// "Applivery Agent" (their own MDM enrollment agent) — same three-state
+// logic as DeviceDetailDrawer.vue's soarAgentBadge, kept in sync
+// deliberately rather than shared, since this file has no existing
+// composable import for cell-badge helpers.
+function soarAgentBadge(d: any): { label: string; color: string; title: string } {
+  if (d.soarAgentReporting) {
+    return { label: "Reporting", color: SUCCESS, title: d.soarAgentLastReportedAt ? `SOAR Agent — last reported ${new Date(d.soarAgentLastReportedAt).toLocaleString()}` : "SOAR Agent reporting" };
+  }
+  if (d.soarAgentLastReportedAt) {
+    return { label: "Stale", color: WARNING, title: `SOAR Agent — last reported ${new Date(d.soarAgentLastReportedAt).toLocaleString()}, hasn't reported recently` };
+  }
+  return { label: "Not installed", color: "#9CA3AF", title: "This device has never self-reported to Applivery SOAR" };
+}
+
 function batteryColor(pct: number) {
   if (pct >= 50) return SUCCESS;
   if (pct >= 20) return WARNING;
@@ -562,7 +577,7 @@ onMounted(() => {
                 @change="selectedIds = ($event.target as HTMLInputElement).checked ? new Set(filtered.map((d) => d.id)) : new Set()"
               />
             </th>
-            <th v-for="h in ['Device', 'Employee', 'Hardware', 'OS Version', 'Compliance']" :key="h" class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            <th v-for="h in ['Device', 'Employee', 'Hardware', 'OS Version', 'Compliance', 'SOAR Agent']" :key="h" class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
               {{ h }}
             </th>
             <th class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider">
@@ -644,6 +659,15 @@ onMounted(() => {
               >
                 <component :is="d.isCompliant ? ICONS.ShieldCheck : ICONS.ShieldWarning" :size="12" weight="Linear" />
                 {{ d.isCompliant ? "Compliant" : "Non-compliant" }}
+              </span>
+            </td>
+            <td class="px-3 py-3">
+              <span
+                :title="soarAgentBadge(d).title"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                :style="{ backgroundColor: `${soarAgentBadge(d).color}15`, color: soarAgentBadge(d).color }"
+              >
+                {{ soarAgentBadge(d).label }}
               </span>
             </td>
             <td class="px-3 py-3 relative">

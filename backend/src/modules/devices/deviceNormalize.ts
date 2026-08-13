@@ -197,6 +197,17 @@ export interface NormalizedDevice {
   // osUpdateStatus (a pure sync lookup, no MSRC catalog dependency) so it's
   // always available even when the update-intelligence catalog itself isn't.
   windowsVersionLabel?: string | null;
+  // "SOAR Agent" (our own Windows/macOS agent, self-reported via
+  // deviceData.service.ts's /api/device-data/report) is a distinct concept
+  // from Applivery's own "Applivery Agent" (their MDM enrollment agent,
+  // which is what powers isCompliant/activePolicies/etc. below) — this pair
+  // exists so the UI can say specifically whether OUR agent is reporting,
+  // without that reading as a claim about Applivery's own agent. `true` only
+  // when the last self-report is within SOAR_AGENT_STALE_THRESHOLD_MS
+  // (devices.service.ts) — a device that reported once months ago and has
+  // gone quiet since is "stale", not "reporting".
+  soarAgentReporting?: boolean;
+  soarAgentLastReportedAt?: string | null;
   vulnStatus?: Record<string, any> | null;
   osLifecycleStatus?: Record<string, any> | null;
   appleAppUpdateStatus?: Record<string, any> | null;

@@ -3,6 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { deviceAppReportPayloadSchema, deviceReportPayloadSchema } from "./deviceData.schemas";
 import { getAgentStatus, reportDeviceApps, reportDeviceData, verifyDeviceReportSecret } from "./deviceData.service";
 import { listEnabledChecksForAgent } from "../compliance/customChecks.service";
+import { forceEvaluateNow } from "../compliance/compliance.service";
 
 /** Port of main.py:7758-7804 / 9714-9804 — POST /api/device-data/report, POST /api/device-data/report-apps. */
 
@@ -64,6 +65,25 @@ deviceDataRouter.get(
  * why this always returns 200 with `compliance.available: false` instead of
  * erroring when compliance can't be computed yet.
  */
+/**
+ * "Force evaluate compliance" — the SOAR Agent tray/menu action that lets an
+ * end user (or the admin sitting at that machine) trigger a real compliance
+ * pass right now instead of waiting for the 60s scheduler tick
+ * (complianceJobs.ts) to notice a due policy. Same device-caller auth as
+ * every other route in this file; the actual evaluation runs against the
+ * workspace's Automation Credential, not anything device-supplied — see
+ * forceEvaluateNow's own doc comment (compliance.service.ts) for the
+ * cooldown/credential-missing behavior.
+ */
+deviceDataRouter.post(
+  "/api/device-data/evaluate-now",
+  asyncHandler(async (req, res) => {
+    const workspaceSlug = workspaceOf(req);
+    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    res.json(await forceEvaluateNow(workspaceSlug));
+  }),
+);
+
 deviceDataRouter.get(
   "/api/device-data/agent-status",
   asyncHandler(async (req, res) => {

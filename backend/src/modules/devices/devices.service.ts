@@ -33,6 +33,14 @@ import { createScriptAsset } from "../workflows/scriptAssetUpload";
 // already serves for the one-time scheduled-task setup; bulk-reattest reuses
 // them as the payload for an on-demand Action Library "script" entry.
 const SCRIPTS_DIR = path.resolve(__dirname, "../../../scripts");
+
+// How long a SOAR Agent self-report stays "reporting" (green) before
+// devices.service.ts/deviceNormalize.ts's soarAgentReporting flips to false
+// ("stale", not "not installed" — see the field's own doc comment). 24h is
+// generous against the agent's own default 1h poll interval
+// (config.IntervalSec in the Windows/macOS agent repos), giving slack for a
+// laptop that's been asleep/offline overnight without flagging it stale.
+const SOAR_AGENT_STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 const SECURITY_REPORT_SCRIPT_FILES: Record<string, string> = {
   windows: "report-security-attributes.ps1",
   macos: "report-security-attributes.sh",
@@ -327,6 +335,18 @@ export async function getDevicesFull(
 
     d.osUpdateStatus = d.platform === "windows" ? computeWindowsPendingUpdates(d.osVersion, osUpdateCatalog) : null;
     d.windowsVersionLabel = d.platform === "windows" ? windowsDeviceBuild(d.osVersion)?.featureLabel ?? null : null;
+
+    // "SOAR Agent reporting" — see the NormalizedDevice field's own doc
+    // comment (deviceNormalize.ts) for why this is kept explicitly distinct
+    // from Applivery's own agent/enrollment concepts. selfReported comes
+    // from pushdataCache (loadDevicePushDataCache), which stamps
+    // lastReportedAt from DevicePushData.reportedAt on every row.
+    {
+      const selfReportedRecord = d.selfReported as { lastReportedAt?: string } | null;
+      const lastReportedAt = selfReportedRecord?.lastReportedAt ?? null;
+      d.soarAgentLastReportedAt = lastReportedAt;
+      d.soarAgentReporting = lastReportedAt !== null && Date.now() - new Date(lastReportedAt).getTime() < SOAR_AGENT_STALE_THRESHOLD_MS;
+    }
     if (d.platform === "apple" || d.platform === "macos") {
       d.vulnStatus = computeApplePendingVulns(d.platform, d.osVersion, vulnCatalog);
     } else if (d.platform === "android") {

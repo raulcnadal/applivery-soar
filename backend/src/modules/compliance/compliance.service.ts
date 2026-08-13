@@ -15,6 +15,7 @@ import type { CompliancePolicyPayload } from "./compliance.schemas";
 import { addCaseTimelineEntry, dispatchAndAttachCaseEvent, markCaseRecovered, upsertCaseForViolation } from "../cases/cases.service";
 import { sendChatText } from "../settings/notificationsWebhook.service";
 import { sendAlertEmail } from "../../services/alertEmail";
+import { getAutomationBearer } from "../settings/automationCredential.service";
 
 /**
  * CompliancePolicy CRUD + the shared evaluation engine — port of
@@ -789,6 +790,44 @@ export async function runComplianceEvaluation(
   await prisma.compliancePolicy.updateMany({ where: { id: { in: policies.map((p) => p.id) } }, data: { lastEvaluatedAt: new Date(nowIso) } });
 
   return summary;
+}
+
+// Per-workspace cooldown for forceEvaluateNow below — in-memory only (a
+// restart just resets it, same tradeoff as liveCache.ts), purely to stop one
+// misbehaving/misconfigured device from hammering a full fleet evaluation on
+// every tray click or a tight retry loop. Admins triggering "Evaluate now"
+// from the web UI (POST /api/compliance/evaluate) are NOT subject to this —
+// that's a logged-in human action, this is specifically the unattended
+// device-agent path.
+const lastForcedEvaluationAt = new Map<string, number>();
+const FORCED_EVALUATION_COOLDOWN_MS = 60_000;
+
+/**
+ * The device-agent equivalent of the web UI's "Evaluate now" button
+ * (POST /api/compliance/evaluate, which runs with the calling admin's own
+ * live session) — called from a new device-secret-gated endpoint
+ * (deviceData.controller.ts's POST /api/device-data/evaluate-now) so the
+ * Windows/macOS SOAR Agent tray/menu can offer a "Force evaluate compliance"
+ * action without needing an admin bearer of its own. Reuses the workspace's
+ * stored Automation Credential (automationCredential.service.ts) — the same
+ * unattended-bearer source the 60s scheduler (complianceJobs.ts) already
+ * relies on — rather than inventing a second credential concept.
+ */
+export async function forceEvaluateNow(workspaceSlug: string): Promise<EvaluationSummary> {
+  const last = lastForcedEvaluationAt.get(workspaceSlug) ?? 0;
+  const now = Date.now();
+  if (now - last < FORCED_EVALUATION_COOLDOWN_MS) {
+    throw new HttpError(429, "A compliance evaluation was already triggered for this workspace in the last minute — please wait a moment before trying again.");
+  }
+  const bearer = await getAutomationBearer(workspaceSlug);
+  if (!bearer) {
+    throw new HttpError(
+      503,
+      "No Automation Credential is configured for this workspace (Settings > Workspace Automation) — the SOAR Agent can't trigger an unattended compliance evaluation without one.",
+    );
+  }
+  lastForcedEvaluationAt.set(workspaceSlug, now);
+  return runComplianceEvaluation(bearer, workspaceSlug, null, "device-agent");
 }
 
 // ── Violations review queue (main.py:11429-11599) ──
