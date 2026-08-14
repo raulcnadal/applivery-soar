@@ -64,6 +64,73 @@ const filtered = computed(() => {
   });
 });
 
+// ── Column sort — Version/Source/Update/Risk, click a header to sort,
+// click again to reverse, a third click clears back to the default
+// (deviceCount desc, same as getReportedAppsOverview's own server-side
+// order) ordering.
+type SortKey = "version" | "source" | "update" | "risk";
+const sortBy = ref<SortKey | null>(null);
+const sortDir = ref<"asc" | "desc">("desc");
+const DEFAULT_SORT_DIR: Record<SortKey, "asc" | "desc"> = { version: "asc", source: "asc", update: "desc", risk: "desc" };
+
+function versionCompare(a: string, b: string): number {
+  const toParts = (v: string) => v.split(/[.\s]+/).map((s) => parseInt(s, 10));
+  const pa = toParts(a);
+  const pb = toParts(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const av = Number.isNaN(pa[i]) ? 0 : pa[i] ?? 0;
+    const bv = Number.isNaN(pb[i]) ? 0 : pb[i] ?? 0;
+    if (av !== bv) return av - bv;
+  }
+  return 0;
+}
+
+function toggleSort(key: SortKey) {
+  if (sortBy.value !== key) {
+    sortBy.value = key;
+    sortDir.value = DEFAULT_SORT_DIR[key];
+  } else if (sortDir.value === DEFAULT_SORT_DIR[key]) {
+    sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+  } else {
+    sortBy.value = null;
+  }
+}
+
+const sorted = computed(() => {
+  if (!sortBy.value) return filtered.value;
+  const key = sortBy.value;
+  const dir = sortDir.value === "asc" ? 1 : -1;
+  const copy = [...filtered.value];
+  copy.sort((a, b) => {
+    switch (key) {
+      case "version": {
+        // A single-version app sorts by its actual version number; an app
+        // with drifted versions across the fleet sorts by how many
+        // distinct versions it has (the signal the "N versions" label
+        // itself is showing) — the two aren't directly comparable, so
+        // version-count takes priority whenever either side has more than
+        // one, falling back to a real version compare only when both sides
+        // are single-version.
+        if (a.versions.length > 1 || b.versions.length > 1) return dir * (a.versions.length - b.versions.length);
+        return dir * versionCompare(a.versions[0] || "", b.versions[0] || "");
+      }
+      case "source":
+        return dir * sourceLabel(a).localeCompare(sourceLabel(b));
+      case "update":
+        return dir * (a.devicesWithPendingUpdate - b.devicesWithPendingUpdate);
+      case "risk": {
+        const ra = a.vulnSummary && a.vulnSummary.totalCveCount > 0 ? a.vulnSummary.riskScore : -1;
+        const rb = b.vulnSummary && b.vulnSummary.totalCveCount > 0 ? b.vulnSummary.riskScore : -1;
+        return dir * (ra - rb);
+      }
+      default:
+        return 0;
+    }
+  });
+  return copy;
+});
+
 function appKey(app: ReportedAppSummary): string {
   return `${app.platform}:${app.identifier}`;
 }
@@ -152,17 +219,28 @@ onMounted(() => {
     <div v-else class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 overflow-hidden">
       <div class="hidden sm:grid grid-cols-[1fr_140px_120px_120px_70px_90px_24px] gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700">
         <span>App</span>
-        <span>Version</span>
-        <span>Source</span>
-        <span>Update</span>
-        <span>Risk</span>
+        <button
+          v-for="col in [
+            { key: 'version', label: 'Version' },
+            { key: 'source', label: 'Source' },
+            { key: 'update', label: 'Update' },
+            { key: 'risk', label: 'Risk' },
+          ]"
+          :key="col.key"
+          type="button"
+          class="inline-flex items-center gap-1 uppercase tracking-wider text-left"
+          :style="{ color: sortBy === col.key ? '#0241E3' : undefined }"
+          @click.stop="toggleSort(col.key as SortKey)"
+        >
+          {{ col.label }} <component :is="ICONS.SortVertical" :size="10" weight="Linear" />
+        </button>
         <span class="text-right">Devices</span>
         <span></span>
       </div>
       <p v-if="filtered.length === 0" class="text-xs text-gray-400 px-3 py-3">No apps match "{{ searchQuery }}".</p>
       <div class="divide-y divide-gray-100 dark:divide-gray-700">
         <button
-          v-for="app in filtered"
+          v-for="app in sorted"
           :key="appKey(app)"
           type="button"
           class="w-full grid grid-cols-2 sm:grid-cols-[1fr_140px_120px_120px_70px_90px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40"

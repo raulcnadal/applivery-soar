@@ -44,8 +44,18 @@ const complianceFilter = ref<"all" | "non_compliant">("all");
 const riskFilter = ref<"all" | "low" | "medium" | "high" | "critical">("all");
 const minRiskScore = ref("");
 const maxRiskScore = ref("");
-const sortBy = ref<null | "risk">(null);
+type SortKey = "employee" | "hardware" | "osVersion" | "compliance" | "soarAgent" | "risk" | "lastSeen";
+const sortBy = ref<SortKey | null>(null);
 const sortDir = ref<"asc" | "desc">("desc");
+// First click on a column sorts in whichever direction reads most useful for
+// that column by default (worst/most-recent first for risk & last-seen,
+// A-Z for everything else) — matches the pre-existing risk-only sort's own
+// "first click = desc" behavior for risk while giving text columns a saner
+// first click than starting Z-A.
+const DEFAULT_SORT_DIR: Record<SortKey, "asc" | "desc"> = {
+  employee: "asc", hardware: "asc", osVersion: "asc", compliance: "asc", soarAgent: "asc",
+  risk: "desc", lastSeen: "desc",
+};
 const selectedIds = ref<Set<string>>(new Set());
 const expandedRiskId = ref<string | null>(null);
 
@@ -241,22 +251,74 @@ const filtered = computed(() => {
   });
 });
 
+// Simple dot/space-separated numeric-segment comparison for OS version
+// strings (e.g. "10.0.26200.5074" vs "10.0.19045.4046") — a plain string
+// compare would sort "9" after "10" wrongly whenever segment widths differ;
+// this compares each segment numerically instead. Non-numeric segments
+// (rare — a handful of Android/vendor builds carry a letter suffix) fall
+// back to 0 for that segment rather than throwing off the whole compare.
+function versionCompare(a: string, b: string): number {
+  const toParts = (v: string) => v.split(/[.\s]+/).map((s) => parseInt(s, 10));
+  const pa = toParts(a);
+  const pb = toParts(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const av = Number.isNaN(pa[i]) ? 0 : pa[i] ?? 0;
+    const bv = Number.isNaN(pb[i]) ? 0 : pb[i] ?? 0;
+    if (av !== bv) return av - bv;
+  }
+  return 0;
+}
+
+// SOAR Agent's own three-state badge (soarAgentBadge below) has no natural
+// numeric value on the device object itself — rank it the same way the
+// badge itself reads: actively reporting > stale > never installed.
+function soarAgentRank(d: NormalizedDevice): number {
+  if (d.soarAgentReporting) return 2;
+  if (d.soarAgentLastReportedAt) return 1;
+  return 0;
+}
+
 const sorted = computed(() => {
-  if (sortBy.value !== "risk") return filtered.value;
+  if (!sortBy.value) return filtered.value;
+  const key = sortBy.value;
+  const dir = sortDir.value === "asc" ? 1 : -1;
   const copy = [...filtered.value];
   copy.sort((a, b) => {
-    const diff = (a.riskScore ?? 0) - (b.riskScore ?? 0);
-    return sortDir.value === "asc" ? diff : -diff;
+    switch (key) {
+      case "employee":
+        return dir * getUserDisplayName(a.mdmUser).toLowerCase().localeCompare(getUserDisplayName(b.mdmUser).toLowerCase());
+      case "hardware": {
+        const ha = (a.manufacturer ? `${a.manufacturer} ${a.model}`.trim() : a.model || "").toLowerCase();
+        const hb = (b.manufacturer ? `${b.manufacturer} ${b.model}`.trim() : b.model || "").toLowerCase();
+        return dir * ha.localeCompare(hb);
+      }
+      case "osVersion":
+        return dir * versionCompare(a.osVersion || "", b.osVersion || "");
+      case "compliance":
+        return dir * (Number(a.isCompliant) - Number(b.isCompliant));
+      case "soarAgent":
+        return dir * (soarAgentRank(a) - soarAgentRank(b));
+      case "risk":
+        return dir * ((a.riskScore ?? 0) - (b.riskScore ?? 0));
+      case "lastSeen": {
+        const ta = a.lastSeen ? new Date(a.lastSeen).getTime() : -Infinity;
+        const tb = b.lastSeen ? new Date(b.lastSeen).getTime() : -Infinity;
+        return dir * (ta - tb);
+      }
+      default:
+        return 0;
+    }
   });
   return copy;
 });
 
-function toggleRiskSort() {
-  if (sortBy.value !== "risk") {
-    sortBy.value = "risk";
-    sortDir.value = "desc";
-  } else if (sortDir.value === "desc") {
-    sortDir.value = "asc";
+function toggleSort(key: SortKey) {
+  if (sortBy.value !== key) {
+    sortBy.value = key;
+    sortDir.value = DEFAULT_SORT_DIR[key];
+  } else if (sortDir.value === DEFAULT_SORT_DIR[key]) {
+    sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
   } else {
     sortBy.value = null;
   }
@@ -577,15 +639,25 @@ onMounted(() => {
                 @change="selectedIds = ($event.target as HTMLInputElement).checked ? new Set(filtered.map((d) => d.id)) : new Set()"
               />
             </th>
-            <th v-for="h in ['Device', 'Employee', 'Hardware', 'OS Version', 'Compliance', 'SOAR Agent']" :key="h" class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-              {{ h }}
-            </th>
-            <th class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider">
-              <button class="inline-flex items-center gap-1 uppercase tracking-wider" :style="{ color: sortBy === 'risk' ? PRIMARY_BLUE : '#9CA3AF' }" @click="toggleRiskSort">
-                Risk <component :is="ICONS.SortVertical" :size="11" weight="Linear" />
+            <th class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Device</th>
+            <th
+              v-for="col in [
+                { key: 'employee', label: 'Employee' },
+                { key: 'hardware', label: 'Hardware' },
+                { key: 'osVersion', label: 'OS Version' },
+                { key: 'compliance', label: 'Compliance' },
+                { key: 'soarAgent', label: 'SOAR Agent' },
+                { key: 'risk', label: 'Risk' },
+                { key: 'lastSeen', label: 'Last Seen' },
+              ]"
+              :key="col.key"
+              class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider"
+            >
+              <button class="inline-flex items-center gap-1 uppercase tracking-wider" :style="{ color: sortBy === col.key ? PRIMARY_BLUE : '#9CA3AF' }" @click="toggleSort(col.key as SortKey)">
+                {{ col.label }} <component :is="ICONS.SortVertical" :size="11" weight="Linear" />
               </button>
             </th>
-            <th v-for="h in ['Last Seen', '']" :key="h" class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">{{ h }}</th>
+            <th class="px-3 py-2.5 w-6"></th>
           </tr>
         </thead>
         <tbody>

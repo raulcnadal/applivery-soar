@@ -28,10 +28,32 @@ const DANGER = "#EF4444";
 const store = useComplianceStore();
 const segmentsStore = useSegmentsStore();
 
+// Platform filter for the Policies list — separate from (and applied on top
+// of) the Segment scoping above. "" (All platforms) is the default; "common"
+// is its own option rather than folded into "All" since a policy with no
+// targetPlatform (applies fleet-wide, regardless of OS) is a real, distinct
+// category admins may specifically want to isolate, same distinction
+// PoliciesTable.vue's own platform chip already draws ("Common" vs. a named
+// platform).
+const PLATFORM_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "All platforms" },
+  { value: "common", label: "Common (all platforms)" },
+  { value: "apple", label: "iOS/iPadOS" },
+  { value: "macos", label: "macOS" },
+  { value: "android", label: "Android" },
+  { value: "windows", label: "Windows" },
+];
+const policyPlatformFilter = ref("");
+
 const visiblePolicies = computed(() => {
   const ids = segmentsStore.collectSegmentIds(segmentsStore.selectedSegment.id);
-  if (ids === null) return store.policies;
-  return store.policies.filter((p) => ids.has(String(p.segmentId ?? "0")));
+  let list = ids === null ? store.policies : store.policies.filter((p) => ids.has(String(p.segmentId ?? "0")));
+  if (policyPlatformFilter.value === "common") {
+    list = list.filter((p) => !p.targetPlatform);
+  } else if (policyPlatformFilter.value) {
+    list = list.filter((p) => p.targetPlatform === policyPlatformFilter.value);
+  }
+  return list;
 });
 
 const subView = ref<"policies" | "app-lists">("policies");
@@ -178,6 +200,14 @@ onMounted(async () => {
            unwrapped content width, which is wider than the viewport, so the
            whole header scrolled horizontally instead of stacking. -->
       <div class="flex items-center gap-2 shrink-0 ml-auto flex-wrap w-full sm:w-auto">
+        <select
+          v-model="policyPlatformFilter"
+          title="Filter the Policies list (and the On-Demand Policy Evaluation dropdown) to one platform"
+          class="px-2.5 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+        >
+          <option v-for="p in PLATFORM_FILTER_OPTIONS" :key="p.value" :value="p.value">{{ p.label }}</option>
+        </select>
+        <span class="text-xs font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap">On-Demand Policy Evaluation</span>
         <select
           v-model="evaluateScopePolicyId"
           :disabled="isEvaluating"
