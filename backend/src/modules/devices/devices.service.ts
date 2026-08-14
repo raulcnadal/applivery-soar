@@ -22,7 +22,7 @@ import { loadVulnCatalog, computeApplePendingVulns, computeAndroidPendingVulns }
 import { loadOsLifecycleCatalog, computeOsLifecycleStatus } from "../catalogs/osLifecycleCatalog";
 import { loadGdmfCatalog } from "../catalogs/gdmfCatalog";
 import { loadAppleDeviceIdentifiers } from "../catalogs/appleDeviceIdentifiers";
-import { loadInstalledAppsStore, type InstalledAppsEntry } from "../appLists/installedApps.service";
+import { loadInstalledAppsStore, installedAppsRecordEntries } from "../appLists/installedApps.service";
 import { getVulnServiceConfig, computeVulnServiceStatus, computeDeviceAppsDetail } from "../catalogs/vulnService";
 import { loadDevicePushDataCache } from "./deviceData.service";
 import { LOCATION_CACHE_KEY } from "../analytics/locationsSync.service";
@@ -367,17 +367,24 @@ export async function getDevicesFull(
     // installedAppsStore carries a versioned "apps" list for every platform,
     // not just Apple — appleAppUpdateStatus stays Apple-only (sourced from
     // Applivery's own HasUpdateAvailable flag, which only Apple exposes),
-    // but the raw entry feeds the Vulnerability Service lookup for all
-    // platforms below.
-    const appsEntry: InstalledAppsEntry | null = installedAppsStore[String(deviceId)] ?? null;
-    d.appleAppUpdateStatus = d.platform === "apple" || d.platform === "macos" ? appsEntry?.appleAppUpdates ?? null : null;
-    d.vulnServiceStatus = vulnServiceCfg.enabled ? await computeVulnServiceStatus(slugKey, d, appsEntry) : null;
+    // but the raw entries feed the Vulnerability Service lookup for all
+    // platforms below. Each device now stores an InstalledAppsRecord with
+    // independent selfReported/serverFetch slots (see installedApps.service.ts) —
+    // appleAppUpdates is always server_fetch-only (self-reporting agents don't
+    // know about pending Apple App Store updates), but both slots feed the
+    // Vulnerability Service and the Apps tab so admins see everything a
+    // device reports, from whichever source reported it.
+    const appsRecord = installedAppsStore[String(deviceId)];
+    const serverFetchEntry = appsRecord?.serverFetch ?? null;
+    const appsEntries = installedAppsRecordEntries(appsRecord);
+    d.appleAppUpdateStatus = d.platform === "apple" || d.platform === "macos" ? serverFetchEntry?.appleAppUpdates ?? null : null;
+    d.vulnServiceStatus = vulnServiceCfg.enabled ? await computeVulnServiceStatus(slugKey, d, appsEntries) : null;
     // Backs the Device modal's Apps tab — every app this device reports,
     // each paired with its own cached CVE result when one exists. The app
     // list itself is always populated (plain installed-apps inventory);
     // vulnServiceCfg.enabled only gates whether computeDeviceAppsDetail
     // spends a cache lookup per app trying to attach CVE data to each.
-    d.installedAppsDetail = await computeDeviceAppsDetail(slugKey, d, appsEntry, vulnServiceCfg.enabled);
+    d.installedAppsDetail = await computeDeviceAppsDetail(slugKey, d, appsEntries, vulnServiceCfg.enabled);
 
     Object.assign(d, computeDeviceRisk(d, openCases, activeViolations));
   }

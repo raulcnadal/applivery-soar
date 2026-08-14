@@ -964,7 +964,7 @@ function logBody(l: Record<string, any>): string {
               No app inventory reported yet for this device — via the SOAR Agent's App Inventory Reporting, or the background refresher once a Compliance Policy references an App List.
             </div>
             <div v-else class="space-y-2.5">
-              <div v-for="a in device.installedAppsDetail" :key="`${a.identifier}-${a.version}`" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+              <div v-for="a in device.installedAppsDetail" :key="`${a.identifier}-${a.version}-${a.source}`" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
                 <div class="flex items-center justify-between gap-2">
                   <div class="min-w-0">
                     <p class="text-sm text-gray-900 dark:text-white truncate flex items-center gap-1.5">
@@ -972,7 +972,11 @@ function logBody(l: Record<string, any>): string {
                       <component v-if="a.enforcedByPolicy" :is="ICONS.ShieldCheck" :size="11" weight="Linear" class="text-emerald-500 shrink-0" title="Enforced by Applivery's Windows App Distribution policy" />
                       <component v-if="a.updateAvailable" :is="ICONS.CloudDownload" :size="11" weight="Linear" class="text-blue-500 shrink-0" title="Update available" />
                     </p>
-                    <p class="text-[11px] text-gray-400 truncate">{{ a.identifier }} · v{{ a.version }}</p>
+                    <p class="text-[11px] text-gray-400 truncate">
+                      {{ a.identifier }} · v{{ a.version }}
+                      <span v-if="a.origin === 'store'" class="ml-1 px-1 py-0.5 rounded text-[9px] font-semibold bg-violet-500/10 text-violet-500 align-middle">Store</span>
+                      <span v-else-if="a.origin === 'msi'" class="ml-1 px-1 py-0.5 rounded text-[9px] font-semibold bg-sky-500/10 text-sky-500 align-middle">MSI</span>
+                    </p>
                   </div>
                   <span
                     class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold shrink-0"

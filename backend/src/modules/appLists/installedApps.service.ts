@@ -3,7 +3,7 @@ import { prisma } from "../../services/prisma";
 import { resolveOrgBase } from "../auth/rbac.service";
 import { extractItems } from "../../utils/extractItems";
 import { platformPathSegment, type NormalizedDevice } from "../devices/deviceNormalize";
-import { fetchWindowsDeviceMsiApps } from "./windowsDeviceApps.service";
+import { fetchWindowsDeviceApps } from "./windowsDeviceApps.service";
 import type { AppVulnSummary } from "../catalogs/vulnService";
 
 type Headers = Record<string, string>;
@@ -21,33 +21,126 @@ export interface InstalledAppsEntry {
   // to the device via its policy (deviceWinPolicy.applicationsInfo), false
   // when it's just present on the device for some other reason (manually
   // installed, or installed by the enrollment process like the Applivery
-  // Agent MSI itself).
-  apps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean; productCode?: string; enforcedByPolicy?: boolean }>;
+  // Agent MSI itself). origin is Windows-only too — "msi" for classic
+  // installer apps, "store" for AppX/UWP packages parsed out of
+  // AppInventoryResults (windowsDeviceApps.service.ts) — absent for every
+  // other platform and for self-reported Windows apps (the agent doesn't yet
+  // distinguish the two either, see apps_windows.go).
+  apps: Array<{
+    identifier: string;
+    name?: string | null;
+    version: string;
+    updateAvailable?: boolean;
+    productCode?: string;
+    enforcedByPolicy?: boolean;
+    origin?: "msi" | "store";
+  }>;
   platform: string;
   fetchedAt: string;
   error: string | null;
-  source: string;
+  source: "self_reported" | "server_fetch";
   appleAppUpdates: { pendingCount: number; totalApps: number; pendingApps: Array<Record<string, any>> } | null;
+}
+
+/**
+ * A device's installed-app data now lives in TWO independent slots per the
+ * `InstalledAppInventory` row instead of one flat entry — the original
+ * single-entry shape meant a self-reported write (deviceData.service.ts's
+ * reportDeviceApps) and a live-MDM-fetch write (fetchAndStoreInstalledApps
+ * below) unconditionally overwrote each other's data on the SAME row, so
+ * only whichever ran most recently was ever visible; a user-reported gap
+ * ("SOAR should show both, the apps reported by SOAR agent... and those
+ * that Applivery UEM knows") made this the wrong model outright, not just an
+ * edge case. Each slot keeps its own independent InstalledAppsEntry now, so
+ * both sources are always simultaneously available — to every consumer:
+ * compliance app-list matching (union of both), the Apps view (both shown,
+ * tagged by source), the Vulnerability Service (apps from both checked),
+ * and the Device modal's Apps tab (both shown).
+ */
+export interface InstalledAppsRecord {
+  selfReported: InstalledAppsEntry | null;
+  serverFetch: InstalledAppsEntry | null;
+}
+
+/**
+ * Normalizes whatever's in the `apps` JSON column into the two-slot shape —
+ * tolerant of rows written before this dual-slot model existed (a flat
+ * InstalledAppsEntry with its own `source` field, no `selfReported`/
+ * `serverFetch` wrapper), so a workspace's existing data doesn't silently
+ * disappear until its next natural refresh/report re-writes the row in the
+ * new shape. Every write path in this file goes through `upsertInstalledAppsSlot`
+ * from here on, which always reads-modifies-writes through this same
+ * normalizer, so the flat legacy shape self-heals into the new one on first
+ * touch per device.
+ */
+function toRecord(raw: unknown): InstalledAppsRecord {
+  const r = raw as any;
+  if (r && typeof r === "object" && ("selfReported" in r || "serverFetch" in r)) {
+    return { selfReported: r.selfReported ?? null, serverFetch: r.serverFetch ?? null };
+  }
+  if (r && typeof r === "object" && typeof r.source === "string") {
+    return r.source === "self_reported" ? { selfReported: r as InstalledAppsEntry, serverFetch: null } : { selfReported: null, serverFetch: r as InstalledAppsEntry };
+  }
+  return { selfReported: null, serverFetch: null };
+}
+
+/** Both non-null entries in a record, as a flat list — the common shape most read-side consumers actually want. */
+export function installedAppsRecordEntries(record: InstalledAppsRecord | undefined | null): InstalledAppsEntry[] {
+  if (!record) return [];
+  return [record.selfReported, record.serverFetch].filter((e): e is InstalledAppsEntry => Boolean(e));
+}
+
+/**
+ * Read-modify-write into exactly one slot of a device's InstalledAppInventory
+ * row, leaving the other slot untouched — the single write primitive both
+ * `fetchAndStoreInstalledApps` below and deviceData.service.ts's
+ * reportDeviceApps/reconcilePendingAppReports go through, so there's one
+ * place that understands the two-slot JSON shape rather than three separate
+ * upserts each hand-rolling it.
+ */
+export async function upsertInstalledAppsSlot(
+  workspaceSlug: string,
+  deviceId: string,
+  slot: "selfReported" | "serverFetch",
+  entry: InstalledAppsEntry,
+  reportedAt: Date,
+): Promise<void> {
+  const existing = await prisma.installedAppInventory.findUnique({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId } } });
+  const record = toRecord(existing?.apps);
+  record[slot] = entry;
+  await prisma.installedAppInventory.upsert({
+    where: { workspaceSlug_deviceId: { workspaceSlug, deviceId } },
+    create: { workspaceSlug, deviceId, apps: record as any, reportedAt },
+    update: { apps: record as any, reportedAt },
+  });
 }
 
 /**
  * Pure, no-network read — the ONLY thing compliance evaluation ever
  * touches for app-list conditions. Returns null if this device has never
- * been synced yet (distinct from an empty set) — port of
- * `_read_installed_apps_from_store` (main.py:9151).
+ * been synced by EITHER source yet (distinct from an empty set) — port of
+ * `_read_installed_apps_from_store` (main.py:9151). Unions identifiers from
+ * both slots: a required app installed and visible via either the SOAR
+ * Agent's self-report or Applivery's own UEM fetch counts as "present" —
+ * requiring both sources to agree would make a requiredAppList condition
+ * fail for a device that self-reports but was never MDM-app-list-fetched
+ * (or vice versa), which isn't what "is this app installed" should mean.
  */
 export async function readInstalledAppsFromStore(workspaceSlug: string, deviceId: string): Promise<Set<string> | null> {
   const row = await prisma.installedAppInventory.findUnique({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId } } });
   if (!row) return null;
-  const entry = row.apps as unknown as InstalledAppsEntry;
-  return new Set(entry.identifiers ?? []);
+  const entries = installedAppsRecordEntries(toRecord(row.apps));
+  if (entries.length === 0) return null;
+  const ids = new Set<string>();
+  for (const entry of entries) for (const id of entry.identifiers ?? []) ids.add(id);
+  return ids;
 }
 
-/** Loads the whole per-device store for a workspace — main.py's `_load_installed_apps_store`. */
-export async function loadInstalledAppsStore(workspaceSlug: string): Promise<Record<string, InstalledAppsEntry>> {
+/** Loads the whole per-device store for a workspace — main.py's `_load_installed_apps_store`, now record-shaped (both slots). */
+export async function loadInstalledAppsStore(workspaceSlug: string): Promise<Record<string, InstalledAppsRecord>> {
   const rows = await prisma.installedAppInventory.findMany({ where: { workspaceSlug } });
-  const store: Record<string, InstalledAppsEntry> = {};
-  for (const row of rows) store[row.deviceId] = row.apps as unknown as InstalledAppsEntry;
+  const store: Record<string, InstalledAppsRecord> = {};
+  for (const row of rows) store[row.deviceId] = toRecord(row.apps);
   return store;
 }
 
@@ -82,17 +175,17 @@ export function appleAppUpdateDeviceIds(devices: NormalizedDevice[]): Set<string
 /**
  * The only place that actually calls Applivery's per-device applications
  * endpoint — port of `_fetch_and_store_installed_apps` (main.py:9183).
- * Writes straight to Prisma (an upsert) since this app has no in-memory
- * per-batch store object to hand back and forth the way Python's dict does.
+ * Always writes into the "serverFetch" slot only (via upsertInstalledAppsSlot)
+ * — a self-reported entry on the same device, if any, lives in its own slot
+ * and is never touched from here.
  *
  * Windows is a special case: it does NOT call the generic
  * `/mdm/{platform}/enterprise/devices/{id}/applications` endpoint below —
  * that endpoint errors persistently for every Windows device in this org
  * (undocumented/empty response schema). Instead it calls the Windows
- * device-detail endpoint and parses the MSI CSP sub-tree out of its `config`
- * blob — see windowsDeviceApps.service.ts's doc comment for the full
- * rationale, including why the also-available Appx/UWP inventory blob is
- * deliberately NOT parsed (zero third-party-app signal on real data).
+ * device-detail endpoint and parses both the MSI CSP sub-tree AND the
+ * AppInventoryResults Appx/UWP inventory out of its `config` blob — see
+ * windowsDeviceApps.service.ts's doc comment for the full rationale.
  */
 export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: string, device: NormalizedDevice, workspaceSlug: string): Promise<Set<string>> {
   const deviceId = device.id;
@@ -103,19 +196,30 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
   let error: string | null = null;
   const applePendingApps: Array<Record<string, any>> = [];
   let appleTotalApps = 0;
-  const versionedApps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean; productCode?: string; enforcedByPolicy?: boolean }> = [];
+  const versionedApps: InstalledAppsEntry["apps"] = [];
 
   if (platformPath === "windows") {
-    const { apps, error: msiError } = await fetchWindowsDeviceMsiApps(headers, orgBase, deviceId);
-    error = msiError;
-    for (const app of apps) {
+    const { msiApps, storeApps, error: winError } = await fetchWindowsDeviceApps(headers, orgBase, deviceId);
+    error = winError;
+    for (const app of msiApps) {
       // Lowercased Name is the identifier convention — it's what the Windows
       // agent's self-report registry fallback also uses (apps_windows.go's
       // getAppsViaRegistry), so an app tracked here and self-reported on the
       // same device resolve to the same identifier rather than silently
       // creating two separate entries for one app.
       const identifier = app.name.toLowerCase();
-      versionedApps.push({ identifier, name: app.name, version: app.version, productCode: app.productCode, enforcedByPolicy: app.enforcedByPolicy });
+      versionedApps.push({ identifier, name: app.name, version: app.version, productCode: app.productCode, enforcedByPolicy: app.enforcedByPolicy, origin: "msi" });
+      identifiers.add(identifier);
+    }
+    for (const app of storeApps) {
+      const identifier = app.name.toLowerCase();
+      // A classic MSI app happening to share the same lowercased-name
+      // identifier as a Store package (rare, but plausible for a vendor
+      // shipping both a legacy installer and a Store version) keeps the MSI
+      // entry, which carries richer data (productCode/enforcedByPolicy) —
+      // rather than the store parse silently clobbering it.
+      if (identifiers.has(identifier)) continue;
+      versionedApps.push({ identifier, name: app.name, version: app.version, origin: "store" });
       identifiers.add(identifier);
     }
   } else {
@@ -153,25 +257,21 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
   }
 
   const existing = await prisma.installedAppInventory.findUnique({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId } } });
-  const existingEntry = existing?.apps as unknown as InstalledAppsEntry | undefined;
+  const existingEntry = toRecord(existing?.apps).serverFetch;
 
-  // On error, this must NOT clobber a previously-good entry — in
-  // particular a self-reported one (source: "self_reported") written by
-  // reportDeviceApps (deviceData.service.ts). Before this fix, an errored
-  // MDM live-fetch (e.g. a device not enrolled for the paid app-inventory
-  // endpoint) unconditionally reset identifiers to an empty set and source
-  // to "server_fetch" regardless of error, permanently wiping out good
-  // self-reported data on every refresher tick (installedAppsJobs.ts runs
-  // every 30s) and making requiredAppList/disallowedAppList compliance
-  // conditions (which read identifiers straight off this entry via
-  // readInstalledAppsFromStore) never see the device's real installed apps.
+  // On error, this must NOT clobber a previously-good serverFetch entry —
+  // e.g. a device not enrolled for the paid app-inventory endpoint erroring
+  // on every refresher tick (installedAppsJobs.ts runs every 30s) shouldn't
+  // permanently reset this slot to empty. Note this is now a within-slot
+  // concern only — the selfReported slot lives entirely independently and
+  // was never at risk from this path even before the dual-slot model.
   const entry: InstalledAppsEntry = {
     identifiers: error === null ? Array.from(identifiers).sort() : existingEntry?.identifiers ?? [],
     apps: error === null ? versionedApps.sort((a, b) => a.identifier.localeCompare(b.identifier)) : existingEntry?.apps ?? [],
     platform: platformPath,
     fetchedAt: new Date().toISOString(),
     error,
-    source: error === null ? "server_fetch" : existingEntry?.source ?? "server_fetch",
+    source: "server_fetch",
     appleAppUpdates:
       platformPath === "apple"
         ? error === null
@@ -180,11 +280,7 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
         : null,
   };
 
-  await prisma.installedAppInventory.upsert({
-    where: { workspaceSlug_deviceId: { workspaceSlug, deviceId } },
-    create: { workspaceSlug, deviceId, apps: entry as any, reportedAt: new Date() },
-    update: { apps: entry as any, reportedAt: new Date() },
-  });
+  await upsertInstalledAppsSlot(workspaceSlug, deviceId, "serverFetch", entry, new Date());
   return identifiers;
 }
 
@@ -237,14 +333,22 @@ export async function getInstalledAppsStatus(
   let selfReportedCount = 0;
   const agesMinutes: number[] = [];
   for (const did of targetIds) {
-    const entry = store[did];
-    if (!entry || !entry.fetchedAt) {
+    const record = store[did];
+    const selfReported = record?.selfReported ?? null;
+    const serverFetch = record?.serverFetch ?? null;
+    if (selfReported) selfReportedCount += 1;
+    // Represents this device's sync status with whichever entry is more
+    // informative about a live-fetch attempt (serverFetch's own error/age),
+    // falling back to the self-reported entry if that's genuinely all there
+    // is — a device that only ever self-reports shouldn't read as
+    // "never synced" just because it has no serverFetch slot.
+    const representative = serverFetch ?? selfReported;
+    if (!representative || !representative.fetchedAt) {
       neverSynced += 1;
       continue;
     }
-    if (entry.error) errorCount += 1;
-    if (entry.source === "self_reported") selfReportedCount += 1;
-    const fetchedAt = new Date(entry.fetchedAt).getTime();
+    if (representative.error) errorCount += 1;
+    const fetchedAt = new Date(representative.fetchedAt).getTime();
     if (Number.isNaN(fetchedAt)) {
       neverSynced += 1;
     } else {
@@ -304,6 +408,7 @@ export interface ReportedAppDeviceRef {
   // apps[] doc comment for what these mean.
   productCode: string | null;
   enforcedByPolicy: boolean;
+  origin?: "msi" | "store";
 }
 export interface ReportedAppSummary {
   identifier: string;
@@ -336,6 +441,14 @@ export interface ReportedAppSummary {
  * workspace has ANY installed-app data for — self-reported or MDM-fetched
  * — regardless of whether a policy references it, since the whole point is
  * visibility independent of compliance enforcement.
+ *
+ * Iterates BOTH slots of every device's record now (not just whichever one
+ * happened to be written last) — a device reporting the same app via both
+ * the SOAR Agent and Applivery UEM contributes two rows to that app's
+ * `devices` list (one per source, exactly what the user asked to see side
+ * by side), while `deviceCount`/`devicesWithPendingUpdate`/
+ * `devicesEnforcedByPolicy` are deduped back down to distinct physical
+ * devices so a device reporting via both sources still only counts once.
  */
 export async function getReportedAppsOverview(workspaceSlug: string, devices: NormalizedDevice[]): Promise<{ apps: ReportedAppSummary[]; devicesWithData: number; lastRefreshedAt: string | null }> {
   const store = await loadInstalledAppsStore(workspaceSlug);
@@ -344,37 +457,40 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
   let devicesWithData = 0;
   let lastRefreshedAt: string | null = null;
 
-  for (const [deviceId, entry] of Object.entries(store)) {
-    if (!entry?.fetchedAt) continue;
+  for (const [deviceId, record] of Object.entries(store)) {
+    const entries = installedAppsRecordEntries(record);
+    if (entries.length === 0) continue;
     devicesWithData += 1;
-    if (!lastRefreshedAt || new Date(entry.fetchedAt) > new Date(lastRefreshedAt)) lastRefreshedAt = entry.fetchedAt;
     const device = devicesById.get(deviceId);
     const deviceName = device?.displayName || deviceId;
-    const platform = entry.platform;
-    for (const app of entry.apps ?? []) {
-      const key = `${platform}:${app.identifier}`;
-      let summary = byIdentifier.get(key);
-      if (!summary) {
-        summary = { identifier: app.identifier, name: app.name || app.identifier, platform, deviceCount: 0, versions: [], sources: [], devicesWithPendingUpdate: 0, devicesEnforcedByPolicy: 0, devices: [] };
-        byIdentifier.set(key, summary);
+
+    for (const entry of entries) {
+      if (!entry.fetchedAt) continue;
+      if (!lastRefreshedAt || new Date(entry.fetchedAt) > new Date(lastRefreshedAt)) lastRefreshedAt = entry.fetchedAt;
+      const platform = entry.platform;
+      for (const app of entry.apps ?? []) {
+        const key = `${platform}:${app.identifier}`;
+        let summary = byIdentifier.get(key);
+        if (!summary) {
+          summary = { identifier: app.identifier, name: app.name || app.identifier, platform, deviceCount: 0, versions: [], sources: [], devicesWithPendingUpdate: 0, devicesEnforcedByPolicy: 0, devices: [] };
+          byIdentifier.set(key, summary);
+        }
+        if (app.name && summary.name === summary.identifier) summary.name = app.name;
+        if (app.version && !summary.versions.includes(app.version)) summary.versions.push(app.version);
+        if (!summary.sources.includes(entry.source)) summary.sources.push(entry.source);
+        summary.devices.push({
+          deviceId,
+          deviceName,
+          version: app.version ?? null,
+          source: entry.source,
+          fetchedAt: entry.fetchedAt,
+          updateAvailable: Boolean(app.updateAvailable),
+          lastFetchError: entry.error,
+          productCode: app.productCode ?? null,
+          enforcedByPolicy: Boolean(app.enforcedByPolicy),
+          origin: app.origin,
+        });
       }
-      if (app.name && summary.name === summary.identifier) summary.name = app.name;
-      summary.deviceCount += 1;
-      if (app.version && !summary.versions.includes(app.version)) summary.versions.push(app.version);
-      if (!summary.sources.includes(entry.source)) summary.sources.push(entry.source);
-      if (app.updateAvailable) summary.devicesWithPendingUpdate += 1;
-      if (app.enforcedByPolicy) summary.devicesEnforcedByPolicy += 1;
-      summary.devices.push({
-        deviceId,
-        deviceName,
-        version: app.version ?? null,
-        source: entry.source,
-        fetchedAt: entry.fetchedAt,
-        updateAvailable: Boolean(app.updateAvailable),
-        lastFetchError: entry.error,
-        productCode: app.productCode ?? null,
-        enforcedByPolicy: Boolean(app.enforcedByPolicy),
-      });
     }
   }
 
@@ -383,13 +499,17 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
     app.versions.sort();
     app.sources.sort();
     app.devices.sort((a, b) => a.deviceName.localeCompare(b.deviceName));
+    const distinctDeviceIds = new Set(app.devices.map((d) => d.deviceId));
+    app.deviceCount = distinctDeviceIds.size;
+    app.devicesWithPendingUpdate = new Set(app.devices.filter((d) => d.updateAvailable).map((d) => d.deviceId)).size;
+    app.devicesEnforcedByPolicy = new Set(app.devices.filter((d) => d.enforcedByPolicy).map((d) => d.deviceId)).size;
   }
   apps.sort((a, b) => b.deviceCount - a.deviceCount || a.name.localeCompare(b.name));
 
   return { apps, devicesWithData, lastRefreshedAt };
 }
 
-/** GET /api/apple-app-updates/status (main.py:9569). */
+/** GET /api/apple-app-updates/status (main.py:9569). appleAppUpdates is only ever populated on the serverFetch slot (self-report never sets it) — reads that slot specifically rather than "whichever entry exists". */
 export async function getAppleAppUpdatesStatus(workspaceSlug: string, devices: NormalizedDevice[]) {
   const targetIds = appleAppUpdateDeviceIds(devices);
   const store = await loadInstalledAppsStore(workspaceSlug);
@@ -403,7 +523,7 @@ export async function getAppleAppUpdatesStatus(workspaceSlug: string, devices: N
   const agesMinutes: number[] = [];
 
   for (const did of targetIds) {
-    const entry = store[did];
+    const entry = store[did]?.serverFetch ?? null;
     if (!entry || !entry.fetchedAt) {
       neverSynced += 1;
       continue;

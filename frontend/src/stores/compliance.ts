@@ -216,6 +216,11 @@ export interface ReportedAppDeviceRef {
   // Windows-only — see installedApps.service.ts's ReportedAppDeviceRef doc comment.
   productCode: string | null;
   enforcedByPolicy: boolean;
+  // Windows-only — distinguishes classic MSI/Win32 installer apps from AppX/
+  // Store packages (the latter only surfaced via Applivery UEM's
+  // AppInventoryResults fetch, or a self-reporting agent new enough to detect
+  // them). Undefined for non-Windows platforms and older cached rows.
+  origin?: "msi" | "store";
 }
 // Per-version CVE detail — one entry per (app, version) combo with a fresh
 // cached Vulnerability Service match. Mirrors backend/vulnService.ts's

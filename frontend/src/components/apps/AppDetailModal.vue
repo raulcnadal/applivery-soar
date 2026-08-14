@@ -230,7 +230,11 @@ const versionsWithVulns = computed(() => {
       <div>
         <p class="text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Devices</p>
         <div class="border border-gray-100 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700 max-h-64 overflow-y-auto">
-          <div v-for="d in app.devices" :key="d.deviceId" class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
+          <!-- keyed on deviceId+source, not just deviceId: a device can now report the
+               same app from both the SOAR Agent (self_reported) and Applivery UEM
+               (server_fetch) as two independent rows since installedApps.service.ts's
+               dual-slot storage change — see InstalledAppsRecord's doc comment. -->
+          <div v-for="d in app.devices" :key="`${d.deviceId}-${d.source}`" class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
             <span class="text-gray-900 dark:text-white truncate">{{ d.deviceName }}</span>
             <span class="flex items-center gap-2 shrink-0 text-gray-400">
               <component
@@ -243,6 +247,18 @@ const versionsWithVulns = computed(() => {
               />
               <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500" title="Update available" />
               <span class="font-mono">{{ d.version || "—" }}</span>
+              <span
+                v-if="d.origin === 'store'"
+                class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/10 text-violet-500"
+              >
+                Store
+              </span>
+              <span
+                v-else-if="d.origin === 'msi'"
+                class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-sky-500/10 text-sky-500"
+              >
+                MSI
+              </span>
               <span
                 class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
                 :class="d.source === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"

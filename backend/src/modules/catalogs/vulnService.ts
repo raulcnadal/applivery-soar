@@ -143,7 +143,7 @@ async function postWithRetry(url: string, headers: Record<string, string>, body:
  */
 export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bearer: string): Promise<Record<string, any>> {
   const { getDevicesFull } = await import("../devices/devices.service");
-  const { loadInstalledAppsStore } = await import("../appLists/installedApps.service");
+  const { loadInstalledAppsStore, installedAppsRecordEntries } = await import("../appLists/installedApps.service");
 
   const cfgRow = await loadConfigRow(workspaceSlug);
   if (!cfgRow) throw new HttpError(400, "Vulnerability Service isn't configured for this workspace yet.");
@@ -167,10 +167,15 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
   for (const d of devices) {
     const workerPlatform = PLATFORM_MAP[d.platform];
     if (!workerPlatform) continue;
-    const entry: InstalledAppsEntry | undefined = installedAppsStore[d.id];
-    for (const a of entry?.apps ?? []) {
-      if (a.identifier && a.version) {
-        appCombos.set(`${a.identifier.toLowerCase()}|${a.version}|${workerPlatform}`, { identifier: a.identifier, version: a.version, platform: workerPlatform });
+    // Both slots (self-reported and Applivery-UEM-fetched) — appCombos is a
+    // Map keyed by (identifier|version|platform), so an app reported
+    // identically by both sources naturally collapses to one query instead
+    // of being queried twice.
+    for (const entry of installedAppsRecordEntries(installedAppsStore[d.id])) {
+      for (const a of entry.apps ?? []) {
+        if (a.identifier && a.version) {
+          appCombos.set(`${a.identifier.toLowerCase()}|${a.version}|${workerPlatform}`, { identifier: a.identifier, version: a.version, platform: workerPlatform });
+        }
       }
     }
   }
@@ -298,7 +303,7 @@ export async function runVulnServiceRefresherTick(): Promise<void> {
  * Local-cache-only read (never calls the Worker inline) — port of
  * `_compute_vuln_service_status` (main.py:17099).
  */
-export async function computeVulnServiceStatus(workspaceSlug: string, device: NormalizedDevice, appsEntry: InstalledAppsEntry | null): Promise<Record<string, any> | null> {
+export async function computeVulnServiceStatus(workspaceSlug: string, device: NormalizedDevice, appsEntries: InstalledAppsEntry[]): Promise<Record<string, any> | null> {
   const workerPlatform = PLATFORM_MAP[device.platform];
   if (!workerPlatform) return null;
 
@@ -309,11 +314,19 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
 
   const appResults: Array<Record<string, any>> = [];
   const appTimestamps: string[] = [];
-  for (const a of appsEntry?.apps ?? []) {
-    const key = `${(a.identifier ?? "").toLowerCase()}|${a.version}|${workerPlatform}`;
-    const row = await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
-    if (row) appTimestamps.push(row.cachedAt.toISOString());
-    if (row && isFresh(row.cachedAt) && (row.result as any)?.mapped) appResults.push(row.result as Record<string, any>);
+  // Both slots (self-reported and Applivery-UEM-fetched) — deduped by cache
+  // key so an app reported identically by both sources doesn't get counted
+  // (and its CVEs double-counted into totalCounts below) twice.
+  const seenAppKeys = new Set<string>();
+  for (const entry of appsEntries) {
+    for (const a of entry.apps ?? []) {
+      const key = `${(a.identifier ?? "").toLowerCase()}|${a.version}|${workerPlatform}`;
+      if (seenAppKeys.has(key)) continue;
+      seenAppKeys.add(key);
+      const row = await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
+      if (row) appTimestamps.push(row.cachedAt.toISOString());
+      if (row && isFresh(row.cachedAt) && (row.result as any)?.mapped) appResults.push(row.result as Record<string, any>);
+    }
   }
 
   if (!osMatch && !appResults.length) {
@@ -487,25 +500,31 @@ export async function computeReportedAppsVulnSummaries(
 
 /**
  * Per-device read for the Device modal's Apps tab — pairs each app this
- * device actually reports (appsEntry.apps, from InstalledAppsEntry) with
- * its own cached CVE result, so the tab can show "this specific device has
- * Chrome 118 with these 3 CVEs" rather than the fleet-wide aggregate
- * computeReportedAppsVulnSummaries returns. One query per installed app
- * (not batched) — acceptable since this runs inside getDevicesFull's
- * per-device loop, same cost class as computeVulnServiceStatus's own
- * per-app cache reads immediately above, and that whole response is cached
- * for DEVICES_CACHE_TTL_SECONDS (15 min), not recomputed per request.
- * `vulnServiceEnabled` mirrors the caller's own vulnServiceCfg.enabled
- * check for computeVulnServiceStatus: false skips every cache lookup here
- * too (a device with 80 self-reported apps would otherwise add 80 no-op
- * queries per fleet-cache refresh for a workspace that never turned the
- * integration on) and every app gets `vuln: null` at zero extra DB cost —
- * the tab still shows the plain installed-apps inventory either way.
+ * device actually reports (across BOTH the self-reported and Applivery-UEM-
+ * fetched slots — the whole point of this being a list of entries, not one)
+ * with its own cached CVE result, so the tab can show "this specific device
+ * has Chrome 118 with these 3 CVEs" rather than the fleet-wide aggregate
+ * computeReportedAppsVulnSummaries returns. An app reported by both sources
+ * produces two rows here, each correctly tagged with its own source —
+ * deliberately NOT deduped the way computeVulnServiceStatus's aggregate
+ * counts are, since showing both is the point of this tab (see
+ * installedApps.service.ts's InstalledAppsRecord doc comment). One query
+ * per installed app (not batched) — acceptable since this runs inside
+ * getDevicesFull's per-device loop, same cost class as
+ * computeVulnServiceStatus's own per-app cache reads immediately above, and
+ * that whole response is cached for DEVICES_CACHE_TTL_SECONDS (15 min), not
+ * recomputed per request. `vulnServiceEnabled` mirrors the caller's own
+ * vulnServiceCfg.enabled check for computeVulnServiceStatus: false skips
+ * every cache lookup here too (a device with 80 self-reported apps would
+ * otherwise add 80 no-op queries per fleet-cache refresh for a workspace
+ * that never turned the integration on) and every app gets `vuln: null` at
+ * zero extra DB cost — the tab still shows the plain installed-apps
+ * inventory either way.
  */
 export async function computeDeviceAppsDetail(
   workspaceSlug: string,
   device: NormalizedDevice,
-  appsEntry: InstalledAppsEntry | null,
+  appsEntries: InstalledAppsEntry[],
   vulnServiceEnabled: boolean,
 ): Promise<Array<{
   identifier: string;
@@ -515,29 +534,30 @@ export async function computeDeviceAppsDetail(
   updateAvailable: boolean;
   productCode: string | null;
   enforcedByPolicy: boolean;
+  origin?: "msi" | "store";
   vuln: AppVersionVulnInfo | null;
 }>> {
-  const apps = appsEntry?.apps ?? [];
-  if (apps.length === 0) return [];
+  if (appsEntries.length === 0) return [];
   const workerPlatform = vulnServiceEnabled ? PLATFORM_MAP[device.platform] : null;
-  const source = appsEntry!.source;
 
   const out: Array<{
     identifier: string; name: string | null; version: string; source: string; updateAvailable: boolean;
-    productCode: string | null; enforcedByPolicy: boolean; vuln: AppVersionVulnInfo | null;
+    productCode: string | null; enforcedByPolicy: boolean; origin?: "msi" | "store"; vuln: AppVersionVulnInfo | null;
   }> = [];
-  for (const a of apps) {
-    let vuln: AppVersionVulnInfo | null = null;
-    if (workerPlatform && a.version) {
-      const key = `${a.identifier.toLowerCase()}|${a.version}|${workerPlatform}`;
-      const row = await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
-      if (row && isFreshCache(row.cachedAt)) vuln = toVersionVulnInfo(row);
+  for (const entry of appsEntries) {
+    for (const a of entry.apps ?? []) {
+      let vuln: AppVersionVulnInfo | null = null;
+      if (workerPlatform && a.version) {
+        const key = `${a.identifier.toLowerCase()}|${a.version}|${workerPlatform}`;
+        const row = await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
+        if (row && isFreshCache(row.cachedAt)) vuln = toVersionVulnInfo(row);
+      }
+      out.push({
+        identifier: a.identifier, name: a.name ?? null, version: a.version, source: entry.source,
+        updateAvailable: Boolean(a.updateAvailable), productCode: a.productCode ?? null, enforcedByPolicy: Boolean(a.enforcedByPolicy),
+        origin: a.origin, vuln,
+      });
     }
-    out.push({
-      identifier: a.identifier, name: a.name ?? null, version: a.version, source,
-      updateAvailable: Boolean(a.updateAvailable), productCode: a.productCode ?? null, enforcedByPolicy: Boolean(a.enforcedByPolicy),
-      vuln,
-    });
   }
   return out;
 }

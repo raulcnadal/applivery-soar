@@ -179,11 +179,8 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
 
   let matchedFlag: boolean;
   if (deviceId) {
-    await prisma.installedAppInventory.upsert({
-      where: { workspaceSlug_deviceId: { workspaceSlug, deviceId } },
-      create: { workspaceSlug, deviceId, apps: entry as any, reportedAt: new Date(nowIso) },
-      update: { apps: entry as any, reportedAt: new Date(nowIso) },
-    });
+    const { upsertInstalledAppsSlot } = await import("../appLists/installedApps.service");
+    await upsertInstalledAppsSlot(workspaceSlug, deviceId, "selfReported", entry, new Date(nowIso));
     // Clear any earlier pending report for this same serial, now that it's matched.
     await prisma.pendingAppReport.deleteMany({ where: { workspaceSlug, deviceId: payload.serialNumber } });
     matchedFlag = true;
@@ -237,15 +234,15 @@ export async function reconcilePendingAppReports(workspaceSlug: string, devices:
   const bySerial = new Map(devices.filter((d) => d.serialNumber).map((d) => [d.serialNumber, d]));
   const nowIso = new Date().toISOString();
   let reconciled = 0;
+  // PendingAppReport only ever buffers a self-reported entry (the only
+  // caller that writes to it is reportDeviceApps above, when a device
+  // hasn't matched Applivery's fleet yet) — always slots into "selfReported".
+  const { upsertInstalledAppsSlot } = await import("../appLists/installedApps.service");
 
   for (const row of pending) {
     const device = bySerial.get(row.deviceId);
     if (!device) continue;
-    await prisma.installedAppInventory.upsert({
-      where: { workspaceSlug_deviceId: { workspaceSlug, deviceId: device.id } },
-      create: { workspaceSlug, deviceId: device.id, apps: row.payload as any, reportedAt: new Date(nowIso) },
-      update: { apps: row.payload as any, reportedAt: new Date(nowIso) },
-    });
+    await upsertInstalledAppsSlot(workspaceSlug, device.id, "selfReported", row.payload as any, new Date(nowIso));
     await prisma.pendingAppReport.delete({ where: { workspaceSlug_deviceId: { workspaceSlug, deviceId: row.deviceId } } });
     reconciled++;
   }

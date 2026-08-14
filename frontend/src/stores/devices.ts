@@ -76,7 +76,12 @@ export interface NormalizedDevice {
   // doc comment. Each entry: identifier/name/version/source/updateAvailable/
   // productCode/enforcedByPolicy plus an optional per-app `vuln` (same shape
   // as compliance.ts's AppVersionVulnInfo) when the Vulnerability Service
-  // has a fresh cached match for that exact version.
+  // has a fresh cached match for that exact version. Windows entries may
+  // also carry `origin: "msi" | "store"` distinguishing classic installer
+  // apps from AppX/Store packages — a Windows device can report the same
+  // identifier+version from both `source`s (self-reported + server-fetch),
+  // so consumers should key on identifier+version+source, not just the
+  // first two.
   installedAppsDetail?: Array<Record<string, any>> | null;
   // Windows-only feature-update name (e.g. "Windows 11, version 25H2") for
   // this device's raw osVersion build number — Applivery's own inventory
