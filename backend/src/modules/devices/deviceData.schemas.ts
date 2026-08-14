@@ -105,6 +105,10 @@ export const deviceAppReportPayloadSchema = z.object({
         identifier: z.string().optional(),
         name: z.string().optional(),
         version: z.string().optional(),
+        // Windows-only, optional — an agent build new enough to detect AppX/
+        // Store packages (via PowerShell Get-AppxPackage) tags them here;
+        // older agent builds simply omit it, same as every other field here.
+        origin: z.enum(["msi", "store"]).optional(),
       }),
     )
     .default([]),

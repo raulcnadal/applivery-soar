@@ -151,7 +151,15 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
   const identifiers = Array.from(new Set(rawApps.filter((a) => a?.identifier).map((a) => String(a.identifier).toLowerCase()))).sort();
   const versionedApps = rawApps
     .filter((a) => a?.identifier && a?.version)
-    .map((a) => ({ identifier: String(a.identifier).toLowerCase(), name: a.name ?? null, version: String(a.version) }))
+    .map((a) => ({
+      identifier: String(a.identifier).toLowerCase(),
+      name: a.name ?? null,
+      version: String(a.version),
+      // Passed through as-is (already validated to "msi" | "store" | undefined
+      // by deviceAppReportPayloadSchema) — see installedApps.service.ts's
+      // InstalledAppsEntry.apps[].origin doc comment.
+      ...(a.origin ? { origin: a.origin } : {}),
+    }))
     .sort((a, b) => a.identifier.localeCompare(b.identifier));
 
   const nowIso = new Date().toISOString();
