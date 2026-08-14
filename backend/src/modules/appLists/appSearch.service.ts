@@ -157,6 +157,32 @@ async function searchAndroidKnown(headers: Headers, orgBase: string, text: strin
   return { items: out.slice(0, 25), error: errors.length && !out.length ? errors.join("; ") : null };
 }
 
+/**
+ * Exact Google Play package lookup — NOT a search. Confirmed via the
+ * Applivery Docs MCP (android/applications/get-by-name) that no free-text
+ * Play Store search exists for EMMs, but this endpoint resolves one exact
+ * package name against Google Play directly (live, not just Applivery's own
+ * catalog), returning the real title so an admin adding a known package to
+ * the App Catalog doesn't have to hand-type the display name blind and can
+ * confirm the package actually exists first. Distinct from
+ * searchAndroidKnown above, which only ever searches apps already staged in
+ * Applivery's own org (App Distribution / Android Enterprise catalogs).
+ */
+export async function lookupAndroidAppByPackageName(headers: Headers, orgBase: string, packageName: string): Promise<{ found: boolean; name: string | null; error: string | null }> {
+  const pkg = (packageName ?? "").trim();
+  if (!pkg) return { found: false, name: null, error: null };
+  try {
+    const res = await appliveryClient.get<any>(`${orgBase}/mdm/android/enterprise/applications/${encodeURIComponent(pkg)}`, { headers });
+    if (res.status === 404) return { found: false, name: null, error: null };
+    if (res.status >= 300) return { found: false, name: null, error: `Applivery returned ${res.status}` };
+    const data = res.data?.data ?? res.data;
+    const name = typeof data?.title === "string" && data.title.trim() ? data.title.trim() : null;
+    return { found: true, name, error: null };
+  } catch (e) {
+    return { found: false, name: null, error: String(e) };
+  }
+}
+
 const SEARCH_SOURCES_BY_PLATFORM: Record<string, string[]> = {
   apple: ["apple_store"],
   macos: ["apple_store", "homebrew"],

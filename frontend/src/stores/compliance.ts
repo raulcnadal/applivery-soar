@@ -532,6 +532,19 @@ export const useComplianceStore = defineStore("compliance", () => {
     return res.data;
   }
 
+  // Exact Google Play package lookup — NOT a search (Applivery's API has no
+  // free-text Play Store search for EMMs, confirmed via docs). Resolves one
+  // exact package name against Google Play directly so an admin adding a
+  // known package to the App Catalog gets the real title back instead of
+  // typing it blind, and finds out immediately if the package doesn't
+  // exist. GET /api/app-lists/android-app-lookup, backed by
+  // appSearch.service.ts's lookupAndroidAppByPackageName.
+  async function lookupAndroidApp(packageName: string): Promise<{ found: boolean; name: string | null; error: string | null }> {
+    const { api } = await import("../api/http");
+    const res = await api.get("/app-lists/android-app-lookup", { params: { packageName } });
+    return res.data;
+  }
+
   async function fetchInstalledAppsStatus() {
     const { api } = await import("../api/http");
     try {
@@ -681,6 +694,7 @@ export const useComplianceStore = defineStore("compliance", () => {
     setInstalledAppsBudget,
     fetchReportedApps,
     fetchWindowsAppDetail,
+    lookupAndroidApp,
     customChecks,
     isLoadingCustomChecks,
     customChecksError,

@@ -24,18 +24,41 @@ const platformOptions = [
   { value: "windows", label: "Windows" },
 ];
 
-// Mirrors SEARCH_SOURCES_BY_PLATFORM in appSearch.service.ts.
+// Mirrors SEARCH_SOURCES_BY_PLATFORM in appSearch.service.ts, plus two
+// sources that aren't Applivery search calls at all and are handled
+// entirely client-side (see the searchSource branches in the template):
+//  - "reported_apps": apps SOAR has actually seen installed across the
+//    fleet (self-reported or Applivery-UEM-fetched — the same data behind
+//    the Apps view's "Reported Apps" tab, store.reportedApps). Listed first
+//    for every platform since it needs no external lookup and is the
+//    highest-trust source there is: it's not "an app that exists somewhere
+//    in a store", it's "an app that is demonstrably installed on your
+//    devices right now".
+//  - "google_play_lookup" (Android only): an exact Google Play package-name
+//    lookup, not a search — Applivery's API has no free-text Play Store
+//    search for EMMs (confirmed via docs.applivery.com), but does expose an
+//    exact-match lookup (android/applications/get-by-name) that resolves a
+//    known package id against Google Play live and returns its real title.
 const SOURCES_BY_PLATFORM: Record<string, Array<{ id: string; label: string }>> = {
-  apple: [{ id: "apple_store", label: "Apple App Store" }],
+  apple: [
+    { id: "reported_apps", label: "From Reported Apps" },
+    { id: "apple_store", label: "Apple App Store" },
+  ],
   macos: [
+    { id: "reported_apps", label: "From Reported Apps" },
     { id: "apple_store", label: "Apple App Store" },
     { id: "homebrew", label: "Homebrew (Cask)" },
   ],
   windows: [
+    { id: "reported_apps", label: "From Reported Apps" },
     { id: "ms_store", label: "Microsoft Store" },
     { id: "winget", label: "Winget" },
   ],
-  android: [{ id: "android_known", label: "Known Apps" }],
+  android: [
+    { id: "reported_apps", label: "From Reported Apps" },
+    { id: "android_known", label: "Applivery Catalog" },
+    { id: "google_play_lookup", label: "Google Play (exact package)" },
+  ],
 };
 
 // Curated starting points — convenience seed, not an authority (spot-check
@@ -93,11 +116,30 @@ watch(searchPlatform, (platform) => {
   searchQuery.value = "";
   searchResults.value = [];
   searchError.value = null;
+  playPackageInput.value = "";
+  playLookupResult.value = null;
+  playLookupError.value = null;
+});
+watch(searchSource, () => {
+  playPackageInput.value = "";
+  playLookupResult.value = null;
+  playLookupError.value = null;
 });
 
+// "reported_apps" and "google_play_lookup" aren't Applivery search calls —
+// they're handled entirely below (reportedAppsForSource / the Google Play
+// lookup form) — this debounced watcher only drives the remaining
+// API-search sources (apple_store, ms_store, winget, homebrew,
+// android_known).
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 watch([searchQuery, searchSource], () => {
   if (searchTimer) clearTimeout(searchTimer);
+  if (searchSource.value === "reported_apps" || searchSource.value === "google_play_lookup") {
+    searchResults.value = [];
+    searchError.value = null;
+    isSearching.value = false;
+    return;
+  }
   if (searchQuery.value.trim().length < 4 || !searchSource.value) {
     searchResults.value = [];
     searchError.value = null;
@@ -120,6 +162,51 @@ watch([searchQuery, searchSource], () => {
   }, 350);
 });
 
+// ── "From Reported Apps" source — local filter, no API call ──
+// Matches a catalog entry the same identifier-or-name-insensitive way
+// complianceEvaluate.ts's requiredAppList/disallowedAppList matching does
+// (see that file's doc comment for why: a catalog entry's identifier
+// convention and a device's self-reported identifier convention don't
+// always agree). Used here to flag "already in catalog" so admins aren't
+// tempted to add a second, differently-identified entry for an app that's
+// already cataloged under a different naming convention.
+function findCatalogMatch(platform: string, identifier: string, name?: string | null) {
+  const idTarget = identifier.toLowerCase();
+  const nameTarget = (name ?? "").toLowerCase();
+  return store.appCatalog.find((e) => e.platform === platform && (e.identifier.toLowerCase() === idTarget || (nameTarget && (e.name ?? "").toLowerCase() === nameTarget))) ?? null;
+}
+
+const reportedAppsForSource = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  return store.reportedApps
+    .filter((a) => a.platform === searchPlatform.value)
+    .filter((a) => !q || a.name.toLowerCase().includes(q) || a.identifier.toLowerCase().includes(q))
+    .slice(0, 60);
+});
+
+// ── Google Play exact-package lookup (Android only) ──
+const playPackageInput = ref("");
+const playLookupResult = ref<{ found: boolean; name: string | null } | null>(null);
+const isLookingUpPlay = ref(false);
+const playLookupError = ref<string | null>(null);
+
+async function lookupPlayPackage() {
+  const pkg = playPackageInput.value.trim();
+  if (!pkg) return;
+  isLookingUpPlay.value = true;
+  playLookupError.value = null;
+  playLookupResult.value = null;
+  try {
+    const res = await store.lookupAndroidApp(pkg);
+    playLookupError.value = res.error;
+    playLookupResult.value = { found: res.found, name: res.name };
+  } catch (err: any) {
+    playLookupError.value = err?.response?.data?.detail || err?.message || "Lookup failed — see server logs";
+  } finally {
+    isLookingUpPlay.value = false;
+  }
+}
+
 const manualName = ref("");
 const manualIdentifier = ref("");
 const catalogError = ref<string | null>(null);
@@ -128,6 +215,10 @@ const filteredCatalog = computed(() => (filterPlatform.value ? store.appCatalog.
 
 onMounted(async () => {
   await store.fetchAppCatalog();
+  // Needed for the "From Reported Apps" source below — ReportedAppsPanel.vue
+  // also fetches this, but an admin may open App Catalog without ever
+  // visiting Reported Apps first.
+  if (!store.reportedApps.length) store.fetchReportedApps();
 });
 
 async function addByIdentifier(identifier: string, name: string, iconUrl: string | null | undefined, source: string) {
@@ -157,6 +248,13 @@ async function addManualEntry() {
 
 async function addToCatalog(item: { identifier: string; name: string; iconUrl?: string }) {
   await addByIdentifier(item.identifier, item.name, item.iconUrl, searchSource.value);
+}
+
+async function addPlayLookupResult() {
+  if (!playLookupResult.value?.found) return;
+  await addByIdentifier(playPackageInput.value.trim(), playLookupResult.value.name || playPackageInput.value.trim(), null, "google_play");
+  playPackageInput.value = "";
+  playLookupResult.value = null;
 }
 
 async function removeCatalogEntry(entry: AppCatalogEntry) {
@@ -191,32 +289,78 @@ async function removeCatalogEntry(entry: AppCatalogEntry) {
         </button>
       </div>
 
-      <Input v-model="searchQuery" :placeholder="searchPlatform === 'android' ? 'App name (already-known Applivery apps only — see note below)' : 'Search apps… (4+ characters)'" />
-      <p v-if="isSearching" class="text-[10px] text-gray-400">Searching…</p>
-      <Alert v-if="searchError" type="danger">{{ searchError }}</Alert>
-      <p v-if="!isSearching && !searchError && searchQuery.trim().length >= 4 && searchResults.length === 0" class="text-[10px] text-gray-400">
-        No matches for "{{ searchQuery.trim() }}" on {{ sources.find((s) => s.id === searchSource)?.label || searchSource }}.
-      </p>
-
-      <div v-if="searchResults.length" class="space-y-1 max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2">
-        <div v-for="r in searchResults" :key="`${r.source}:${r.identifier}`" class="flex items-center justify-between text-sm px-1 py-1">
-          <span class="truncate flex-1">{{ r.name }} <span class="text-[9px] text-gray-400">({{ r.identifier }})</span></span>
-          <Button size="sm" variant="ghost" @click="addToCatalog(r)">Add</Button>
+      <!-- "From Reported Apps" — local filter over apps SOAR has actually seen installed, no API call -->
+      <template v-if="searchSource === 'reported_apps'">
+        <Input v-model="searchQuery" placeholder="Filter by name or identifier… (leave blank to see all)" />
+        <p v-if="!store.reportedApps.length" class="text-[10px] text-gray-400 flex items-start gap-1">
+          <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
+          No apps reported yet — devices report their installed apps via the SOAR Agent or, once a policy references an App List, the background installed-apps refresher. Check back after a device reports, or use another source below.
+        </p>
+        <div v-else-if="reportedAppsForSource.length === 0" class="text-[10px] text-gray-400">No {{ PLATFORM_LABELS[searchPlatform] || searchPlatform }} apps match "{{ searchQuery.trim() }}".</div>
+        <div v-else class="space-y-1 max-h-56 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+          <div v-for="a in reportedAppsForSource" :key="`${a.platform}:${a.identifier}`" class="flex items-center justify-between gap-2 text-sm px-1 py-1">
+            <span class="truncate flex-1">
+              {{ a.name }}
+              <span class="text-[9px] text-gray-400">({{ a.identifier }}) · {{ a.deviceCount }} device{{ a.deviceCount === 1 ? "" : "s" }}</span>
+            </span>
+            <span v-if="findCatalogMatch(a.platform, a.identifier, a.name)" class="text-[10px] text-gray-400 flex items-center gap-1 shrink-0">
+              <component :is="ICONS.CheckCircle" :size="11" weight="Linear" /> In catalog
+            </span>
+            <Button v-else size="sm" variant="ghost" class="shrink-0" @click="addByIdentifier(a.identifier, a.name, null, 'reported_apps')">Add</Button>
+          </div>
         </div>
-      </div>
+        <p v-if="catalogError" class="inline-flex items-start gap-1 text-[10px] text-red-500">
+          <component :is="ICONS.DangerTriangle" :size="10" weight="Linear" class="shrink-0 mt-0.5" /> {{ catalogError }}
+        </p>
+      </template>
 
-      <p v-if="searchPlatform === 'android'" class="text-[10px] text-gray-400 flex items-start gap-1">
-        <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
-        No free-text Play Store search exists for EMMs — results above are apps already known to your Applivery org (App Distribution catalog + Android Enterprise). Use manual entry below for anything else.
-      </p>
-      <p v-if="searchPlatform === 'windows' && searchSource === 'winget'" class="text-[10px] text-gray-400 flex items-start gap-1">
-        <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
-        Winget's community index — a convenience suggestion, not authoritative. Double-check a result before relying on it for enforcement.
-      </p>
-      <p v-if="searchPlatform === 'macos' && searchSource === 'homebrew'" class="text-[10px] text-gray-400 flex items-start gap-1">
-        <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
-        Homebrew casks have no bundle-ID field — these are name-only suggestions. Confirm the real bundle ID before relying on it.
-      </p>
+      <!-- Google Play exact-package lookup (Android only) -->
+      <template v-else-if="searchSource === 'google_play_lookup'">
+        <div class="flex items-center gap-2">
+          <Input v-model="playPackageInput" placeholder="Exact package name, e.g. com.slack" class="flex-1" @keyup.enter="lookupPlayPackage" />
+          <Button size="sm" variant="secondary" :loading="isLookingUpPlay" :disabled="!playPackageInput.trim()" @click="lookupPlayPackage">Look up</Button>
+        </div>
+        <Alert v-if="playLookupError" type="danger">{{ playLookupError }}</Alert>
+        <p v-else-if="playLookupResult && !playLookupResult.found" class="text-[10px] text-gray-400">No app found on Google Play for that exact package name.</p>
+        <div v-else-if="playLookupResult?.found" class="flex items-center justify-between gap-2 text-sm px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700">
+          <span class="truncate">{{ playLookupResult.name || playPackageInput.trim() }} <span class="text-[9px] text-gray-400">({{ playPackageInput.trim() }})</span></span>
+          <Button size="sm" variant="ghost" @click="addPlayLookupResult">Add</Button>
+        </div>
+        <p class="text-[10px] text-gray-400 flex items-start gap-1">
+          <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
+          No free-text Play Store search exists for EMMs — this resolves one exact package name against Google Play directly, live, to confirm it exists and fetch its real title.
+        </p>
+      </template>
+
+      <!-- Applivery-backed API search sources (Apple App Store, MS Store, Winget, Homebrew, Applivery Catalog) -->
+      <template v-else>
+        <Input v-model="searchQuery" :placeholder="searchPlatform === 'android' ? 'App name (already-known Applivery apps only — see note below)' : 'Search apps… (4+ characters)'" />
+        <p v-if="isSearching" class="text-[10px] text-gray-400">Searching…</p>
+        <Alert v-if="searchError" type="danger">{{ searchError }}</Alert>
+        <p v-if="!isSearching && !searchError && searchQuery.trim().length >= 4 && searchResults.length === 0" class="text-[10px] text-gray-400">
+          No matches for "{{ searchQuery.trim() }}" on {{ sources.find((s) => s.id === searchSource)?.label || searchSource }}.
+        </p>
+
+        <div v-if="searchResults.length" class="space-y-1 max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+          <div v-for="r in searchResults" :key="`${r.source}:${r.identifier}`" class="flex items-center justify-between text-sm px-1 py-1">
+            <span class="truncate flex-1">{{ r.name }} <span class="text-[9px] text-gray-400">({{ r.identifier }})</span></span>
+            <Button size="sm" variant="ghost" @click="addToCatalog(r)">Add</Button>
+          </div>
+        </div>
+
+        <p v-if="searchPlatform === 'android' && searchSource === 'android_known'" class="text-[10px] text-gray-400 flex items-start gap-1">
+          <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
+          No free-text Play Store search exists for EMMs — results above are apps already known to your Applivery org (App Distribution catalog + Android Enterprise). Try "Google Play (exact package)" or "From Reported Apps" above for anything else.
+        </p>
+        <p v-if="searchPlatform === 'windows' && searchSource === 'winget'" class="text-[10px] text-gray-400 flex items-start gap-1">
+          <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
+          Winget's community index — a convenience suggestion, not authoritative. Double-check a result before relying on it for enforcement.
+        </p>
+        <p v-if="searchPlatform === 'macos' && searchSource === 'homebrew'" class="text-[10px] text-gray-400 flex items-start gap-1">
+          <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
+          Homebrew casks have no bundle-ID field — these are name-only suggestions. Confirm the real bundle ID before relying on it.
+        </p>
+      </template>
 
       <div v-if="PRESETS[searchPlatform]">
         <label class="block text-[10px] font-medium mb-1 text-gray-400">Quick-start presets</label>

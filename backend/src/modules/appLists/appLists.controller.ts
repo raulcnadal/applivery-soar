@@ -15,7 +15,7 @@ import {
   listAppLists,
   updateAppList,
 } from "./appCatalog.service";
-import { searchApps } from "./appSearch.service";
+import { lookupAndroidAppByPackageName, searchApps } from "./appSearch.service";
 import { fetchWindowsApplicationDetail, fetchWindowsApplications, matchWindowsApplication } from "./windowsAppCatalog.service";
 import { resolveOrgBase } from "../auth/rbac.service";
 import {
@@ -211,6 +211,25 @@ appListsRouter.get(
     // endpoint to return more than the list embed does in the future.
     const detail = await fetchWindowsApplicationDetail(headers, orgBase, match.id);
     res.json({ matched: true, application: detail ?? match });
+  }),
+);
+
+// ── Android Google Play exact-package lookup (App Catalog add flow) ──
+appListsRouter.get(
+  "/api/app-lists/android-app-lookup",
+  ...readCompliance,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    const packageName = typeof req.query.packageName === "string" ? req.query.packageName.trim() : "";
+    if (!packageName) {
+      res.json({ found: false, name: null, error: null });
+      return;
+    }
+    const headers = { Authorization: authorization, "Content-Type": "application/json" };
+    const orgBase = await resolveOrgBase(headers, workspaceSlug!);
+    res.json(await lookupAndroidAppByPackageName(headers, orgBase, packageName));
   }),
 );
 
