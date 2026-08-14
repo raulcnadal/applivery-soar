@@ -63,6 +63,19 @@ function riskMeta(tier: string) {
 // uses. SEVERITY_COLOR mirrors AppDetailModal.vue's own per-CVE severity map.
 const APP_SOURCE_LABELS: Record<string, string> = { self_reported: "Self-reported", server_fetch: "Applivery UEM" };
 const SEVERITY_COLOR: Record<string, string> = { CRITICAL: "#EF4444", HIGH: "#F97316", MEDIUM: "#F59E0B", LOW: "#3B82F6" };
+// Apps tab search — a device with a large AppX/Store inventory (see the
+// Windows dual-source round: 142 apps isn't unusual once Store/system
+// packages are included) is otherwise a long unfiltered scroll to find one
+// app. Client-side only (device.installedAppsDetail is already fully
+// loaded), same "name or identifier, case-insensitive" match as the Apps
+// main-nav view's own ReportedAppsPanel.vue search.
+const appsSearchQuery = ref("");
+const filteredInstalledApps = computed(() => {
+  const all = device.value?.installedAppsDetail || [];
+  const q = appsSearchQuery.value.trim().toLowerCase();
+  if (!q) return all;
+  return all.filter((a: Record<string, any>) => (a.name || "").toLowerCase().includes(q) || (a.identifier || "").toLowerCase().includes(q));
+});
 
 const PLATFORM_PATH: Record<string, string> = { apple: "apple", macos: "apple", android: "android", windows: "windows" };
 
@@ -104,31 +117,73 @@ function rawDeviceId(d: Record<string, any>): string {
 
 const platform = computed(() => (device.value ? PLATFORM_PATH[device.value.platform] : ""));
 
-// ── Extras (locations/network-status/agent-logs) — ported over from
+// ── Extras (locations/network-status) — ported over from
 // playground/DeviceInsightModal.vue's own loadExtras(), proxied through
 // this app's own backend the same way (devices.service.ts). Fetched for
 // every entry point now, not just Playground — the Devices view's drawer
 // never had these tabs before. No Assets tab/fetch (removed per user
 // request — this modal covers device state, not segment-level file
 // assets).
+//
+// Agent Logs/Trace used to auto-load here too on every open — moved to an
+// on-demand model per user request ("fetching this in a recurrent manner
+// would be an intensive task... not really related to Compliance, but to
+// Troubleshooting"): loadExtras now only reads back whatever was already
+// stored from the LAST on-demand fetch (GET /agent-diagnostics, a plain DB
+// read — see devices.service.ts's getStoredAgentDiagnostics), and
+// fetchAgentDiagnostics below is the actual live Applivery call, wired to
+// the Agent tab's own "Fetch Agent Logs & Traces" button.
 const loadingExtras = ref(true);
 const locations = ref<any[]>([]);
 const network = ref<any | null>(null);
-const logs = ref<any[]>([]);
 const showLocationHistory = ref(false);
+
+interface AgentDiagnosticsSide {
+  items: any[];
+  fetchedAt: string;
+}
+const agentLogs = ref<AgentDiagnosticsSide | null>(null);
+const agentTrace = ref<AgentDiagnosticsSide | null>(null);
+const isFetchingAgentDiagnostics = ref(false);
+const agentDiagnosticsError = ref<string | null>(null);
 
 async function loadExtras(id: string, plat: string) {
   loadingExtras.value = true;
   const { api } = await import("../../api/http");
-  const [locRes, netRes, logsRes] = await Promise.all([
+  const [locRes, netRes, diagRes] = await Promise.all([
     api.get(`/devices/${id}/locations`, { params: { platform: plat } }).catch(() => null),
     api.get(`/devices/${id}/network-status`, { params: { platform: plat } }).catch(() => null),
-    api.get(`/devices/${id}/agent-logs`, { params: { platform: plat } }).catch(() => null),
+    api.get(`/devices/${id}/agent-diagnostics`).catch(() => null),
   ]);
   locations.value = locRes?.data?.items ?? [];
   network.value = netRes?.data?.items?.[0] ?? null;
-  logs.value = logsRes?.data?.items ?? [];
+  agentLogs.value = diagRes?.data?.agentLogs ?? null;
+  agentTrace.value = diagRes?.data?.agentTrace ?? null;
   loadingExtras.value = false;
+}
+
+// The Agent tab's "Fetch Agent Logs & Traces" button — the only thing that
+// ever triggers a live call to Applivery's agent-logs/agent-trace endpoints
+// (devices.service.ts's fetchDeviceAgentDiagnostics). A side that errors
+// (network hiccup, Applivery-side issue) doesn't wipe out whatever was
+// already on screen from a previous successful fetch — the backend always
+// returns the best-available payload for both sides, plus a non-blocking
+// `errors` list surfaced here instead.
+async function fetchAgentDiagnostics() {
+  if (!device.value) return;
+  isFetchingAgentDiagnostics.value = true;
+  agentDiagnosticsError.value = null;
+  try {
+    const { api } = await import("../../api/http");
+    const res = await api.post(`/devices/${device.value.id}/agent-diagnostics/fetch`, null, { params: { platform: platform.value } });
+    agentLogs.value = res.data?.agentLogs ?? null;
+    agentTrace.value = res.data?.agentTrace ?? null;
+    if (res.data?.errors?.length) agentDiagnosticsError.value = res.data.errors.join(" · ");
+  } catch (err: any) {
+    agentDiagnosticsError.value = err?.response?.data?.detail || "Could not fetch agent logs/traces.";
+  } finally {
+    isFetchingAgentDiagnostics.value = false;
+  }
 }
 
 // Port of App.jsx's DeviceInsightCard signal-strength normalizer
@@ -170,9 +225,12 @@ watch(
     error.value = null;
     firewallState.value = null;
     resolvedDevice.value = null;
+    appsSearchQuery.value = "";
     locations.value = [];
     network.value = null;
-    logs.value = [];
+    agentLogs.value = null;
+    agentTrace.value = null;
+    agentDiagnosticsError.value = null;
     showLocationHistory.value = false;
     if (!d) return;
 
@@ -412,6 +470,19 @@ function logStatus(l: Record<string, any>): string {
 }
 function logBody(l: Record<string, any>): string {
   return l.content || l.message || l.output || l.description || l.detail || "";
+}
+
+// Agent Trace items — per Applivery's official schema (GET /mdm/agent-trace)
+// every item is `{ resource: { type: "script"|"smartAttribute", id }, event:
+// { type: "error", content }, fingerprint, createdAt, ... }`, always an
+// error against a specific script or smart attribute the agent tried to
+// run/evaluate on this device — hence the fixed "<Resource> error" title
+// rather than a fallback chain like logTitle's (agent-trace has no
+// alternate field naming to guard against, unlike agent-logs).
+function traceTitle(t: Record<string, any>): string {
+  const resType = t.resource?.type;
+  if (!resType) return "Agent trace event";
+  return `${resType.charAt(0).toUpperCase()}${resType.slice(1)} error`;
 }
 </script>
 
@@ -963,8 +1034,20 @@ function logBody(l: Record<string, any>): string {
             <div v-if="(device.installedAppsDetail || []).length === 0" class="text-xs text-gray-400 px-3 py-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
               No app inventory reported yet for this device — via the SOAR Agent's App Inventory Reporting, or the background refresher once a Compliance Policy references an App List.
             </div>
-            <div v-else class="space-y-2.5">
-              <div v-for="a in device.installedAppsDetail" :key="`${a.identifier}-${a.version}-${a.source}`" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+            <template v-else>
+              <div class="relative mb-2.5">
+                <component :is="ICONS.Magnifer" :size="14" weight="Linear" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  v-model="appsSearchQuery"
+                  type="text"
+                  placeholder="Search app name or identifier…"
+                  class="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1"
+                  :style="{ '--tw-ring-color': PRIMARY_BLUE } as any"
+                />
+              </div>
+              <p v-if="filteredInstalledApps.length === 0" class="text-xs text-gray-400 px-3 py-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">No apps match "{{ appsSearchQuery }}".</p>
+              <div v-else class="space-y-2.5">
+              <div v-for="a in filteredInstalledApps" :key="`${a.identifier}-${a.version}-${a.source}`" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
                 <div class="flex items-center justify-between gap-2">
                   <div class="min-w-0">
                     <p class="text-sm text-gray-900 dark:text-white truncate flex items-center gap-1.5">
@@ -999,7 +1082,8 @@ function logBody(l: Record<string, any>): string {
                 </div>
                 <p v-else-if="a.vuln" class="mt-1 text-[10px]" :style="{ color: SUCCESS }">No known CVEs for this version.</p>
               </div>
-            </div>
+              </div>
+            </template>
           </template>
 
           <template v-else-if="tab === 'location'">
@@ -1106,55 +1190,102 @@ function logBody(l: Record<string, any>): string {
           </template>
 
           <template v-else-if="tab === 'agent'">
+            <!-- On-demand only — Agent Logs/Trace are Applivery's per-device
+                 diagnostic feed (GET /mdm/agent-logs, GET /mdm/agent-trace),
+                 troubleshooting data rather than fleet/compliance state, so
+                 this tab never fetches them live on its own. This button is
+                 the only trigger; whatever it last retrieved stays visible
+                 for reference (stored server-side, re-read on every modal
+                 open) until fetched again. See devices.service.ts's
+                 fetchDeviceAgentDiagnostics doc comment. -->
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <div class="min-w-0">
+                <p class="text-[10px] text-gray-400 truncate">
+                  <template v-if="agentLogs?.fetchedAt || agentTrace?.fetchedAt">Last fetched {{ formatDate(agentLogs?.fetchedAt || agentTrace?.fetchedAt || null) }}</template>
+                  <template v-else>Never fetched for this device.</template>
+                </p>
+              </div>
+              <button
+                :disabled="isFetchingAgentDiagnostics"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 shrink-0"
+                :style="{ backgroundColor: PRIMARY_BLUE }"
+                title="Fetch this device's latest Agent Logs and Agent Trace from Applivery"
+                @click="fetchAgentDiagnostics"
+              >
+                <component :is="ICONS.Refresh" :size="12" weight="Linear" :class="{ 'animate-spin': isFetchingAgentDiagnostics }" />
+                {{ isFetchingAgentDiagnostics ? "Fetching…" : "Fetch Agent Logs & Trace" }}
+              </button>
+            </div>
+            <p v-if="agentDiagnosticsError" class="text-xs px-3 py-2 rounded-lg mb-3" :style="{ backgroundColor: `${DANGER}10`, color: DANGER }">{{ agentDiagnosticsError }}</p>
+
             <template v-if="loadingExtras">
               <div class="h-16 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse mb-2" />
               <div class="h-16 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
             </template>
-            <div v-else-if="logs.length" class="space-y-1.5">
-              <div v-for="(l, i) in logs" :key="i" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
-                <div class="flex items-center justify-between mb-1 gap-2">
-                  <span class="text-xs font-semibold truncate text-gray-700 dark:text-gray-200">{{ logTitle(l) }}</span>
-                  <span
-                    v-if="logStatus(l)"
-                    class="text-[10px] font-bold uppercase shrink-0 px-1.5 py-0.5 rounded"
-                    :style="{
-                      backgroundColor: `${/ERROR|FAIL|CRITICAL/i.test(logStatus(l)) ? DANGER : /WARN/i.test(logStatus(l)) ? WARNING : SUCCESS}15`,
-                      color: /ERROR|FAIL|CRITICAL/i.test(logStatus(l)) ? DANGER : /WARN/i.test(logStatus(l)) ? WARNING : SUCCESS,
-                    }"
+            <template v-else>
+              <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Agent Logs</p>
+              <div v-if="agentLogs?.items?.length" class="space-y-1.5 mb-5">
+                <div v-for="(l, i) in agentLogs.items" :key="i" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                  <div class="flex items-center justify-between mb-1 gap-2">
+                    <span class="text-xs font-semibold truncate text-gray-700 dark:text-gray-200">{{ logTitle(l) }}</span>
+                    <span
+                      v-if="logStatus(l)"
+                      class="text-[10px] font-bold uppercase shrink-0 px-1.5 py-0.5 rounded"
+                      :style="{
+                        backgroundColor: `${/ERROR|FAIL|CRITICAL/i.test(logStatus(l)) ? DANGER : /WARN/i.test(logStatus(l)) ? WARNING : SUCCESS}15`,
+                        color: /ERROR|FAIL|CRITICAL/i.test(logStatus(l)) ? DANGER : /WARN/i.test(logStatus(l)) ? WARNING : SUCCESS,
+                      }"
+                    >
+                      {{ logStatus(l) }}
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-[10px] font-medium px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}10`, color: PRIMARY_BLUE }">{{ device.platformLabel }} Agent</span>
+                    <span class="text-[10px] font-mono text-gray-400">{{ l.createdAt ? formatDate(l.createdAt) : "" }}</span>
+                  </div>
+                  <!-- content/contentError/file are per the official Applivery
+                       agent-logs schema (GET /mdm/agent-logs); logBody() also
+                       falls back to message/output/description/detail, seen
+                       in a reference third-party app's handling of the same
+                       API (device_profile_sheet.dart) — some orgs' log
+                       payloads apparently carry those instead of/alongside
+                       content. contentError surfaces a parse/agent-side
+                       failure distinct from the log itself; file is an
+                       optional attached log blob (e.g. a full crash dump)
+                       stored in Applivery's file store. -->
+                  <p v-if="logBody(l)" class="text-xs font-mono break-all whitespace-pre-wrap text-gray-700 dark:text-gray-200">{{ logBody(l) }}</p>
+                  <p v-if="l.contentError" class="text-xs font-mono break-all whitespace-pre-wrap mt-1.5" :style="{ color: DANGER }">{{ l.contentError }}</p>
+                  <a
+                    v-if="l.file?.location"
+                    :href="l.file.location"
+                    target="_blank"
+                    rel="noopener"
+                    class="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-medium"
+                    :style="{ color: PRIMARY_BLUE }"
                   >
-                    {{ logStatus(l) }}
-                  </span>
+                    <component :is="ICONS.Case" :size="11" weight="Linear" />
+                    {{ l.file.originalName || "Attachment" }}{{ l.file.size ? ` · ${(l.file.size / 1024).toFixed(0)} KB` : "" }}
+                  </a>
                 </div>
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-[10px] font-medium px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}10`, color: PRIMARY_BLUE }">{{ device.platformLabel }} Agent</span>
-                  <span class="text-[10px] font-mono text-gray-400">{{ l.createdAt ? formatDate(l.createdAt) : "" }}</span>
-                </div>
-                <!-- content/contentError/file are per the official Applivery
-                     agent-logs schema (GET /mdm/agent-logs); logBody() also
-                     falls back to message/output/description/detail, seen
-                     in a reference third-party app's handling of the same
-                     API (device_profile_sheet.dart) — some orgs' log
-                     payloads apparently carry those instead of/alongside
-                     content. contentError surfaces a parse/agent-side
-                     failure distinct from the log itself; file is an
-                     optional attached log blob (e.g. a full crash dump)
-                     stored in Applivery's file store. -->
-                <p v-if="logBody(l)" class="text-xs font-mono break-all whitespace-pre-wrap text-gray-700 dark:text-gray-200">{{ logBody(l) }}</p>
-                <p v-if="l.contentError" class="text-xs font-mono break-all whitespace-pre-wrap mt-1.5" :style="{ color: DANGER }">{{ l.contentError }}</p>
-                <a
-                  v-if="l.file?.location"
-                  :href="l.file.location"
-                  target="_blank"
-                  rel="noopener"
-                  class="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-medium"
-                  :style="{ color: PRIMARY_BLUE }"
-                >
-                  <component :is="ICONS.Case" :size="11" weight="Linear" />
-                  {{ l.file.originalName || "Attachment" }}{{ l.file.size ? ` · ${(l.file.size / 1024).toFixed(0)} KB` : "" }}
-                </a>
               </div>
-            </div>
-            <p v-else class="text-xs text-gray-400">No agent logs available for this device.</p>
+              <p v-else class="text-xs text-gray-400 mb-5">{{ agentLogs ? "No agent logs for this device." : "Not fetched yet — click \"Fetch Agent Logs & Trace\" above." }}</p>
+
+              <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Agent Trace</p>
+              <div v-if="agentTrace?.items?.length" class="space-y-1.5">
+                <div v-for="(t, i) in agentTrace.items" :key="i" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                  <div class="flex items-center justify-between mb-1 gap-2">
+                    <span class="text-xs font-semibold truncate text-gray-700 dark:text-gray-200">{{ traceTitle(t) }}</span>
+                    <span v-if="t.event?.type" class="text-[10px] font-bold uppercase shrink-0 px-1.5 py-0.5 rounded" :style="{ backgroundColor: `${DANGER}15`, color: DANGER }">{{ t.event.type }}</span>
+                  </div>
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-[10px] font-medium px-2 py-0.5 rounded-full" :style="{ backgroundColor: `${PRIMARY_BLUE}10`, color: PRIMARY_BLUE }">{{ device.platformLabel }} Agent</span>
+                    <span class="text-[10px] font-mono text-gray-400">{{ t.createdAt ? formatDate(t.createdAt) : "" }}</span>
+                  </div>
+                  <p v-if="t.event?.content" class="text-xs font-mono break-all whitespace-pre-wrap text-gray-700 dark:text-gray-200">{{ t.event.content }}</p>
+                </div>
+              </div>
+              <p v-else class="text-xs text-gray-400">{{ agentTrace ? "No agent trace events for this device." : "Not fetched yet — click \"Fetch Agent Logs & Trace\" above." }}</p>
+            </template>
           </template>
         </div>
       </template>

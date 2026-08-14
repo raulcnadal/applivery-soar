@@ -5,13 +5,14 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { HttpError } from "../../utils/httpError";
 import {
   bulkReattestDevices,
-  getDeviceAgentLogs,
+  fetchDeviceAgentDiagnostics,
   getDeviceAssets,
   getDeviceCompliance,
   getDeviceFirewallState,
   getDeviceLocations,
   getDeviceNetworkStatus,
   getDevicesFull,
+  getStoredAgentDiagnostics,
   updateDevicePolicies,
   updateDeviceSegment,
   updateDeviceTags,
@@ -52,12 +53,16 @@ devicesRouter.get(
   }),
 );
 
-// GET /api/devices/{device_id}/locations, /network-status, /agent-logs,
-// /assets — Playground's DeviceInsightModal "extras" tabs (Phase 8). Proxied
+// GET /api/devices/{device_id}/locations, /network-status, /assets —
+// Playground's DeviceInsightModal "extras" tabs (Phase 8). Proxied
 // server-side (see devices.service.ts's getDeviceLocations/etc doc comment
 // for why this doesn't call api.applivery.io directly from the browser like
 // the original did) rather than a literal main.py line, since the original
-// never proxied these through its own backend at all.
+// never proxied these through its own backend at all. Agent Logs/Trace used
+// to be auto-loaded here too, alongside locations/network-status — moved to
+// its own on-demand GET/POST pair below (agent-diagnostics) since it's
+// troubleshooting data, not something worth a live Applivery call on every
+// Device modal open.
 devicesRouter.get(
   "/api/devices/:deviceId/locations",
   ...readDevices,
@@ -80,14 +85,32 @@ devicesRouter.get(
   }),
 );
 
+// GET /api/devices/{device_id}/agent-diagnostics — stored-only read, no live
+// Applivery call. Troubleshooting-only Agent Logs/Trace data is deliberately
+// NOT part of the auto-loaded "extras" above (locations/network-status) —
+// see devices.service.ts's getStoredAgentDiagnostics doc comment for why.
 devicesRouter.get(
-  "/api/devices/:deviceId/agent-logs",
+  "/api/devices/:deviceId/agent-diagnostics",
   ...readDevices,
+  asyncHandler(async (req, res) => {
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    if (!workspaceSlug) throw new HttpError(401, "Missing credentials");
+    res.json(await getStoredAgentDiagnostics(workspaceSlug, req.params.deviceId));
+  }),
+);
+
+// POST /api/devices/{device_id}/agent-diagnostics/fetch — the Device modal
+// Agent tab's on-demand "Fetch Agent Logs & Traces" button. manageDevices-
+// gated like bulk-reattest above: this is an active, Applivery-API-consuming
+// action an admin explicitly triggers, not a passive read.
+devicesRouter.post(
+  "/api/devices/:deviceId/agent-diagnostics/fetch",
+  ...manageDevices,
   asyncHandler(async (req, res) => {
     const authorization = req.header("Authorization");
     const workspaceSlug = req.header("X-Workspace-Slug");
     requireCreds(authorization, workspaceSlug);
-    res.json(await getDeviceAgentLogs(authorization, workspaceSlug!, req.params.deviceId, String(req.query.platform ?? "")));
+    res.json(await fetchDeviceAgentDiagnostics(authorization, workspaceSlug!, req.params.deviceId, String(req.query.platform ?? "")));
   }),
 );
 

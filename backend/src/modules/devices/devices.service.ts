@@ -541,17 +541,127 @@ export async function getDeviceNetworkStatus(authorization: string, workspaceSlu
   }
 }
 
-export async function getDeviceAgentLogs(authorization: string, workspaceSlug: string, deviceId: string, platform: string) {
+/**
+ * Agent Logs / Agent Trace — Applivery's per-device diagnostic feed
+ * (docs.applivery.com/en/api/uem/agent-logs, .../uem/agent-trace),
+ * deliberately kept OUT of the regular device-fetch/cache cycle
+ * (getDevicesFull, DEVICES_CACHE_TTL_SECONDS) unlike locations/network-status
+ * above. This is troubleshooting data, not fleet/compliance state — pulling
+ * it on every device on every refresh would mean two extra Applivery API
+ * calls per device per cycle for data almost nobody looks at except while
+ * actively debugging one specific device (per user request: "fetching this
+ * in a recurrent manner would be an intensive task if we target all devices
+ * and is not really related to Compliance, but to Troubleshooting").
+ *
+ * Instead: fetchDeviceAgentDiagnostics is only ever called from the Device
+ * modal's Agent tab "Fetch Agent Logs & Traces" button (an explicit admin
+ * action, manageDevices-gated same as bulk-reattest) and persists whatever
+ * it gets back; getStoredAgentDiagnostics is a plain DB read with no
+ * Applivery call at all, used both on Device modal open (so the last fetch
+ * stays visible between troubleshooting sessions, per user request: "keeping
+ * logs already fetched for reference") and as fetchDeviceAgentDiagnostics's
+ * own fallback for a side that fails.
+ *
+ * No new Prisma model/migration: reuses the existing DevicePushData table
+ * (same one reportDeviceData's "attributes" kind already writes to) under
+ * two new `kind`s scoped to this deviceId (Applivery's own device _id, same
+ * id every other proxy call in this file takes — not a report-secret
+ * serial). Each stored payload is `{ items, fetchedAt }`.
+ */
+const AGENT_LOGS_KIND = "agentLogsFetch";
+const AGENT_TRACE_KIND = "agentTraceFetch";
+
+async function storeDevicePushDataKind(workspaceSlug: string, deviceId: string, kind: string, payload: unknown): Promise<void> {
+  const now = new Date();
+  await prisma.devicePushData.upsert({
+    where: { workspaceSlug_deviceId_kind: { workspaceSlug, deviceId, kind } },
+    create: { workspaceSlug, deviceId, kind, payload: payload as any, reportedAt: now },
+    update: { payload: payload as any, reportedAt: now },
+  });
+}
+
+async function readDevicePushDataKind(workspaceSlug: string, deviceId: string, kind: string): Promise<any | null> {
+  const row = await prisma.devicePushData.findUnique({ where: { workspaceSlug_deviceId_kind: { workspaceSlug, deviceId, kind } } });
+  return row?.payload ?? null;
+}
+
+/** GET /api/devices/{id}/agent-diagnostics — read-only, no Applivery call. */
+export async function getStoredAgentDiagnostics(workspaceSlug: string, deviceId: string) {
+  const [agentLogs, agentTrace] = await Promise.all([
+    readDevicePushDataKind(workspaceSlug, deviceId, AGENT_LOGS_KIND),
+    readDevicePushDataKind(workspaceSlug, deviceId, AGENT_TRACE_KIND),
+  ]);
+  return { agentLogs, agentTrace };
+}
+
+/**
+ * POST /api/devices/{id}/agent-diagnostics/fetch — the on-demand action.
+ * Calls Applivery's GET /mdm/agent-logs and GET /mdm/agent-trace in
+ * parallel, each filtered to this one device via deviceId+deviceType, and
+ * persists whichever side succeeds. Deliberately does NOT also call the two
+ * by-id endpoints (GET /mdm/agent-logs/{id}, GET /mdm/agent-trace/{id}) per
+ * item returned — cross-checked against Applivery's own OpenAPI schema for
+ * both, the by-id response is an identical shape to a single list item
+ * (content/contentError/file for logs; the full event object for traces),
+ * so an extra N+1 call per item would only fetch data the list call already
+ * returned.
+ *
+ * A side that errors doesn't overwrite its own previously-stored data —
+ * `appliveryClient` never throws on a non-2xx (see its own doc comment), so
+ * a 4xx/5xx here is a normal, expected outcome this checks for explicitly
+ * rather than a caught exception. The response always carries the
+ * best-available payload for both sides (freshly fetched, or the last
+ * successful fetch on record) plus an `errors` array the frontend can show
+ * as a non-blocking warning, since losing an admin's existing reference data
+ * to a transient Applivery hiccup would undercut the entire "keep logs
+ * already fetched for reference" point of this feature.
+ */
+export async function fetchDeviceAgentDiagnostics(
+  authorization: string,
+  workspaceSlug: string,
+  deviceId: string,
+  platform: string,
+): Promise<{ agentLogs: any; agentTrace: any; errors: string[] }> {
   const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };
-  try {
-    const orgBase = await resolveOrgBase(headers, workspaceSlug);
-    const mdmType = mdmTypeSegment(platform);
-    const res = await appliveryClient.get<any>(`${orgBase}/mdm/agent-logs/`, { headers, params: { deviceId, deviceType: mdmType, limit: 50, sort: "createdAt:desc" } });
-    return { items: extractItems(res.data) };
-  } catch (e) {
-    console.warn(`[Devices] getDeviceAgentLogs(${deviceId}) failed: ${e}`);
-    return { items: [] };
+  const orgBase = await resolveOrgBase(headers, workspaceSlug);
+  const mdmType = mdmTypeSegment(platform);
+  const fetchedAt = new Date().toISOString();
+  const errors: string[] = [];
+
+  function describeError(res: { status: number; data: any }): string {
+    const msg = res.data?.error?.message;
+    return msg ? `HTTP ${res.status} — ${msg}` : `HTTP ${res.status}`;
   }
+
+  const [logsRes, traceRes] = await Promise.all([
+    appliveryClient
+      .get<any>(`${orgBase}/mdm/agent-logs`, { headers, params: { deviceId, deviceType: mdmType, limit: 50, sort: "createdAt:desc" } })
+      .catch((e) => ({ status: 0, data: { error: { message: String(e) } } })),
+    appliveryClient
+      .get<any>(`${orgBase}/mdm/agent-trace`, { headers, params: { deviceId, deviceType: mdmType, limit: 50, sort: "createdAt:desc" } })
+      .catch((e) => ({ status: 0, data: { error: { message: String(e) } } })),
+  ]);
+
+  let agentLogs: any = null;
+  if (logsRes.status >= 200 && logsRes.status < 300) {
+    agentLogs = { items: extractItems(logsRes.data), fetchedAt };
+    await storeDevicePushDataKind(workspaceSlug, deviceId, AGENT_LOGS_KIND, agentLogs);
+  } else {
+    errors.push(`Agent logs: ${describeError(logsRes)}`);
+  }
+
+  let agentTrace: any = null;
+  if (traceRes.status >= 200 && traceRes.status < 300) {
+    agentTrace = { items: extractItems(traceRes.data), fetchedAt };
+    await storeDevicePushDataKind(workspaceSlug, deviceId, AGENT_TRACE_KIND, agentTrace);
+  } else {
+    errors.push(`Agent trace: ${describeError(traceRes)}`);
+  }
+
+  if (!agentLogs) agentLogs = await readDevicePushDataKind(workspaceSlug, deviceId, AGENT_LOGS_KIND);
+  if (!agentTrace) agentTrace = await readDevicePushDataKind(workspaceSlug, deviceId, AGENT_TRACE_KIND);
+
+  return { agentLogs, agentTrace, errors };
 }
 
 export async function getDeviceAssets(authorization: string, workspaceSlug: string, segmentId: string | null) {
