@@ -39,11 +39,20 @@ function formatBytes(bytes: number | string | null | undefined): string | null {
 }
 
 // Which App Lists (Compliance > App Lists) reference this app — purely
-// local data, matched by (platform, identifier) against the shared App
-// Catalog. No Applivery call needed for this part.
+// local data, matched by (platform, identifier-or-name) against the shared
+// App Catalog. No Applivery call needed for this part. Matches on name as
+// well as identifier for the same reason complianceEvaluate.ts's
+// requiredAppList/disallowedAppList matching does: a catalog entry added
+// via Winget search stores winget's PackageIdentifier (e.g.
+// "Google.Chrome"), but a device's self-report often carries the
+// lowercased DisplayName instead ("google chrome") when winget isn't
+// invokable from the agent's LocalSystem service context — matching on
+// identifier alone would show "not in the App Catalog" for an app that
+// demonstrably is, just added/reported under different naming conventions.
 const catalogEntry = computed(() => {
   if (!props.app) return null;
-  return store.appCatalog.find((e) => e.platform === props.app!.platform && e.identifier.toLowerCase() === props.app!.identifier.toLowerCase()) ?? null;
+  const target = props.app.identifier.toLowerCase();
+  return store.appCatalog.find((e) => e.platform === props.app!.platform && (e.identifier.toLowerCase() === target || (e.name ?? "").toLowerCase() === target)) ?? null;
 });
 const listsContaining = computed(() => {
   if (!catalogEntry.value) return [];

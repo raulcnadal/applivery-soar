@@ -157,7 +157,7 @@ export async function loadAppListsContext(workspaceSlug: string) {
     prisma.appList.findMany({ where: { workspaceSlug } }),
   ]);
   return {
-    catalogById: new Map(catalog.map((e) => [e.id, { id: e.id, identifier: e.identifier }])),
+    catalogById: new Map(catalog.map((e) => [e.id, { id: e.id, identifier: e.identifier, name: e.name as string | null }])),
     listById: new Map(lists.map((l) => [l.id, { id: l.id, appIds: l.appIds }])),
   };
 }

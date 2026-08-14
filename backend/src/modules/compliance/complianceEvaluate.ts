@@ -15,7 +15,7 @@ import { isPointInZone } from "../geofencing/geofence.service";
  * must stay synchronous to match the tight per-device evaluation loop.
  */
 export interface AppListsContext {
-  catalogById: Map<string, { id: string; identifier: string }>;
+  catalogById: Map<string, { id: string; identifier: string; name?: string | null }>;
   listById: Map<string, { id: string; appIds: string[] }>;
 }
 
@@ -247,19 +247,34 @@ export function evaluateCondition(
       if (!appLists || !value) return false;
       const appList = appLists.listById.get(String(value));
       if (!appList) return false;
-      const listIdentifiers = new Set(
-        (appList.appIds ?? [])
-          .map((aid: string) => appLists.catalogById.get(aid))
-          .filter((e): e is NonNullable<typeof e> => Boolean(e?.identifier))
-          .map((e) => e!.identifier.toLowerCase()),
-      );
-      if (listIdentifiers.size === 0) return false;
+      const entries = (appList.appIds ?? [])
+        .map((aid: string) => appLists.catalogById.get(aid))
+        .filter((e): e is NonNullable<typeof e> => Boolean(e?.identifier));
+      if (entries.length === 0) return false;
       const installed: Set<string> | null = (device as any).installedApps ?? null;
       if (installed === null) return false;
+      // Match on the catalog entry's identifier OR its display name
+      // (case-insensitive) — necessary because a device's self-reported
+      // identifier convention doesn't always line up with whatever an App
+      // Catalog entry was added under. An entry added via the Winget search
+      // (App Catalog / Apps view) stores winget's PackageIdentifier (e.g.
+      // "Google.Chrome"), but the Windows agent's self-report falls back to
+      // the lowercased DisplayName instead (e.g. "google chrome") whenever
+      // winget.exe isn't invokable from the service's LocalSystem context
+      // (apps_windows.go's getAppsViaRegistry doc comment — a routine
+      // situation for a Windows service, not a rare edge case). Matching on
+      // identifier alone silently orphaned every such app from every App
+      // List condition referencing it: the app would show as genuinely
+      // installed everywhere in SOAR (Apps view, self-report), yet
+      // requiredAppList/disallowedAppList would never recognize it, leaving
+      // a policy permanently "violated" with no way to self-recover even
+      // after the underlying data was correct.
+      const isPresent = (e: { identifier: string; name?: string | null }) =>
+        installed.has(e.identifier.toLowerCase()) || Boolean(e.name && installed.has(e.name.toLowerCase()));
       if (field === "requiredAppList") {
-        return ![...listIdentifiers].every((i) => installed.has(i));
+        return !entries.every(isPresent);
       }
-      return [...listIdentifiers].some((i) => installed.has(i));
+      return entries.some(isPresent);
     }
     if (field === "isCompliant") {
       return Boolean(device.isCompliant) === Boolean(value);
