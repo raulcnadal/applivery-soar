@@ -78,8 +78,28 @@ function normalize(s: string): string {
   return s.trim().toLowerCase();
 }
 
-/** Best-effort exact-name match (case/whitespace-insensitive) against the catalog. */
-export function matchWindowsApplication(items: WindowsAppCatalogItem[], candidateName: string): WindowsAppCatalogItem | null {
+function candidateProductCode(item: WindowsAppCatalogItem): string | null {
+  const code = item.info?.config?.msi?.productCode;
+  return typeof code === "string" && code.trim() ? code.trim().toUpperCase() : null;
+}
+
+/**
+ * Matches an app against the catalog. When `productCode` is supplied (only
+ * available for Windows apps SOAR has itself fetched via the MSI CSP — see
+ * windowsDeviceApps.service.ts), it's tried first: an exact GUID match is
+ * authoritative, unlike the name-based fallback below which is inherently
+ * best-effort (an app can be named differently in Applivery's catalog than
+ * however it self-reports/CSP-reports its DisplayName). Falls back to
+ * case/whitespace-insensitive name match when there's no productCode to go
+ * on (self-reported apps) or it didn't match anything (app was never staged
+ * through Applivery's catalog under that productCode).
+ */
+export function matchWindowsApplication(items: WindowsAppCatalogItem[], candidateName: string, productCode?: string | null): WindowsAppCatalogItem | null {
+  if (productCode && productCode.trim()) {
+    const target = productCode.trim().toUpperCase();
+    const byCode = items.find((item) => candidateProductCode(item) === target);
+    if (byCode) return byCode;
+  }
   const target = normalize(candidateName);
   if (!target) return null;
   for (const item of items) {

@@ -213,6 +213,9 @@ export interface ReportedAppDeviceRef {
   fetchedAt: string;
   updateAvailable: boolean;
   lastFetchError: string | null;
+  // Windows-only — see installedApps.service.ts's ReportedAppDeviceRef doc comment.
+  productCode: string | null;
+  enforcedByPolicy: boolean;
 }
 export interface ReportedAppSummary {
   identifier: string;
@@ -222,6 +225,7 @@ export interface ReportedAppSummary {
   versions: string[];
   sources: string[];
   devicesWithPendingUpdate: number;
+  devicesEnforcedByPolicy: number;
   devices: ReportedAppDeviceRef[];
 }
 
@@ -514,14 +518,17 @@ export const useComplianceStore = defineStore("compliance", () => {
     return { items: res.data.items ?? [], error: res.data.error ?? null };
   }
 
-  // Best-effort lookup against Applivery's own Windows App Distribution/MDM
-  // application library (a different thing from installedApps.service.ts's
-  // per-device inventory) — GET /api/app-lists/windows-app-detail, backed by
-  // windowsAppCatalog.service.ts. Matched by name since there's no shared id
-  // between what a device reports installed and Applivery's own catalog.
-  async function fetchWindowsAppDetail(name: string): Promise<{ matched: boolean; application: Record<string, any> | null }> {
+  // Lookup against Applivery's own Windows App Distribution/MDM application
+  // library (a different thing from installedApps.service.ts's per-device
+  // inventory) — GET /api/app-lists/windows-app-detail, backed by
+  // windowsAppCatalog.service.ts. When productCode is available (server_fetch
+  // apps carry the MSI product GUID from the device's own CSP data) it's
+  // matched exactly first; otherwise falls back to a best-effort name match,
+  // since there's no shared id between a self-reported app and Applivery's
+  // catalog.
+  async function fetchWindowsAppDetail(name: string, productCode?: string | null): Promise<{ matched: boolean; application: Record<string, any> | null }> {
     const { api } = await import("../api/http");
-    const res = await api.get("/app-lists/windows-app-detail", { params: { name } });
+    const res = await api.get("/app-lists/windows-app-detail", { params: { name, productCode: productCode || undefined } });
     return res.data;
   }
 

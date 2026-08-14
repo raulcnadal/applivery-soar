@@ -14,7 +14,14 @@ export interface InstalledAppsEntry {
   // macOS apps but no target/new-version number, and no equivalent flag at
   // all for Android or Windows (self-reported Windows apps have no update
   // signal today; Android's MDM fetch doesn't surface one either).
-  apps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean }>;
+  // productCode/enforcedByPolicy are Windows-only (from windowsDeviceApps.service.ts's
+  // MSI CSP parse) — productCode is the MSI product GUID, enforcedByPolicy is
+  // true when Applivery's own Windows App Distribution has this app assigned
+  // to the device via its policy (deviceWinPolicy.applicationsInfo), false
+  // when it's just present on the device for some other reason (manually
+  // installed, or installed by the enrollment process like the Applivery
+  // Agent MSI itself).
+  apps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean; productCode?: string; enforcedByPolicy?: boolean }>;
   platform: string;
   fetchedAt: string;
   error: string | null;
@@ -95,7 +102,7 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
   let error: string | null = null;
   const applePendingApps: Array<Record<string, any>> = [];
   let appleTotalApps = 0;
-  const versionedApps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean }> = [];
+  const versionedApps: Array<{ identifier: string; name?: string | null; version: string; updateAvailable?: boolean; productCode?: string; enforcedByPolicy?: boolean }> = [];
 
   if (platformPath === "windows") {
     const { apps, error: msiError } = await fetchWindowsDeviceMsiApps(headers, orgBase, deviceId);
@@ -107,7 +114,7 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
       // same device resolve to the same identifier rather than silently
       // creating two separate entries for one app.
       const identifier = app.name.toLowerCase();
-      versionedApps.push({ identifier, name: app.name, version: app.version });
+      versionedApps.push({ identifier, name: app.name, version: app.version, productCode: app.productCode, enforcedByPolicy: app.enforcedByPolicy });
       identifiers.add(identifier);
     }
   } else {
@@ -292,6 +299,10 @@ export interface ReportedAppDeviceRef {
   // the actual reason (e.g. Applivery's own API returning a non-2xx for this
   // device/platform) instead of leaving it a mystery.
   lastFetchError: string | null;
+  // Windows-only, from windowsDeviceApps.service.ts — see InstalledAppsEntry's
+  // apps[] doc comment for what these mean.
+  productCode: string | null;
+  enforcedByPolicy: boolean;
 }
 export interface ReportedAppSummary {
   identifier: string;
@@ -301,6 +312,10 @@ export interface ReportedAppSummary {
   versions: string[];
   sources: string[];
   devicesWithPendingUpdate: number;
+  // Windows-only — count of devices where this app is assigned/enforced via
+  // Applivery's Windows App Distribution policy (as opposed to merely being
+  // present on the device for some other reason).
+  devicesEnforcedByPolicy: number;
   devices: ReportedAppDeviceRef[];
 }
 
@@ -332,7 +347,7 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
       const key = `${platform}:${app.identifier}`;
       let summary = byIdentifier.get(key);
       if (!summary) {
-        summary = { identifier: app.identifier, name: app.name || app.identifier, platform, deviceCount: 0, versions: [], sources: [], devicesWithPendingUpdate: 0, devices: [] };
+        summary = { identifier: app.identifier, name: app.name || app.identifier, platform, deviceCount: 0, versions: [], sources: [], devicesWithPendingUpdate: 0, devicesEnforcedByPolicy: 0, devices: [] };
         byIdentifier.set(key, summary);
       }
       if (app.name && summary.name === summary.identifier) summary.name = app.name;
@@ -340,6 +355,7 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
       if (app.version && !summary.versions.includes(app.version)) summary.versions.push(app.version);
       if (!summary.sources.includes(entry.source)) summary.sources.push(entry.source);
       if (app.updateAvailable) summary.devicesWithPendingUpdate += 1;
+      if (app.enforcedByPolicy) summary.devicesEnforcedByPolicy += 1;
       summary.devices.push({
         deviceId,
         deviceName,
@@ -348,6 +364,8 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
         fetchedAt: entry.fetchedAt,
         updateAvailable: Boolean(app.updateAvailable),
         lastFetchError: entry.error,
+        productCode: app.productCode ?? null,
+        enforcedByPolicy: Boolean(app.enforcedByPolicy),
       });
     }
   }

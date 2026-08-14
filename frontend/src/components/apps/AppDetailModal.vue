@@ -1,12 +1,14 @@
 <script setup lang="ts">
 // App detail modal — opened from ReportedAppsPanel.vue when an admin clicks
 // an app row. Combines three things: the per-device breakdown SOAR already
-// has (version/source/update/fetch-error, previously only visible via an
-// inline expand), which App Lists (if any) reference this app in our own
-// App Catalog, and — Windows only — a best-effort enrichment lookup against
-// Applivery's own Windows App Distribution/MDM application library (see
-// windowsAppCatalog.service.ts's doc comment for why that match is
-// name-based rather than a reliable id join).
+// has (version/source/update/enforced-by-policy/fetch-error, previously only
+// visible via an inline expand), which App Lists (if any) reference this app
+// in our own App Catalog, and — Windows only — an enrichment lookup against
+// Applivery's own Windows App Distribution/MDM application library. That
+// lookup matches by MSI product GUID when SOAR fetched the app's productCode
+// itself (server_fetch apps), which is authoritative, and falls back to a
+// best-effort name match otherwise (self-reported apps have no productCode)
+// — see windowsAppCatalog.service.ts's matchWindowsApplication doc comment.
 import { Alert, Modal } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
@@ -53,13 +55,19 @@ const windowsLookup = ref<{ matched: boolean; application: Record<string, any> |
 const isLoadingWindowsLookup = ref(false);
 const windowsLookupError = ref<string | null>(null);
 
+// The MSI product GUID, when SOAR itself fetched this app from the device's
+// own CSP data (server_fetch) — lets the catalog lookup match exactly
+// instead of falling back to name matching. Self-reported-only apps have no
+// productCode, so this is often null; that's expected, not an error.
+const windowsProductCode = computed(() => props.app?.devices.find((d) => d.productCode)?.productCode ?? null);
+
 async function loadWindowsLookup() {
   if (!props.app || props.app.platform !== "windows") return;
   isLoadingWindowsLookup.value = true;
   windowsLookupError.value = null;
   windowsLookup.value = null;
   try {
-    windowsLookup.value = await store.fetchWindowsAppDetail(props.app.name);
+    windowsLookup.value = await store.fetchWindowsAppDetail(props.app.name, windowsProductCode.value);
   } catch (err: any) {
     windowsLookupError.value = err?.response?.data?.detail || "Could not look up Applivery's Windows application catalog.";
   } finally {
@@ -105,6 +113,14 @@ const windowsAppDisplay = computed(() => {
         <div class="flex items-center gap-2 mt-1 flex-wrap">
           <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-500/10 text-gray-500 dark:text-gray-400">{{ PLATFORM_LABELS[app.platform] || app.platform }}</span>
           <span class="text-xs text-gray-400">{{ app.deviceCount }} device{{ app.deviceCount === 1 ? "" : "s" }} · {{ app.versions.length }} version{{ app.versions.length === 1 ? "" : "s" }} seen</span>
+          <span
+            v-if="app.devicesEnforcedByPolicy > 0"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+            title="Assigned to the device via Applivery's Windows App Distribution policy — not just present on the device for some other reason."
+          >
+            <component :is="ICONS.ShieldCheck" :size="11" weight="Linear" />
+            Enforced by policy on {{ app.devicesEnforcedByPolicy }} device{{ app.devicesEnforcedByPolicy === 1 ? "" : "s" }}
+          </span>
         </div>
       </div>
 
@@ -158,6 +174,14 @@ const windowsAppDisplay = computed(() => {
           <div v-for="d in app.devices" :key="d.deviceId" class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
             <span class="text-gray-900 dark:text-white truncate">{{ d.deviceName }}</span>
             <span class="flex items-center gap-2 shrink-0 text-gray-400">
+              <component
+                v-if="d.enforcedByPolicy"
+                :is="ICONS.ShieldCheck"
+                :size="12"
+                weight="Linear"
+                class="text-emerald-500"
+                title="Enforced by Applivery's Windows App Distribution policy on this device"
+              />
               <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500" title="Update available" />
               <span class="font-mono">{{ d.version || "—" }}</span>
               <span

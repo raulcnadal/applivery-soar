@@ -1,4 +1,5 @@
 import { appliveryClient } from "../../services/appliveryClient";
+import type { WindowsAppCatalogItem } from "./windowsAppCatalog.service";
 
 type Headers = Record<string, string>;
 
@@ -11,18 +12,32 @@ type Headers = Record<string, string>;
  * untyped `data: {}` with no items shape, consistent with it just not
  * working for this org/device population.
  *
- * The user found two endpoints that DO work, both hanging off the same
+ * The user found working alternatives, all hanging off the same
  * device-detail call (`GET /mdm/windows/enterprise/devices/{winDeviceId}`,
  * confirmed via the Applivery Docs MCP — see get-device.md):
  *
  *  - `data.config["./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI/{productCode}/..."]`
- *    — one OMA-DM sub-tree per MSI product Applivery has deployed/tracked on
- *    the device (Name, Version, Publisher, Status, InstallDate, ...). Verified
- *    against a real device dump the user provided: this is genuine
- *    third-party app data (7-Zip, VLC, the Applivery Agent MSI itself all
- *    showed up with correct name/version/publisher). This is what this
- *    module surfaces, tagged as "Applivery UEM" (source: "server_fetch") in
+ *    — one OMA-DM sub-tree per MSI product actually present on the device
+ *    (Name, Version, Publisher, Status, InstallDate, ...). Verified against a
+ *    real device dump the user provided: this is genuine third-party app
+ *    data (7-Zip, VLC, the Applivery Agent MSI itself all showed up with
+ *    correct name/version/publisher). This is what this module surfaces as
+ *    installed apps, tagged as "Applivery UEM" (source: "server_fetch") in
  *    the Apps view.
+ *
+ *  - `data.deviceWinPolicy.applicationsInfo` — the apps Applivery's Windows
+ *    App Distribution has actually deployed/assigned to this device via its
+ *    policy. The user supplied a real sample of this (previously unverified
+ *    — an earlier version of this module skipped it for exactly that
+ *    reason): each entry has the *same* shape as a
+ *    windowsAppCatalog.service.ts WindowsAppCatalogItem (id, type, config,
+ *    info, ...), i.e. it's the org's own application-catalog entry embedded
+ *    directly rather than a separate schema. Its `info.config.msi.productCode`
+ *    is the same productCode key used by the MSI CSP tree above, so this is
+ *    used to mark which installed MSI apps are policy-enforced vs. merely
+ *    present on the device for some other reason (e.g. the Applivery Agent
+ *    MSI itself, which installs via enrollment, not app deployment, and
+ *    correctly does NOT show up here on the sample device).
  *
  *  - `data.config["./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryResults"]`
  *    — a large OMA-URI XML blob (`<Packages><Package .../></Packages>`) of
@@ -36,12 +51,6 @@ type Headers = Record<string, string>;
  *    ~150 OS-noise rows to the Apps view per Windows device. If a future org
  *    genuinely deploys Appx/MSIX apps via Applivery, this is the place to
  *    add that parsing back in.
- *
- * `deviceWinPolicy.applicationsInfo` (apps enforced by the device's assigned
- * Windows policy) is intentionally not parsed here either — its `items`
- * schema is undocumented (`type: object, properties: {}`) and no real sample
- * of its shape was available to build a parser against without guessing at
- * field names.
  */
 export interface WindowsMsiApp {
   productCode: string;
@@ -49,9 +58,15 @@ export interface WindowsMsiApp {
   version: string;
   publisher: string | null;
   status: string | null;
+  /** True when this productCode also appears in deviceWinPolicy.applicationsInfo. */
+  enforcedByPolicy: boolean;
 }
 
 const MSI_PREFIX = "./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI/";
+
+function normalizeProductCode(code: string): string {
+  return code.trim().toUpperCase();
+}
 
 /**
  * Some OMA-DM sub-nodes come back as an error object instead of a plain
@@ -64,13 +79,38 @@ function asCleanString(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
-export async function fetchWindowsDeviceMsiApps(headers: Headers, orgBase: string, winDeviceId: string): Promise<{ apps: WindowsMsiApp[]; error: string | null }> {
+/**
+ * `deviceWinPolicy.applicationsInfo` → Map<normalized productCode,
+ * WindowsAppCatalogItem>. Only entries carrying an MSI productCode are
+ * indexed (that's the only cross-reference this org's data has ever shown —
+ * MSIX/store-type policy apps would need a different join key, not
+ * available from the device-detail response).
+ */
+function indexEnforcedApplications(applicationsInfo: unknown): Map<string, WindowsAppCatalogItem> {
+  const byProductCode = new Map<string, WindowsAppCatalogItem>();
+  if (!Array.isArray(applicationsInfo)) return byProductCode;
+  for (const item of applicationsInfo) {
+    const code = item?.info?.config?.msi?.productCode;
+    if (typeof code === "string" && code.trim()) {
+      byProductCode.set(normalizeProductCode(code), item as WindowsAppCatalogItem);
+    }
+  }
+  return byProductCode;
+}
+
+export async function fetchWindowsDeviceMsiApps(
+  headers: Headers,
+  orgBase: string,
+  winDeviceId: string,
+): Promise<{ apps: WindowsMsiApp[]; enforced: Map<string, WindowsAppCatalogItem>; error: string | null }> {
   try {
     const res = await appliveryClient.get<any>(`${orgBase}/mdm/windows/enterprise/devices/${winDeviceId}`, { headers });
-    if (res.status >= 300) return { apps: [], error: `Applivery returned ${res.status}` };
+    if (res.status >= 300) return { apps: [], enforced: new Map(), error: `Applivery returned ${res.status}` };
 
-    const config = res.data?.data?.config;
-    if (!config || typeof config !== "object") return { apps: [], error: null };
+    const data = res.data?.data;
+    const config = data?.config;
+    const enforced = indexEnforcedApplications(data?.deviceWinPolicy?.applicationsInfo);
+    if (!config || typeof config !== "object") return { apps: [], enforced, error: null };
 
     // The MSI CSP is flattened into individual dotted keys per product code
     // (e.g. ".../MSI/{23170F69-...}/Name", ".../MSI/{23170F69-...}/Version"),
@@ -92,16 +132,24 @@ export async function fetchWindowsDeviceMsiApps(headers: Headers, orgBase: strin
       const name = asCleanString(config[`${base}/Name`]);
       const version = asCleanString(config[`${base}/Version`]);
       if (!name || !version) continue;
+      // The config object's own keys use the raw (URL-encoded) product code,
+      // e.g. "%7B23170F69-...%7D" — but deviceWinPolicy.applicationsInfo's
+      // productCode is plain "{23170F69-...}". Decode before storing/matching
+      // so productCode is in one consistent (plain-GUID) form everywhere
+      // downstream, and so the enforced-by-policy cross-reference actually
+      // matches instead of silently always missing.
+      const decodedCode = decodeURIComponent(code);
       apps.push({
-        productCode: code,
+        productCode: decodedCode,
         name,
         version,
         publisher: asCleanString(config[`${base}/Publisher`]),
         status: asCleanString(config[`${base}/Status`]),
+        enforcedByPolicy: enforced.has(normalizeProductCode(decodedCode)),
       });
     }
-    return { apps, error: null };
+    return { apps, enforced, error: null };
   } catch (e) {
-    return { apps: [], error: String(e) };
+    return { apps: [], enforced: new Map(), error: String(e) };
   }
 }

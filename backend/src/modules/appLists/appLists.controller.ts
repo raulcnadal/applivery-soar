@@ -191,6 +191,7 @@ appListsRouter.get(
     const workspaceSlug = req.header("X-Workspace-Slug");
     requireCreds(authorization, workspaceSlug);
     const name = typeof req.query.name === "string" ? req.query.name.trim() : "";
+    const productCode = typeof req.query.productCode === "string" ? req.query.productCode.trim() : "";
     if (!name) {
       res.json({ matched: false, application: null });
       return;
@@ -198,7 +199,7 @@ appListsRouter.get(
     const headers = { Authorization: authorization, "Content-Type": "application/json" };
     const orgBase = await resolveOrgBase(headers, workspaceSlug!);
     const items = await fetchWindowsApplications(headers, orgBase);
-    const match = matchWindowsApplication(items, name);
+    const match = matchWindowsApplication(items, name, productCode || null);
     if (!match) {
       res.json({ matched: false, application: null });
       return;
