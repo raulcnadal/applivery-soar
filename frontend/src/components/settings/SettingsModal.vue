@@ -24,6 +24,7 @@ import AuditLogRetentionPanel from "./AuditLogRetentionPanel.vue";
 import WorkspaceAutomationPanel from "./WorkspaceAutomationPanel.vue";
 import DeviceDataWebhookPanel from "./DeviceDataWebhookPanel.vue";
 import CustomDeviceChecksPanel from "./CustomDeviceChecksPanel.vue";
+import EventWatchesPanel from "./EventWatchesPanel.vue";
 import LogExportDestinationsPanel from "./LogExportDestinationsPanel.vue";
 import TriggersPanel from "./TriggersPanel.vue";
 import CaseAutoRunRulesPanel from "./CaseAutoRunRulesPanel.vue";
@@ -59,6 +60,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   { id: "workspace-automation", label: "Workspace Automation", icon: ICONS.Refresh },
   { id: "device-webhook", label: "Device Data Webhook", icon: ICONS.PlugCircle },
   { id: "custom-checks", label: "Custom Device Checks", icon: ICONS.Checklist },
+  { id: "event-watches", label: "Event-Driven Detection", icon: ICONS.Radar },
   { id: "logexport", label: "Log Export", icon: ICONS.Database },
   { id: "triggers", label: "Inbound Webhooks", icon: ICONS.Bolt },
   { id: "case-autorun", label: "Case Auto-Run Rules", icon: ICONS.Target },
@@ -202,6 +204,7 @@ const activeTabMeta = computed(() => visibleTabs.value.find((t) => t.id === acti
           <WorkspaceAutomationPanel v-else-if="activeTab === 'workspace-automation'" />
           <DeviceDataWebhookPanel v-else-if="activeTab === 'device-webhook'" />
           <CustomDeviceChecksPanel v-else-if="activeTab === 'custom-checks'" />
+          <EventWatchesPanel v-else-if="activeTab === 'event-watches'" />
           <LogExportDestinationsPanel v-else-if="activeTab === 'logexport'" />
           <TriggersPanel v-else-if="activeTab === 'triggers'" />
           <CaseAutoRunRulesPanel v-else-if="activeTab === 'case-autorun'" />

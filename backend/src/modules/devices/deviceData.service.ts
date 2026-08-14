@@ -18,7 +18,7 @@ async function invalidateDevicesCacheFor(workspaceSlug: string): Promise<void> {
 import { platformPathSegment } from "./deviceNormalize";
 import type { NormalizedDevice } from "./deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
-import { normalizePushedAttributes, type DeviceAppReportPayload, type DeviceReportPayload } from "./deviceData.schemas";
+import { normalizePushedAttributes, type DeviceAppReportPayload, type DeviceReportPayload, type EventNotifyPayload } from "./deviceData.schemas";
 
 /**
  * The two device self-report webhooks a device's scheduled script POSTs to
@@ -218,6 +218,104 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
   });
 
   return { status: "ok", serialNumber: payload.serialNumber, appsReported: identifiers.length, matched: matchedFlag };
+}
+
+// Per-device cooldown for handleEventNotify below — deliberately separate
+// from, and tighter than, forceEvaluateNow's own per-workspace cooldown
+// (compliance.service.ts). The agent's own local debounce (§1.3 of the
+// roadmap doc) is the primary defense against a burst of raw OS events
+// turning into a burst of webhook calls, but this backend-side floor covers
+// the case that debounce can't: an agent process restart resets its
+// in-memory watcher/timer state, so a device that was mid-debounce at
+// restart could otherwise fire again immediately. In-memory only, resets on
+// a backend restart — same tradeoff as every other in-process cooldown map
+// in this codebase (liveCache.ts, forceEvaluateNow's own map).
+const lastEventNotifyAt = new Map<string, number>(); // key: `${workspaceSlug}:${serialNumber}`
+const EVENT_NOTIFY_DEVICE_COOLDOWN_MS = 5_000;
+
+/**
+ * POST /api/device-data/event-notify — see eventWatches.service.ts's module
+ * doc for the full design this is the reacting half of. The agent tells us
+ * only WHICH watch fired (`watchKey`) and for which device (`serialNumber`)
+ * — never what to do about it; `action` is resolved here, server-side,
+ * against the matching EventWatchDefinition, so a Settings-only change
+ * (retargeting a watch from one action to another, or disabling it) takes
+ * effect on the very next fire with no agent-side awareness needed.
+ *
+ * Always returns 200 with a `status` field rather than erroring for the
+ * "nothing to do" outcomes (cooldown, unknown/disabled watch, device not yet
+ * matched) — none of these are the agent's fault or something it can act on,
+ * so there's nothing worth it retrying or logging loudly for. Genuine
+ * failures (e.g. the automation credential is missing) are also reported
+ * back as a `status` rather than an HTTP error, for the same reason.
+ */
+export async function handleEventNotify(workspaceSlug: string, payload: EventNotifyPayload): Promise<{ status: string; action: string | null }> {
+  if (!payload.serialNumber?.trim()) throw new HttpError(400, "serialNumber is required");
+  if (!payload.watchKey?.trim()) throw new HttpError(400, "watchKey is required");
+
+  const cooldownKey = `${workspaceSlug}:${payload.serialNumber}`;
+  const now = Date.now();
+  const last = lastEventNotifyAt.get(cooldownKey) ?? 0;
+  if (now - last < EVENT_NOTIFY_DEVICE_COOLDOWN_MS) {
+    return { status: "cooldown", action: null };
+  }
+  lastEventNotifyAt.set(cooldownKey, now);
+
+  const { getEnabledWatchByKey } = await import("../compliance/eventWatches.service");
+  const watch = await getEnabledWatchByKey(workspaceSlug, payload.platform, payload.watchKey);
+  if (!watch) {
+    // Deleted/disabled since the agent's last config poll, or a stale key
+    // from an agent that hasn't re-synced its watcher set yet — neither is
+    // an error, just nothing to do this time.
+    return { status: "unknown_or_disabled_watch", action: null };
+  }
+
+  const matched = cachedDeviceBySerial(workspaceSlug, payload.serialNumber);
+  if (!matched) {
+    // Not in our cached device index yet — nothing targeted to refresh or
+    // evaluate for a device SOAR doesn't know about. Its normal report cycle
+    // (reportDeviceData above) will populate this the same way it always
+    // has; this event-notify call simply has nothing to act on yet.
+    return { status: "device_not_matched", action: watch.action };
+  }
+
+  if (watch.action === "refreshInstalledApps") {
+    try {
+      const { getAutomationBearer } = await import("../settings/automationCredential.service");
+      const bearer = await getAutomationBearer(workspaceSlug);
+      if (!bearer) return { status: "no_automation_credential", action: watch.action };
+      // getDevicesFull is cached (DEVICES_CACHE_TTL_SECONDS) — this is a
+      // cheap in-memory read on the common case, not a fresh live Applivery
+      // fetch every time a watch fires. Dynamic import: same circular-
+      // dependency avoidance as invalidateDevicesCacheFor above.
+      const { getDevicesFull } = await import("./devices.service");
+      const devicesResp = await getDevicesFull(bearer, workspaceSlug, false);
+      const { manualRefreshInstalledApps } = await import("../appLists/installedApps.service");
+      await manualRefreshInstalledApps([matched.id], devicesResp.items, bearer, workspaceSlug);
+      return { status: "ok", action: watch.action };
+    } catch (e) {
+      console.warn(`[EventWatch] refreshInstalledApps for device ${matched.id} (workspace ${workspaceSlug}) failed: ${e}`);
+      return { status: "error", action: watch.action };
+    }
+  }
+
+  if (watch.action === "evaluateComplianceNow") {
+    try {
+      const { forceEvaluateNow } = await import("../compliance/compliance.service");
+      await forceEvaluateNow(workspaceSlug);
+      return { status: "ok", action: watch.action };
+    } catch (e: any) {
+      // forceEvaluateNow's own per-workspace cooldown throws HttpError(429)
+      // — an expected, benign outcome here (something else already
+      // triggered an evaluation for this workspace recently), not a real
+      // failure worth surfacing as an error.
+      if (e instanceof HttpError && e.statusCode === 429) return { status: "workspace_cooldown", action: watch.action };
+      console.warn(`[EventWatch] evaluateComplianceNow for workspace ${workspaceSlug} failed: ${e}`);
+      return { status: "error", action: watch.action };
+    }
+  }
+
+  return { status: "unknown_action", action: watch.action };
 }
 
 /**

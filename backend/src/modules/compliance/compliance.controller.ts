@@ -29,6 +29,7 @@ import { COMPLIANCE_FIELDS, suggestMitreTechniquesForConditions, getComplianceTe
 import { getMitreTechniques, refreshMitreCatalog } from "../catalogs/mitreCatalog";
 import { getSelfReportedAttributeNames } from "../devices/deviceData.service";
 import { createCustomCheck, deleteCustomCheck, getCustomCheckNames, listCustomChecks, updateCustomCheck } from "./customChecks.service";
+import { createEventWatch, deleteEventWatch, listEventWatches, updateEventWatch } from "./eventWatches.service";
 
 /**
  * CompliancePolicy CRUD + evaluation + violations review queue + MITRE/
@@ -128,6 +129,28 @@ complianceRouter.delete("/api/compliance/custom-checks/:id", ...manageCompliance
 complianceRouter.get("/api/compliance/custom-check-names", ...readCompliance, asyncHandler(async (req, res) => {
   const platform = typeof req.query.platform === "string" ? req.query.platform : undefined;
   res.json({ items: await getCustomCheckNames(workspaceOf(req), platform) });
+}));
+
+// ── Event-Driven Detection watches (Settings > Device Data Webhook) —
+// disclosed new feature, no main.py equivalent. See eventWatches.service.ts's
+// module doc and backend/docs/event-driven-agent-detection-roadmap.md. ──
+
+complianceRouter.get("/api/compliance/event-watches", ...readCompliance, asyncHandler(async (req, res) => {
+  const platform = typeof req.query.platform === "string" ? req.query.platform : undefined;
+  res.json({ items: await listEventWatches(workspaceOf(req), platform) });
+}));
+
+complianceRouter.post("/api/compliance/event-watches", ...manageCompliance, asyncHandler(async (req, res) => {
+  res.json(await createEventWatch(workspaceOf(req), req.body, actorOf(req)));
+}));
+
+complianceRouter.put("/api/compliance/event-watches/:id", ...manageCompliance, asyncHandler(async (req, res) => {
+  res.json(await updateEventWatch(workspaceOf(req), req.params.id, req.body, actorOf(req)));
+}));
+
+complianceRouter.delete("/api/compliance/event-watches/:id", ...manageCompliance, asyncHandler(async (req, res) => {
+  await deleteEventWatch(workspaceOf(req), req.params.id, actorOf(req));
+  res.json({ status: "ok" });
 }));
 
 // ── Policy CRUD (main.py:10828-10957) ──

@@ -111,6 +111,34 @@ export interface CustomCheckDefinition {
   updatedAt: string;
 }
 
+// Disclosed new feature — event-driven detection watches. See backend's
+// eventWatches.service.ts module doc and
+// backend/docs/event-driven-agent-detection-roadmap.md for the full design.
+// Deliberately mirrors CustomCheckDefinition's shape just above — same
+// "admin authors in Settings, agent polls read-only" feature class.
+export const WATCH_TYPES = ["registryKey"] as const;
+export type WatchType = (typeof WATCH_TYPES)[number];
+export const WATCH_ACTIONS = ["refreshInstalledApps", "evaluateComplianceNow"] as const;
+export type WatchAction = (typeof WATCH_ACTIONS)[number];
+
+export interface EventWatchDefinition {
+  id: string;
+  workspaceSlug: string;
+  platform: "windows";
+  key: string;
+  name: string;
+  description?: string | null;
+  watchType: WatchType;
+  params: Record<string, any>;
+  debounceMs: number;
+  action: WatchAction;
+  enabled: boolean;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedBy?: string | null;
+  updatedAt: string;
+}
+
 export interface CustomCheckName {
   key: string;
   name: string;
@@ -299,6 +327,10 @@ export const useComplianceStore = defineStore("compliance", () => {
   const isLoadingCustomChecks = ref(false);
   const customChecksError = ref<string | null>(null);
   const customCheckNames = ref<CustomCheckName[]>([]);
+
+  const eventWatches = ref<EventWatchDefinition[]>([]);
+  const isLoadingEventWatches = ref(false);
+  const eventWatchesError = ref<string | null>(null);
 
   async function fetchPolicies() {
     isLoadingPolicies.value = true;
@@ -657,6 +689,41 @@ export const useComplianceStore = defineStore("compliance", () => {
     customCheckNames.value = res.data.items ?? [];
   }
 
+  // ── Event-Driven Detection watches — Settings > Device Data Webhook. See
+  // backend's eventWatches.service.ts module doc for the full design. ──
+
+  async function fetchEventWatches(platform?: string) {
+    isLoadingEventWatches.value = true;
+    eventWatchesError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/compliance/event-watches", { params: platform ? { platform } : {} });
+      eventWatches.value = res.data.items ?? [];
+    } catch (err: any) {
+      eventWatchesError.value = err?.response?.data?.detail || "Failed to load event-driven detection watches.";
+    } finally {
+      isLoadingEventWatches.value = false;
+    }
+  }
+
+  async function createEventWatch(payload: Partial<EventWatchDefinition>) {
+    const { api } = await import("../api/http");
+    await api.post("/compliance/event-watches", payload);
+    await fetchEventWatches();
+  }
+
+  async function updateEventWatch(id: string, payload: Partial<EventWatchDefinition>) {
+    const { api } = await import("../api/http");
+    await api.put(`/compliance/event-watches/${id}`, payload);
+    await fetchEventWatches();
+  }
+
+  async function deleteEventWatch(id: string) {
+    const { api } = await import("../api/http");
+    await api.delete(`/compliance/event-watches/${id}`);
+    await fetchEventWatches();
+  }
+
   return {
     policies,
     isLoadingPolicies,
@@ -732,5 +799,12 @@ export const useComplianceStore = defineStore("compliance", () => {
     updateCustomCheck,
     deleteCustomCheck,
     fetchCustomCheckNames,
+    eventWatches,
+    isLoadingEventWatches,
+    eventWatchesError,
+    fetchEventWatches,
+    createEventWatch,
+    updateEventWatch,
+    deleteEventWatch,
   };
 });

@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
-import { deviceAppReportPayloadSchema, deviceReportPayloadSchema } from "./deviceData.schemas";
-import { getAgentStatus, reportDeviceApps, reportDeviceData, verifyDeviceReportSecret } from "./deviceData.service";
+import { deviceAppReportPayloadSchema, deviceReportPayloadSchema, eventNotifyPayloadSchema } from "./deviceData.schemas";
+import { getAgentStatus, handleEventNotify, reportDeviceApps, reportDeviceData, verifyDeviceReportSecret } from "./deviceData.service";
 import { listEnabledChecksForAgent } from "../compliance/customChecks.service";
+import { listEnabledWatchesForAgent } from "../compliance/eventWatches.service";
 import { forceEvaluateNow } from "../compliance/compliance.service";
 
 /** Port of main.py:7758-7804 / 9714-9804 — POST /api/device-data/report, POST /api/device-data/report-apps. */
@@ -96,5 +97,46 @@ deviceDataRouter.get(
       return;
     }
     res.json(await getAgentStatus(workspaceSlug, serialNumber, platform));
+  }),
+);
+
+/**
+ * Agent poll endpoint — GET /api/device-data/event-watches?platform=windows.
+ * See eventWatches.service.ts's module doc for the full design. Same auth
+ * and same "poll once per report cycle" shape as GET /custom-checks above —
+ * the agent diffs the returned watch list against whichever watchers it
+ * currently has running and starts/stops/restarts to match, rather than
+ * this being a separate polling loop of its own.
+ */
+deviceDataRouter.get(
+  "/api/device-data/event-watches",
+  asyncHandler(async (req, res) => {
+    const workspaceSlug = workspaceOf(req);
+    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    const platform = typeof req.query.platform === "string" ? req.query.platform : "";
+    if (platform !== "windows") {
+      res.status(400).json({ detail: "platform query param must be 'windows'" });
+      return;
+    }
+    res.json({ items: await listEnabledWatchesForAgent(workspaceSlug, platform) });
+  }),
+);
+
+/**
+ * Agent-initiated webhook — POST /api/device-data/event-notify. Called by
+ * the agent once its own local debounce goes quiet after a watched signal
+ * fired (the "fast lane" the whole event-driven detection feature exists
+ * for — see backend/docs/event-driven-agent-detection-roadmap.md). Same
+ * device-caller auth as every other route in this file; see
+ * deviceData.service.ts's handleEventNotify doc comment for the cooldown/
+ * routing behavior.
+ */
+deviceDataRouter.post(
+  "/api/device-data/event-notify",
+  asyncHandler(async (req, res) => {
+    const workspaceSlug = workspaceOf(req);
+    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    const payload = eventNotifyPayloadSchema.parse(req.body);
+    res.json(await handleEventNotify(workspaceSlug, payload));
   }),
 );

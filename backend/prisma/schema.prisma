@@ -689,6 +689,44 @@ model CustomCheckDefinition {
   @@index([workspaceSlug])
 }
 
+// Admin-defined event-driven detection watches — see
+// backend/docs/event-driven-agent-detection-roadmap.md for the full design.
+// Same "admin authors in Settings, agent polls read-only" shape as
+// CustomCheckDefinition just above (loose Json `params`, app-code-validated
+// in eventWatches.schemas.ts, not at the Prisma layer), and deliberately
+// colocated near it since the two features share an agent poll cycle and a
+// Settings page. `watchType` is the OS-native mechanism the agent uses to
+// detect the change ("registryKey" for now — RegNotifyChangeKeyValue against
+// an admin-specified key; "etwProvider" reserved for a later phase). `action`
+// is what SOAR does when the agent's own local debounce (params.debounceMs)
+// goes quiet and it calls POST /api/device-data/event-notify — either a
+// targeted refresh of just that device's installed-apps inventory
+// ("refreshInstalledApps") or an immediate compliance re-evaluation
+// ("evaluateComplianceNow", reusing forceEvaluateNow's existing per-workspace
+// cooldown). This action is stored per-watch, not inferred from watchKey
+// string-matching, specifically so a new watch is fully usable from Settings
+// alone — no backend code change needed to route it correctly.
+model EventWatchDefinition {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  platform      String   // "windows" for now (macos reserved, see roadmap doc)
+  key           String   // stable slug, unique per (workspaceSlug, platform)
+  name          String
+  description   String?
+  watchType     String   // "registryKey" (more added as agent support grows)
+  params        Json     // shape depends on watchType — see eventWatches.schemas.ts
+  debounceMs    Int      @default(5000)
+  action        String   // "refreshInstalledApps" | "evaluateComplianceNow"
+  enabled       Boolean  @default(true)
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedBy     String?
+  updatedAt     DateTime @updatedAt
+
+  @@unique([workspaceSlug, platform, key])
+  @@index([workspaceSlug])
+}
+
 model InstalledAppInventory {
   id            String   @id @default(uuid())
   workspaceSlug String

@@ -116,3 +116,19 @@ export const deviceAppReportPayloadSchema = z.object({
   reportedAt: z.string().nullish(),
 });
 export type DeviceAppReportPayload = z.infer<typeof deviceAppReportPayloadSchema>;
+
+/**
+ * POST /api/device-data/event-notify — the agent's local debounce (see
+ * eventWatches.service.ts's module doc) firing once the OS has gone quiet
+ * after a burst of activity on a watched signal. `watchKey` is looked back
+ * up server-side (deviceData.service.ts's handleEventNotify) against the
+ * EventWatchDefinition the agent last polled — deliberately not trusting an
+ * `action` from the agent itself, only which watch fired.
+ */
+export const eventNotifyPayloadSchema = z.object({
+  platform: z.string(),
+  serialNumber: z.string(),
+  watchKey: z.string(),
+  clientTimestamp: z.string().nullish(),
+});
+export type EventNotifyPayload = z.infer<typeof eventNotifyPayloadSchema>;
