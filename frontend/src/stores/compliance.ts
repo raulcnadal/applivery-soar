@@ -139,6 +139,20 @@ export interface EventWatchDefinition {
   updatedAt: string;
 }
 
+// Phase 4 rollout controls + metrics — see backend's eventWatches.service.ts
+// getEventDrivenSettings/getEventWatchMetrics doc comments.
+export interface EventDrivenSettings {
+  enabled: boolean;
+  remoteIntervalSec: number | null;
+}
+export interface EventWatchMetricsSummary {
+  windowHours: number;
+  webhookVolume: number;
+  avgRawEventsPerNotify: number | null;
+  avgLatencyMs: number | null;
+  medianLatencyMs: number | null;
+}
+
 export interface CustomCheckName {
   key: string;
   name: string;
@@ -331,6 +345,10 @@ export const useComplianceStore = defineStore("compliance", () => {
   const eventWatches = ref<EventWatchDefinition[]>([]);
   const isLoadingEventWatches = ref(false);
   const eventWatchesError = ref<string | null>(null);
+  const eventDrivenSettings = ref<EventDrivenSettings>({ enabled: true, remoteIntervalSec: null });
+  const eventDrivenSettingsError = ref<string | null>(null);
+  const eventWatchMetrics = ref<EventWatchMetricsSummary | null>(null);
+  const eventWatchMetricsError = ref<string | null>(null);
 
   async function fetchPolicies() {
     isLoadingPolicies.value = true;
@@ -724,6 +742,34 @@ export const useComplianceStore = defineStore("compliance", () => {
     await fetchEventWatches();
   }
 
+  async function fetchEventDrivenSettings() {
+    eventDrivenSettingsError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/compliance/event-watches-settings");
+      eventDrivenSettings.value = res.data;
+    } catch (err: any) {
+      eventDrivenSettingsError.value = err?.response?.data?.detail || "Failed to load event-driven detection settings.";
+    }
+  }
+
+  async function updateEventDrivenSettings(payload: EventDrivenSettings) {
+    const { api } = await import("../api/http");
+    const res = await api.put("/compliance/event-watches-settings", payload);
+    eventDrivenSettings.value = res.data;
+  }
+
+  async function fetchEventWatchMetrics() {
+    eventWatchMetricsError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/compliance/event-watches-metrics");
+      eventWatchMetrics.value = res.data;
+    } catch (err: any) {
+      eventWatchMetricsError.value = err?.response?.data?.detail || "Failed to load event-driven detection metrics.";
+    }
+  }
+
   return {
     policies,
     isLoadingPolicies,
@@ -806,5 +852,12 @@ export const useComplianceStore = defineStore("compliance", () => {
     createEventWatch,
     updateEventWatch,
     deleteEventWatch,
+    eventDrivenSettings,
+    eventDrivenSettingsError,
+    fetchEventDrivenSettings,
+    updateEventDrivenSettings,
+    eventWatchMetrics,
+    eventWatchMetricsError,
+    fetchEventWatchMetrics,
   };
 });

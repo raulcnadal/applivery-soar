@@ -3,7 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { deviceAppReportPayloadSchema, deviceReportPayloadSchema, eventNotifyPayloadSchema } from "./deviceData.schemas";
 import { getAgentStatus, handleEventNotify, reportDeviceApps, reportDeviceData, verifyDeviceReportSecret } from "./deviceData.service";
 import { listEnabledChecksForAgent } from "../compliance/customChecks.service";
-import { listEnabledWatchesForAgent } from "../compliance/eventWatches.service";
+import { getEventDrivenSettings, listEnabledWatchesForAgent } from "../compliance/eventWatches.service";
 import { forceEvaluateNow } from "../compliance/compliance.service";
 
 /** Port of main.py:7758-7804 / 9714-9804 — POST /api/device-data/report, POST /api/device-data/report-apps. */
@@ -107,6 +107,14 @@ deviceDataRouter.get(
  * the agent diffs the returned watch list against whichever watchers it
  * currently has running and starts/stops/restarts to match, rather than
  * this being a separate polling loop of its own.
+ *
+ * remoteIntervalSec (Phase 4) rides along in this same response rather than
+ * a separate endpoint — it's already polled every report cycle, so no new
+ * request is needed. null means "no SOAR-side override, use whatever's in
+ * this device's local Managed Configuration" — see
+ * eventwatch_windows.go/telemetry_windows.go (Windows Agent repo) for how
+ * the agent resets its report ticker when this value changes without
+ * needing a restart.
  */
 deviceDataRouter.get(
   "/api/device-data/event-watches",
@@ -118,7 +126,8 @@ deviceDataRouter.get(
       res.status(400).json({ detail: "platform query param must be 'windows'" });
       return;
     }
-    res.json({ items: await listEnabledWatchesForAgent(workspaceSlug, platform) });
+    const [items, settings] = await Promise.all([listEnabledWatchesForAgent(workspaceSlug, platform), getEventDrivenSettings(workspaceSlug)]);
+    res.json({ items, remoteIntervalSec: settings.remoteIntervalSec });
   }),
 );
 

@@ -1,22 +1,23 @@
 import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
 import { HttpError } from "../../utils/httpError";
-import { eventWatchPayloadSchema, slugifyWatchKey, validateWatchParams, type EventWatchPayload } from "./eventWatches.schemas";
+import { eventDrivenSettingsPayloadSchema, eventWatchPayloadSchema, slugifyWatchKey, validateWatchParams, type EventDrivenSettingsPayload, type EventWatchPayload } from "./eventWatches.schemas";
 
 /**
  * Admin-defined event-driven detection watches — Settings > Device Data
  * Webhook's "Event-Driven Detection" panel. See
  * backend/docs/event-driven-agent-detection-roadmap.md for the full design
- * this ships the first slice of (Phase 0 + Phase 2 there — config-driven
- * from day one, no hardcoded-watch throwaway step).
+ * (Phases 0-4 implemented: config-driven registry + ETW watchers, plus this
+ * round's rollout controls — workspace kill switch, remote IntervalSec
+ * override, and notify metrics).
  *
  * The idea this closes the loop on: instead of the Windows SOAR Agent
  * discovering a change (an app installed, a registry key touched) only on
  * its next scheduled report cycle (`config.IntervalSec`, default 1h), an
  * admin can tell it here to watch specific OS-native signals directly —
- * currently just `registryKey` (RegNotifyChangeKeyValue against an
- * admin-specified key; `etwProvider` is a later phase, see the roadmap) —
- * and the agent notifies SOAR within seconds of the OS actually going quiet
+ * `registryKey` (RegNotifyChangeKeyValue against an admin-specified key) or
+ * `etwProvider` (a real-time ETW session scoped to one provider) — and the
+ * agent notifies SOAR within seconds of the OS actually going quiet
  * after a burst of activity (the agent's own local debounce, `debounceMs`
  * below, matching the enhancement request's own 5-second-quiet spec).
  *
@@ -173,6 +174,12 @@ export async function listEnabledWatchesForAgent(
   workspaceSlug: string,
   platform: string,
 ): Promise<Array<{ key: string; watchType: string; params: Record<string, unknown>; debounceMs: number }>> {
+  // The Phase 4 kill switch short-circuits here — a workspace with
+  // eventDrivenDetectionEnabled=false gets an empty list regardless of how
+  // many individual watches are marked enabled, so every agent stops all of
+  // its watchers on the very next poll with zero agent-side special-casing.
+  const settings = await getEventDrivenSettings(workspaceSlug);
+  if (!settings.enabled) return [];
   const rows = await prisma.eventWatchDefinition.findMany({ where: { workspaceSlug, platform, enabled: true } });
   return rows.map((r: any) => ({ key: r.key, watchType: r.watchType, params: (r.params as Record<string, unknown>) ?? {}, debounceMs: r.debounceMs }));
 }
@@ -186,4 +193,112 @@ export async function listEnabledWatchesForAgent(
 export async function getEnabledWatchByKey(workspaceSlug: string, platform: string, key: string): Promise<EventWatchDefinitionDTO | null> {
   const row = await prisma.eventWatchDefinition.findFirst({ where: { workspaceSlug, platform, key, enabled: true } });
   return row ? toDTO(row) : null;
+}
+
+// ── Phase 4: rollout controls (workspace-wide kill switch + IntervalSec
+// relaxation lever) — see backend/docs/event-driven-agent-detection-roadmap.md
+// §4. Stored on WorkspaceState (schema.prisma) rather than a new table,
+// since this is genuinely a per-workspace singleton, same shape as e.g.
+// installedAppsRefreshBudgetPerHour there. Unlike WorkspaceState's other
+// consumer (GET/POST /api/state, dashboardState.controller.ts), which is
+// hardcoded to a shared "global" slug by the frontend, these two fields are
+// read/written against the REAL workspace slug — each workspace's Windows
+// Agent fleet is independent, same tenancy as EventWatchDefinition itself. ──
+
+export interface EventDrivenSettings {
+  enabled: boolean;
+  remoteIntervalSec: number | null;
+}
+
+export async function getEventDrivenSettings(workspaceSlug: string): Promise<EventDrivenSettings> {
+  const row = await prisma.workspaceState.findUnique({ where: { workspaceSlug } });
+  return {
+    enabled: row?.eventDrivenDetectionEnabled ?? true,
+    remoteIntervalSec: row?.eventDrivenRemoteIntervalSec ?? null,
+  };
+}
+
+export async function updateEventDrivenSettings(workspaceSlug: string, body: unknown, actorEmail: string): Promise<EventDrivenSettings> {
+  const payload: EventDrivenSettingsPayload = eventDrivenSettingsPayloadSchema.parse(body);
+  await prisma.workspaceState.upsert({
+    where: { workspaceSlug },
+    create: { workspaceSlug, eventDrivenDetectionEnabled: payload.enabled, eventDrivenRemoteIntervalSec: payload.remoteIntervalSec },
+    update: { eventDrivenDetectionEnabled: payload.enabled, eventDrivenRemoteIntervalSec: payload.remoteIntervalSec },
+  });
+  await recordAuditEvent(workspaceSlug, {
+    category: "settings", action: "event_driven_settings_updated", actor: actorEmail,
+    message: payload.enabled
+      ? `Event-driven detection enabled${payload.remoteIntervalSec ? `, remote poll interval override set to ${payload.remoteIntervalSec}s` : ""} by ${actorEmail}`
+      : `Event-driven detection disabled by ${actorEmail} — every agent stops all watchers on its next poll`,
+  });
+  return { enabled: payload.enabled, remoteIntervalSec: payload.remoteIntervalSec };
+}
+
+// ── Phase 4: metrics (webhook volume, debounce-collapse ratio,
+// event-to-reaction latency) — see EventNotifyMetric's own doc comment
+// (schema.prisma) for what each field captures and why. ──
+
+export async function recordEventNotifyMetric(
+  workspaceSlug: string,
+  watchKey: string,
+  action: string | null,
+  status: string,
+  rawEventCount: number | null,
+  latencyMs: number | null,
+): Promise<void> {
+  try {
+    await prisma.eventNotifyMetric.create({
+      data: { workspaceSlug, watchKey, action, status, rawEventCount, latencyMs },
+    });
+  } catch (e) {
+    // Best-effort — a metrics-write failure must never fail the actual
+    // notify handling (handleEventNotify already did the real work by the
+    // time this is called).
+    console.warn(`[EventWatch] failed to record notify metric for workspace ${workspaceSlug}: ${e}`);
+  }
+}
+
+export interface EventWatchMetricsSummary {
+  windowHours: number;
+  webhookVolume: number;
+  avgRawEventsPerNotify: number | null; // the "debounce-collapse ratio"
+  avgLatencyMs: number | null;
+  medianLatencyMs: number | null;
+}
+
+const METRICS_WINDOW_HOURS = 24;
+
+export async function getEventWatchMetrics(workspaceSlug: string): Promise<EventWatchMetricsSummary> {
+  const since = new Date(Date.now() - METRICS_WINDOW_HOURS * 3_600_000);
+  const rows = await prisma.eventNotifyMetric.findMany({
+    where: { workspaceSlug, createdAt: { gte: since } },
+    select: { rawEventCount: true, latencyMs: true },
+  });
+
+  const rawCounts = rows.map((r: any) => r.rawEventCount).filter((n: number | null): n is number => n !== null && n !== undefined);
+  const avgRawEventsPerNotify = rawCounts.length > 0 ? rawCounts.reduce((a: number, b: number) => a + b, 0) / rawCounts.length : null;
+
+  const latencies = rows
+    .map((r: any) => r.latencyMs)
+    .filter((n: number | null): n is number => n !== null && n !== undefined)
+    .sort((a: number, b: number) => a - b);
+  const avgLatencyMs = latencies.length > 0 ? Math.round(latencies.reduce((a: number, b: number) => a + b, 0) / latencies.length) : null;
+  const medianLatencyMs = latencies.length > 0 ? latencies[Math.floor(latencies.length / 2)] : null;
+
+  return {
+    windowHours: METRICS_WINDOW_HOURS,
+    webhookVolume: rows.length,
+    avgRawEventsPerNotify,
+    avgLatencyMs,
+    medianLatencyMs,
+  };
+}
+
+const METRIC_RETENTION_DAYS = 30;
+
+/** Registered in jobs/backgroundJobs.ts (jobKey: "event_notify_metrics_rotation"), once a day. */
+export async function rotateEventNotifyMetrics(): Promise<number> {
+  const cutoff = new Date(Date.now() - METRIC_RETENTION_DAYS * 86_400_000);
+  const result = await prisma.eventNotifyMetric.deleteMany({ where: { createdAt: { lt: cutoff } } });
+  return result.count;
 }

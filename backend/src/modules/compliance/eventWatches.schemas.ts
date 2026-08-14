@@ -53,6 +53,17 @@ export const eventWatchPayloadSchema = z.object({
 });
 export type EventWatchPayload = z.infer<typeof eventWatchPayloadSchema>;
 
+// Phase 4 rollout controls (workspace-wide kill switch + IntervalSec
+// relaxation lever) — see eventWatches.service.ts's getEventDrivenSettings/
+// updateEventDrivenSettings doc comments. remoteIntervalSec bounds mirror
+// the Windows Agent's own clampInterval floor (telemetry_windows.go: below
+// 30s it falls back to the 1h default anyway) up to a generous 24h ceiling.
+export const eventDrivenSettingsPayloadSchema = z.object({
+  enabled: z.boolean(),
+  remoteIntervalSec: z.number().int().min(30).max(86_400).nullable(),
+});
+export type EventDrivenSettingsPayload = z.infer<typeof eventDrivenSettingsPayloadSchema>;
+
 export function slugifyWatchKey(name: string): string {
   return name
     .trim()

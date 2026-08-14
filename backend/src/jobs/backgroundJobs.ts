@@ -16,6 +16,7 @@ import { runReportSchedulerTick, runSnapshotSchedulerTick, REPORT_SCHEDULER_TICK
 import { runComplianceSchedulerTick, COMPLIANCE_SCHEDULER_TICK_MS } from "../modules/compliance/complianceJobs";
 import { runInstalledAppsRefresherTick, INSTALLED_APPS_REFRESH_TICK_MS } from "../modules/appLists/installedAppsJobs";
 import { runLocationRefresherTick, LOCATION_REFRESH_TICK_MS } from "../modules/geofencing/locationJobs";
+import { rotateEventNotifyMetrics } from "../modules/compliance/eventWatches.service";
 import { isQueueBackedJobsEnabled, registerRepeatableJobs, startBackgroundJobWorker, stopBackgroundJobQueue } from "../queue/backgroundQueue";
 import { releaseJobSlot, tryAcquireJobSlot } from "./jobReentrancyGuard";
 
@@ -62,6 +63,12 @@ import { releaseJobSlot, tryAcquireJobSlot } from "./jobReentrancyGuard";
  * iPhone/iPad identifiers instead of always falling back to a fleet-wide
  * comparison.
  *
+ * Post-migration addition (20th job): event-driven detection's notify
+ * metrics rotation (eventWatches.service.ts's rotateEventNotifyMetrics) —
+ * daily cleanup of EventNotifyMetric rows past their fixed 30-day retention,
+ * same cadence as audit_log_rotation but its own job since this table has
+ * no per-workspace configurable retention the way AuditLog does.
+ *
  * Post-migration scale review: with REDIS_URL configured, every job below
  * instead runs as a BullMQ repeatable job (queue/backgroundQueue.ts) so
  * exactly one instance of each job runs cluster-wide even with multiple
@@ -107,6 +114,7 @@ export const JOBS: readonly CatalogJob[] = [
   { jobKey: "compliance_scheduler", tickMs: COMPLIANCE_SCHEDULER_TICK_MS, run: runComplianceSchedulerTick },
   { jobKey: "installed_apps_refresher", tickMs: INSTALLED_APPS_REFRESH_TICK_MS, run: runInstalledAppsRefresherTick },
   { jobKey: "location_refresher", tickMs: LOCATION_REFRESH_TICK_MS, run: runLocationRefresherTick },
+  { jobKey: "event_notify_metrics_rotation", tickMs: AUDIT_LOG_ROTATION_TICK_MS, run: rotateEventNotifyMetrics },
 ];
 
 // Stagger initial runs so five outbound HTTP calls don't fire in the same

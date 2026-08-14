@@ -107,7 +107,46 @@ model WorkspaceState {
   windowsArm64AgentPublishedAt      DateTime?
   macosAgentApplicationId           String?
   macosAgentPublishedAt             DateTime?
-  updatedAt                         DateTime @updatedAt
+  // Event-driven detection (Phase 4 rollout controls) — see
+  // backend/docs/event-driven-agent-detection-roadmap.md §4. Workspace-wide
+  // kill switch: when false, GET /api/device-data/event-watches returns no
+  // items regardless of individual EventWatchDefinition.enabled rows, so
+  // every agent stops all watchers on its very next poll with no per-watch
+  // cleanup needed. eventDrivenRemoteIntervalSec is the "IntervalSec
+  // relaxation lever" from roadmap §2, made real: when set, it overrides
+  // each device's local Managed Configuration IntervalSec value (the
+  // Windows Agent picks it up from this same poll response and resets its
+  // report ticker without a restart — telemetry_windows.go). Null means "no
+  // override, defer to whatever's set in the registry on each device".
+  eventDrivenDetectionEnabled       Boolean   @default(true)
+  eventDrivenRemoteIntervalSec      Int?
+  updatedAt                         DateTime  @updatedAt
+}
+
+// Per-notify-call observability row for event-driven detection (Phase 4
+// metrics: webhook volume, debounce-collapse ratio, event-to-reaction
+// latency) — written once per POST /api/device-data/event-notify call by
+// deviceData.service.ts's handleEventNotify, regardless of outcome (status
+// captures cooldown/unknown-watch/ok/error so volume reflects real inbound
+// traffic, not just successful reactions). rawEventCount is the number of
+// times the agent's local debouncer was bumped before this notify fired
+// (null for pre-Phase-4 agent builds that don't send it yet) — averaging it
+// across recent rows is the "debounce-collapse ratio" metric. latencyMs is
+// server-received-at minus the agent's own clientTimestamp, when both are
+// available. Rotated by rotateEventNotifyMetrics (backgroundJobs.ts) after
+// METRIC_RETENTION_DAYS — this is an observability aid, not an audit trail,
+// so it doesn't need AuditLog's configurable per-workspace retention.
+model EventNotifyMetric {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  watchKey      String
+  action        String?
+  status        String
+  rawEventCount Int?
+  latencyMs     Int?
+  createdAt     DateTime @default(now())
+
+  @@index([workspaceSlug, createdAt])
 }
 
 model WidgetLayout {

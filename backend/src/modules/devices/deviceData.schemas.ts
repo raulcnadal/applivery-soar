@@ -130,5 +130,11 @@ export const eventNotifyPayloadSchema = z.object({
   serialNumber: z.string(),
   watchKey: z.string(),
   clientTimestamp: z.string().nullish(),
+  // Phase 4 metrics (eventWatches.service.ts's EventNotifyMetric doc
+  // comment) — how many times the agent's local debouncer was bumped
+  // before this notify fired. Optional so older agent builds that predate
+  // this field keep working unchanged; recordEventNotifyMetric just stores
+  // null for the "debounce-collapse ratio" average when absent.
+  rawEventCount: z.number().int().min(0).nullish(),
 });
 export type EventNotifyPayload = z.infer<typeof eventNotifyPayloadSchema>;

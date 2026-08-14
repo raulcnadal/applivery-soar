@@ -29,7 +29,7 @@ import { COMPLIANCE_FIELDS, suggestMitreTechniquesForConditions, getComplianceTe
 import { getMitreTechniques, refreshMitreCatalog } from "../catalogs/mitreCatalog";
 import { getSelfReportedAttributeNames } from "../devices/deviceData.service";
 import { createCustomCheck, deleteCustomCheck, getCustomCheckNames, listCustomChecks, updateCustomCheck } from "./customChecks.service";
-import { createEventWatch, deleteEventWatch, listEventWatches, updateEventWatch } from "./eventWatches.service";
+import { createEventWatch, deleteEventWatch, getEventDrivenSettings, getEventWatchMetrics, listEventWatches, updateEventDrivenSettings, updateEventWatch } from "./eventWatches.service";
 
 /**
  * CompliancePolicy CRUD + evaluation + violations review queue + MITRE/
@@ -151,6 +151,24 @@ complianceRouter.put("/api/compliance/event-watches/:id", ...manageCompliance, a
 complianceRouter.delete("/api/compliance/event-watches/:id", ...manageCompliance, asyncHandler(async (req, res) => {
   await deleteEventWatch(workspaceOf(req), req.params.id, actorOf(req));
   res.json({ status: "ok" });
+}));
+
+// Phase 4 rollout controls — workspace-wide kill switch + IntervalSec
+// remote-override lever. See eventWatches.service.ts's getEventDrivenSettings
+// doc comment.
+complianceRouter.get("/api/compliance/event-watches-settings", ...readCompliance, asyncHandler(async (req, res) => {
+  res.json(await getEventDrivenSettings(workspaceOf(req)));
+}));
+
+complianceRouter.put("/api/compliance/event-watches-settings", ...manageCompliance, asyncHandler(async (req, res) => {
+  res.json(await updateEventDrivenSettings(workspaceOf(req), req.body, actorOf(req)));
+}));
+
+// Phase 4 metrics — webhook volume, debounce-collapse ratio, event-to-
+// reaction latency, last 24h. See eventWatches.service.ts's
+// getEventWatchMetrics doc comment.
+complianceRouter.get("/api/compliance/event-watches-metrics", ...readCompliance, asyncHandler(async (req, res) => {
+  res.json(await getEventWatchMetrics(workspaceOf(req)));
 }));
 
 // ── Policy CRUD (main.py:10828-10957) ──

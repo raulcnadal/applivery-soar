@@ -1,14 +1,15 @@
 <script setup lang="ts">
 // "Event-Driven Detection" tab — disclosed new feature, no main.py/App.jsx
 // equivalent. Lets an admin tell the Windows SOAR Agent (Settings > Device
-// Data Webhook) to watch specific OS-native signals directly — currently
-// just a registry key (RegNotifyChangeKeyValue) — instead of waiting for the
-// next scheduled report cycle to notice a change. The agent debounces raw
-// OS events locally (`debounceMs`, matching the enhancement request's own
-// "5 seconds of quiet" spec) before calling SOAR back, so this never
-// replaces the existing poll cycle — see backend's eventWatches.service.ts
-// module doc and backend/docs/event-driven-agent-detection-roadmap.md for
-// the full design this panel is Phase 0's admin-facing half of.
+// Data Webhook) to watch specific OS-native signals directly — a registry
+// key (RegNotifyChangeKeyValue) or an ETW provider — instead of waiting for
+// the next scheduled report cycle to notice a change. The agent debounces
+// raw OS events locally (`debounceMs`, matching the enhancement request's
+// own "5 seconds of quiet" spec) before calling SOAR back, so this never
+// replaces the existing poll cycle. Also carries Phase 4's rollout
+// controls (workspace kill switch, remote IntervalSec override) and
+// notify metrics — see backend's eventWatches.service.ts module doc and
+// backend/docs/event-driven-agent-detection-roadmap.md for the full design.
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { computed, onMounted, reactive, ref } from "vue";
@@ -178,8 +179,51 @@ const paramsIncomplete = computed(() => {
   return false;
 });
 
+// ── Phase 4 rollout controls — workspace-wide kill switch + IntervalSec
+// remote-override lever. See backend's eventWatches.service.ts
+// getEventDrivenSettings doc comment. ──
+const settingsEnabled = ref(true);
+// Empty string = "no override, defer to each device's local registry
+// value" (maps to remoteIntervalSec: null on save) — kept as a string so
+// the input can be genuinely empty rather than coerced to 0.
+const remoteIntervalSecInput = ref("");
+const isSavingSettings = ref(false);
+const settingsSaveError = ref<string | null>(null);
+
+function syncSettingsForm() {
+  settingsEnabled.value = store.eventDrivenSettings.enabled;
+  remoteIntervalSecInput.value = store.eventDrivenSettings.remoteIntervalSec != null ? String(store.eventDrivenSettings.remoteIntervalSec) : "";
+}
+
+async function saveSettings() {
+  isSavingSettings.value = true;
+  settingsSaveError.value = null;
+  try {
+    const trimmed = remoteIntervalSecInput.value.trim();
+    const remoteIntervalSec = trimmed === "" ? null : Math.max(30, Math.min(86_400, Math.trunc(Number(trimmed))));
+    await store.updateEventDrivenSettings({ enabled: settingsEnabled.value, remoteIntervalSec });
+    syncSettingsForm();
+  } catch (err: any) {
+    settingsSaveError.value = err?.response?.data?.detail || "Failed to save settings.";
+  } finally {
+    isSavingSettings.value = false;
+  }
+}
+
+const settingsDirty = computed(() => {
+  const currentRemote = store.eventDrivenSettings.remoteIntervalSec != null ? String(store.eventDrivenSettings.remoteIntervalSec) : "";
+  return settingsEnabled.value !== store.eventDrivenSettings.enabled || remoteIntervalSecInput.value.trim() !== currentRemote;
+});
+
+function formatMs(ms: number | null): string {
+  if (ms === null) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
 onMounted(async () => {
-  await store.fetchEventWatches();
+  await Promise.all([store.fetchEventWatches(), store.fetchEventDrivenSettings(), store.fetchEventWatchMetrics()]);
+  syncSettingsForm();
 });
 </script>
 
@@ -198,6 +242,66 @@ onMounted(async () => {
       </p>
       <Alert v-if="store.eventWatchesError" type="danger">{{ store.eventWatchesError }}</Alert>
       <Alert v-if="!canEdit()" type="info">Your role doesn't have manage access to Compliance — every control below is disabled.</Alert>
+
+      <div class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 space-y-2">
+        <h4 class="text-xs font-bold text-gray-900 dark:text-white">Rollout controls</h4>
+        <Alert v-if="store.eventDrivenSettingsError" type="danger">{{ store.eventDrivenSettingsError }}</Alert>
+        <Alert v-if="settingsSaveError" type="danger">{{ settingsSaveError }}</Alert>
+        <label class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
+          <input type="checkbox" v-model="settingsEnabled" :disabled="!canEdit()" />
+          Event-driven detection enabled for this workspace
+        </label>
+        <p class="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+          Workspace-wide kill switch — turning this off stops every agent's watchers on its next poll, regardless of
+          which individual watches below are enabled. Individual watches keep their own settings, ready to resume the
+          moment this is switched back on.
+        </p>
+        <div>
+          <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">
+            Remote report interval override (seconds, optional)
+          </label>
+          <div class="flex items-center gap-2">
+            <input
+              type="number"
+              v-model="remoteIntervalSecInput"
+              min="30"
+              max="86400"
+              placeholder="unset — use each device's local registry value"
+              :disabled="!canEdit()"
+              class="w-64 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <p class="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400 mt-1">
+            Once event-driven watches are confirmed working, you can safely relax the normal report cycle (e.g. from
+            1h to 4h) without losing responsiveness — the watches above still catch changes within seconds. Leave
+            blank to keep using each device's local Managed Configuration IntervalSec value unchanged.
+          </p>
+        </div>
+        <div class="flex justify-end">
+          <Button size="sm" :loading="isSavingSettings" :disabled="!canEdit() || !settingsDirty" @click="saveSettings">Save</Button>
+        </div>
+      </div>
+
+      <div class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 space-y-2">
+        <h4 class="text-xs font-bold text-gray-900 dark:text-white">Metrics (last {{ store.eventWatchMetrics?.windowHours ?? 24 }}h)</h4>
+        <Alert v-if="store.eventWatchMetricsError" type="danger">{{ store.eventWatchMetricsError }}</Alert>
+        <div v-if="store.eventWatchMetrics" class="grid grid-cols-3 gap-3">
+          <div>
+            <p class="text-lg font-bold text-gray-900 dark:text-white">{{ store.eventWatchMetrics.webhookVolume }}</p>
+            <p class="text-[10px] text-gray-500 dark:text-gray-400">Notify webhooks received</p>
+          </div>
+          <div>
+            <p class="text-lg font-bold text-gray-900 dark:text-white">
+              {{ store.eventWatchMetrics.avgRawEventsPerNotify !== null ? store.eventWatchMetrics.avgRawEventsPerNotify.toFixed(1) : "—" }}
+            </p>
+            <p class="text-[10px] text-gray-500 dark:text-gray-400">Avg. raw OS events collapsed per notify (debounce-collapse ratio)</p>
+          </div>
+          <div>
+            <p class="text-lg font-bold text-gray-900 dark:text-white">{{ formatMs(store.eventWatchMetrics.avgLatencyMs) }}</p>
+            <p class="text-[10px] text-gray-500 dark:text-gray-400">Avg. event-to-SOAR-reaction latency (median {{ formatMs(store.eventWatchMetrics.medianLatencyMs) }})</p>
+          </div>
+        </div>
+      </div>
 
       <div class="flex items-center gap-1.5">
         <div class="flex-1" />

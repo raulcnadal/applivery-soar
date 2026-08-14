@@ -248,8 +248,33 @@ const EVENT_NOTIFY_DEVICE_COOLDOWN_MS = 5_000;
  * so there's nothing worth it retrying or logging loudly for. Genuine
  * failures (e.g. the automation credential is missing) are also reported
  * back as a `status` rather than an HTTP error, for the same reason.
+ *
+ * Phase 4 metrics: this thin wrapper records one EventNotifyMetric row per
+ * call (webhook volume) — regardless of what handleEventNotifyInner decided
+ * — with the event-to-reaction latency computed from clientTimestamp vs.
+ * "now" here at the outermost point, and rawEventCount passed straight
+ * through from the agent. Deliberately NOT inside handleEventNotifyInner,
+ * so every early-return status (cooldown, unknown watch, etc.) still gets
+ * counted — a malformed payload that throws before reaching this point is
+ * the one exception, treated as a client bug rather than real traffic.
  */
 export async function handleEventNotify(workspaceSlug: string, payload: EventNotifyPayload): Promise<{ status: string; action: string | null }> {
+  const result = await handleEventNotifyInner(workspaceSlug, payload);
+  const { recordEventNotifyMetric } = await import("../compliance/eventWatches.service");
+  await recordEventNotifyMetric(workspaceSlug, payload.watchKey, result.action, result.status, payload.rawEventCount ?? null, latencyMsSince(payload.clientTimestamp));
+  return result;
+}
+
+/** Guards against clock skew (agent clock ahead of server) producing a nonsensical negative latency. */
+function latencyMsSince(clientTimestamp: string | null | undefined): number | null {
+  if (!clientTimestamp) return null;
+  const t = Date.parse(clientTimestamp);
+  if (Number.isNaN(t)) return null;
+  const latency = Date.now() - t;
+  return latency >= 0 ? latency : null;
+}
+
+async function handleEventNotifyInner(workspaceSlug: string, payload: EventNotifyPayload): Promise<{ status: string; action: string | null }> {
   if (!payload.serialNumber?.trim()) throw new HttpError(400, "serialNumber is required");
   if (!payload.watchKey?.trim()) throw new HttpError(400, "watchKey is required");
 
