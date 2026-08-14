@@ -116,7 +116,7 @@ export interface CustomCheckDefinition {
 // backend/docs/event-driven-agent-detection-roadmap.md for the full design.
 // Deliberately mirrors CustomCheckDefinition's shape just above — same
 // "admin authors in Settings, agent polls read-only" feature class.
-export const WATCH_TYPES = ["registryKey"] as const;
+export const WATCH_TYPES = ["registryKey", "etwProvider"] as const;
 export type WatchType = (typeof WATCH_TYPES)[number];
 export const WATCH_ACTIONS = ["refreshInstalledApps", "evaluateComplianceNow"] as const;
 export type WatchAction = (typeof WATCH_ACTIONS)[number];

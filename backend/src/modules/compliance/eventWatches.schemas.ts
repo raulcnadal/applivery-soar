@@ -10,12 +10,12 @@ import { HttpError } from "../../utils/httpError";
  * "admin authors in Settings, agent polls read-only" feature class.
  */
 
-// Only "registryKey" for now — RegNotifyChangeKeyValue against an
-// admin-specified key (the mechanism this ships with). "etwProvider" is a
-// later phase (see the roadmap doc) and deliberately not accepted yet: the
-// Windows Agent has no ETW consumer built, so a watch of that type would
-// silently never fire.
-export const WATCH_TYPES = ["registryKey"] as const;
+// "registryKey" — RegNotifyChangeKeyValue against an admin-specified key.
+// "etwProvider" (Phase 3) — a real-time ETW session scoped to one provider
+// (github.com/0xrawsec/golang-etw, Applivery SOAR - Windows Agent's
+// etw_windows.go), optionally kernel-filtered to specific Event IDs. Both
+// are implemented by the Windows Agent as of this round.
+export const WATCH_TYPES = ["registryKey", "etwProvider"] as const;
 export type WatchType = (typeof WATCH_TYPES)[number];
 
 // "macos" is intentionally not offered yet — no macOS agent support exists
@@ -78,6 +78,31 @@ export function validateWatchParams(watchType: WatchType, params: Record<string,
       const path = params?.path;
       if (typeof path !== "string" || !path.trim()) throw new HttpError(400, "Registry key path is required (e.g. SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall).");
       if (typeof params?.watchSubtree !== "boolean") throw new HttpError(400, "watchSubtree must be true or false.");
+      return;
+    }
+    case "etwProvider": {
+      const provider = params?.provider;
+      if (typeof provider !== "string" || !provider.trim()) {
+        throw new HttpError(400, "ETW provider name (or GUID) is required, e.g. Microsoft-Windows-Kernel-Process.");
+      }
+      // eventIds is optional — an empty/omitted array means "every event
+      // from this provider matches" (see etw_windows.go's buildProviderSpec
+      // for how this becomes a kernel-level EVENT_FILTER_TYPE_EVENT_ID
+      // filter on the agent side, not a post-hoc filter in agent code).
+      if (params?.eventIds !== undefined) {
+        const eventIds = params.eventIds;
+        if (!Array.isArray(eventIds) || !eventIds.every((id) => typeof id === "number" && Number.isInteger(id) && id >= 0 && id <= 65535)) {
+          throw new HttpError(400, "eventIds must be an array of integers between 0 and 65535.");
+        }
+      }
+      // level is optional — the agent defaults to verbose (0xff) when
+      // omitted, matching golang-etw's own DefaultProvider.
+      if (params?.level !== undefined) {
+        const level = params.level;
+        if (typeof level !== "number" || !Number.isInteger(level) || level < 0 || level > 255) {
+          throw new HttpError(400, "level must be an integer between 0 and 255.");
+        }
+      }
       return;
     }
     default:

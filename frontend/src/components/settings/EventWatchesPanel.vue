@@ -23,11 +23,17 @@ const canEdit = () => auth.hasFeatureAccess("compliance", "manage");
 
 const WATCH_TYPE_LABELS: Record<WatchType, string> = {
   registryKey: "Registry key change",
+  etwProvider: "ETW provider event",
 };
 const ACTION_LABELS: Record<WatchAction, string> = {
   refreshInstalledApps: "Refresh this device's installed-apps inventory",
   evaluateComplianceNow: "Re-evaluate Compliance Policies now",
 };
+
+function defaultParamsFor(watchType: WatchType): Record<string, any> {
+  if (watchType === "etwProvider") return { provider: "", eventIds: [] as number[], level: null };
+  return { hive: "HKLM", path: "", watchSubtree: true };
+}
 
 // null = list view, "new" = creating, else the watch id being edited.
 const isEditing = ref<string | null>(null);
@@ -38,8 +44,13 @@ const form = reactive({
   action: "refreshInstalledApps" as WatchAction,
   debounceMs: 5000,
   enabled: true,
-  params: { hive: "HKLM", path: "", watchSubtree: true } as Record<string, any>,
+  params: defaultParamsFor("registryKey"),
 });
+// Comma-separated Event IDs input for etwProvider watches — kept out of
+// form.params directly so the text field can hold transient/partial input
+// (e.g. "1,") without needing to be valid JSON numbers on every keystroke;
+// parsed into form.params.eventIds only at save() time.
+const etwEventIdsText = ref("");
 const saveError = ref<string | null>(null);
 const isSaving = ref(false);
 
@@ -54,7 +65,16 @@ function resetForm() {
   form.action = "refreshInstalledApps";
   form.debounceMs = 5000;
   form.enabled = true;
-  form.params = { hive: "HKLM", path: "", watchSubtree: true };
+  form.params = defaultParamsFor("registryKey");
+  etwEventIdsText.value = "";
+}
+
+// Switching watch type mid-creation should reset params to that type's own
+// shape — carrying over e.g. a registry path into an ETW watch's params
+// would just be silently ignored by the backend, better to start clean.
+function onWatchTypeChange() {
+  form.params = defaultParamsFor(form.watchType);
+  etwEventIdsText.value = "";
 }
 
 function startCreate() {
@@ -69,7 +89,8 @@ function startEdit(watch: EventWatchDefinition) {
   form.action = watch.action;
   form.debounceMs = watch.debounceMs;
   form.enabled = watch.enabled;
-  form.params = { hive: "HKLM", path: "", watchSubtree: true, ...(watch.params ?? {}) };
+  form.params = { ...defaultParamsFor(watch.watchType), ...(watch.params ?? {}) };
+  etwEventIdsText.value = Array.isArray(form.params.eventIds) ? form.params.eventIds.join(",") : "";
   isEditing.value = watch.id;
 }
 
@@ -83,12 +104,23 @@ async function save() {
   isSaving.value = true;
   saveError.value = null;
   try {
+    const params = { ...form.params };
+    if (form.watchType === "etwProvider") {
+      const ids = etwEventIdsText.value
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s !== "")
+        .map((s) => Number(s))
+        .filter((n) => Number.isInteger(n) && n >= 0 && n <= 65535);
+      params.eventIds = ids;
+      if (params.level === null || params.level === "") delete params.level;
+    }
     const payload = {
       platform: "windows" as const,
       name: form.name,
       description: form.description || null,
       watchType: form.watchType,
-      params: form.params,
+      params,
       debounceMs: form.debounceMs,
       action: form.action,
       enabled: form.enabled,
@@ -129,8 +161,22 @@ function targetSummary(watch: EventWatchDefinition): string {
   if (watch.watchType === "registryKey") {
     return `${p.hive || "HKLM"}\\${p.path || ""}${p.watchSubtree ? " (+ subkeys)" : ""}`;
   }
+  if (watch.watchType === "etwProvider") {
+    const ids = Array.isArray(p.eventIds) && p.eventIds.length > 0 ? ` (Event IDs ${p.eventIds.join(", ")})` : " (all events)";
+    return `${p.provider || ""}${ids}`;
+  }
   return "";
 }
+
+// Save button is disabled until the current watchType's required params are
+// filled in — mirrors validateWatchParams' own required fields (backend
+// eventWatches.schemas.ts) so the button doesn't invite a request that's
+// just going to 400.
+const paramsIncomplete = computed(() => {
+  if (form.watchType === "registryKey") return !form.params.path;
+  if (form.watchType === "etwProvider") return !form.params.provider;
+  return false;
+});
 
 onMounted(async () => {
   await store.fetchEventWatches();
@@ -168,6 +214,7 @@ onMounted(async () => {
           <select
             v-model="form.watchType"
             :disabled="!canEdit()"
+            @change="onWatchTypeChange"
             class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           >
             <option v-for="t in WATCH_TYPES" :key="t" :value="t">{{ WATCH_TYPE_LABELS[t] }}</option>
@@ -192,6 +239,28 @@ onMounted(async () => {
           <label class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
             <input type="checkbox" v-model="form.params.watchSubtree" :disabled="!canEdit()" /> Include subkeys
           </label>
+        </template>
+
+        <template v-if="form.watchType === 'etwProvider'">
+          <Input v-model="form.params.provider" label="Provider name or GUID" placeholder="Microsoft-Windows-Kernel-Process" :disabled="!canEdit()" />
+          <div>
+            <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">
+              Event IDs (comma-separated, optional — blank matches every event from this provider)
+            </label>
+            <Input v-model="etwEventIdsText" placeholder="1,2" :disabled="!canEdit()" />
+            <p class="text-[10px] text-gray-400 mt-1">For Microsoft-Windows-Kernel-Process: 1 = process start, 2 = process stop.</p>
+          </div>
+          <div>
+            <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Level (0-255, optional — defaults to verbose)</label>
+            <input
+              type="number"
+              v-model.number="form.params.level"
+              min="0"
+              max="255"
+              :disabled="!canEdit()"
+              class="w-28 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
         </template>
 
         <div>
@@ -229,7 +298,7 @@ onMounted(async () => {
 
         <div class="flex justify-end gap-2 pt-1">
           <Button variant="ghost" size="sm" @click="cancelEdit">Cancel</Button>
-          <Button size="sm" :loading="isSaving" :disabled="!canEdit() || !form.name || !form.params.path" @click="save">{{ isEditing === "new" ? "Create" : "Save" }}</Button>
+          <Button size="sm" :loading="isSaving" :disabled="!canEdit() || !form.name || paramsIncomplete" @click="save">{{ isEditing === "new" ? "Create" : "Save" }}</Button>
         </div>
       </div>
 
