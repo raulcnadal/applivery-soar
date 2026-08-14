@@ -23,7 +23,7 @@ const subView = ref<"reported" | "catalog">("reported");
       <div>
         <div class="flex items-center gap-2">
           <h1 class="text-2xl font-semibold leading-tight text-gray-900 dark:text-white">Apps</h1>
-          <HelpIcon slug="compliance" title="Apps guide" />
+          <HelpIcon slug="apps" title="Apps admin guide" />
         </div>
         <p class="text-sm mt-1 text-gray-400">What's actually installed across the fleet, and the shared catalog Compliance App Lists are built from.</p>
       </div>

@@ -12,6 +12,8 @@
 import { Alert, Modal } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
+import HelpIcon from "../shared/HelpIcon.vue";
+import { vulnLink } from "../../utils/vulnLinks";
 import { useComplianceStore, type ReportedAppSummary } from "../../stores/compliance";
 
 const props = defineProps<{ open: boolean; app: ReportedAppSummary | null }>();
@@ -112,13 +114,29 @@ const windowsAppDisplay = computed(() => {
     deploymentType: windowsLookup.value?.application?.type ?? null,
   };
 });
+
+// Vulnerabilities — per-version CVE breakdown, sourced from app.vulnSummary
+// (merged server-side in appLists.controller.ts's reported-apps route via
+// vulnService.ts's computeReportedAppsVulnSummaries). Only versions with a
+// fresh cached Vulnerability Service match appear in byVersion — a version
+// with none isn't shown as an error, it's just omitted, same convention as
+// the Risk column on the table view (ReportedAppsPanel.vue).
+const SEVERITY_COLOR: Record<string, string> = { CRITICAL: "#EF4444", HIGH: "#F97316", MEDIUM: "#F59E0B", LOW: "#3B82F6" };
+const versionsWithVulns = computed(() => {
+  if (!props.app?.vulnSummary) return [];
+  const byVersion = props.app.vulnSummary.byVersion;
+  return props.app.versions.filter((v) => byVersion[v]).map((v) => ({ version: v, info: byVersion[v] }));
+});
 </script>
 
 <template>
   <Modal :open="open" :title="app ? app.name : 'App'" size="lg" @close="emit('close')">
     <div v-if="app" class="space-y-5">
       <div>
-        <p class="text-xs text-gray-400 font-mono">{{ app.identifier }}</p>
+        <div class="flex items-center gap-1.5">
+          <p class="text-xs text-gray-400 font-mono">{{ app.identifier }}</p>
+          <HelpIcon slug="apps" anchor="vulnerability-service-risk-scoring" title="Apps admin guide" />
+        </div>
         <div class="flex items-center gap-2 mt-1 flex-wrap">
           <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-500/10 text-gray-500 dark:text-gray-400">{{ PLATFORM_LABELS[app.platform] || app.platform }}</span>
           <span class="text-xs text-gray-400">{{ app.deviceCount }} device{{ app.deviceCount === 1 ? "" : "s" }} · {{ app.versions.length }} version{{ app.versions.length === 1 ? "" : "s" }} seen</span>
@@ -174,6 +192,38 @@ const windowsAppDisplay = computed(() => {
             </p>
           </div>
         </div>
+      </div>
+
+      <!-- Vulnerabilities — per-version CVE breakdown (Vulnerability
+           Service). See the Risk column's own doc comment on ReportedAppsPanel.vue
+           for why "not enabled" and "no cached match yet" render identically
+           (nothing shown at all) rather than as two different states. -->
+      <div v-if="versionsWithVulns.length > 0">
+        <p class="text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Vulnerabilities</p>
+        <div class="space-y-3">
+          <div v-for="{ version, info } in versionsWithVulns" :key="version">
+            <p class="text-xs font-medium text-gray-900 dark:text-white mb-1">
+              v{{ version }}
+              <span v-if="info.cveList.length === 0" class="font-normal" :style="{ color: '#22C55E' }"> · no known CVEs</span>
+              <span v-else class="font-normal text-gray-400">
+                · {{ info.cveList.length }} known CVE{{ info.cveList.length === 1 ? "" : "s" }}{{ info.hasKev ? " · includes a known-exploited (CISA KEV) CVE" : "" }}
+              </span>
+            </p>
+            <div v-if="info.cveList.length > 0" class="space-y-1">
+              <div v-for="c in info.cveList" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                <span class="text-gray-900 dark:text-white">
+                  <a v-if="vulnLink(c.id)" :href="vulnLink(c.id)!" target="_blank" rel="noopener noreferrer" class="hover:underline text-brand-600 dark:text-brand-400">{{ c.id }}</a>
+                  <template v-else>{{ c.id }}</template>
+                  <span v-if="c.fixed_in" class="text-gray-400"> · fixed in {{ c.fixed_in }}</span>
+                </span>
+                <span class="font-semibold shrink-0" :style="{ color: SEVERITY_COLOR[c.severity] || '#9CA3AF' }">
+                  {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}{{ typeof c.epss_score === "number" ? ` · EPSS ${(c.epss_score * 100).toFixed(0)}%` : "" }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="text-[10px] mt-2 text-gray-400">From your org's Vulnerability Service integration, per reported version. Versions with no cached match aren't shown.</p>
       </div>
 
       <!-- Per-device breakdown -->

@@ -33,6 +33,28 @@ const searchQuery = ref("");
 const isRefreshing = ref(false);
 const selectedApp = ref<ReportedAppSummary | null>(null);
 
+// Risk column — see docs/apps.md#vulnerability-service-risk-scoring for the
+// scoring formula (vulnService.ts's rollUpAppSummary). "—" (no badge) covers
+// both "Vulnerability Service isn't enabled for this workspace" and "enabled
+// but no cached CVE match for any version of this app yet" — deliberately
+// not distinguished here, same as the App detail modal's own Vulnerabilities
+// section; Settings > Vulnerability Service is where that distinction lives.
+const SEVERITY_COLORS: Record<string, string> = {
+  CRITICAL: "text-red-600 dark:text-red-400 bg-red-500/10",
+  HIGH: "text-orange-600 dark:text-orange-400 bg-orange-500/10",
+  MEDIUM: "text-amber-600 dark:text-amber-400 bg-amber-500/10",
+  LOW: "text-blue-600 dark:text-blue-400 bg-blue-500/10",
+};
+function riskBadgeClass(app: ReportedAppSummary): string {
+  const sev = app.vulnSummary?.maxSeverity;
+  return sev ? SEVERITY_COLORS[sev] || "text-gray-500 bg-gray-500/10" : "";
+}
+function riskLabel(app: ReportedAppSummary): string {
+  const summary = app.vulnSummary;
+  if (!summary || summary.totalCveCount === 0) return "—";
+  return `${summary.riskScore}`;
+}
+
 const filtered = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   return store.reportedApps.filter((app) => {
@@ -118,7 +140,7 @@ onMounted(() => {
 
     <p class="text-[10px] text-gray-400 flex items-start gap-1">
       <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
-      "Self-reported" comes from the SOAR Agent's App Inventory Reporting; "Applivery UEM" comes from Applivery's own device-management API. "Update available" is currently only reported by Applivery for iOS/iPadOS/macOS apps — it flags that an update exists but Applivery doesn't expose the target version number. Click a row for per-device detail, App List membership, and (Windows) a lookup against Applivery's own application library.
+      "Self-reported" comes from the SOAR Agent's App Inventory Reporting; "Applivery UEM" comes from Applivery's own device-management API. "Update available" is currently only reported by Applivery for iOS/iPadOS/macOS apps — it flags that an update exists but Applivery doesn't expose the target version number. "Risk" needs Settings &gt; Vulnerability Service enabled — shows "—" otherwise, or when no CVE match is cached yet for any reported version. Click a row for per-device detail, App List membership, per-version CVE breakdown, and (Windows) a lookup against Applivery's own application library.
     </p>
 
     <Alert v-if="store.reportedAppsError" type="danger">{{ store.reportedAppsError }}</Alert>
@@ -128,11 +150,12 @@ onMounted(() => {
     </Alert>
 
     <div v-else class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 overflow-hidden">
-      <div class="hidden sm:grid grid-cols-[1fr_140px_120px_120px_90px_24px] gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700">
+      <div class="hidden sm:grid grid-cols-[1fr_140px_120px_120px_70px_90px_24px] gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700">
         <span>App</span>
         <span>Version</span>
         <span>Source</span>
         <span>Update</span>
+        <span>Risk</span>
         <span class="text-right">Devices</span>
         <span></span>
       </div>
@@ -142,7 +165,7 @@ onMounted(() => {
           v-for="app in filtered"
           :key="appKey(app)"
           type="button"
-          class="w-full grid grid-cols-2 sm:grid-cols-[1fr_140px_120px_120px_90px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40"
+          class="w-full grid grid-cols-2 sm:grid-cols-[1fr_140px_120px_120px_70px_90px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40"
           @click="selectedApp = app"
         >
           <div class="min-w-0 col-span-2 sm:col-span-1">
@@ -171,6 +194,18 @@ onMounted(() => {
           <div>
             <span v-if="app.devicesWithPendingUpdate > 0" class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 whitespace-nowrap">
               {{ app.devicesWithPendingUpdate }} pending
+            </span>
+            <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
+          </div>
+          <div>
+            <span
+              v-if="riskLabel(app) !== '—'"
+              class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+              :class="riskBadgeClass(app)"
+              :title="app.vulnSummary?.hasKev ? 'Includes a known-exploited (CISA KEV) CVE' : `${app.vulnSummary?.totalCveCount} known CVE(s) across all reported versions`"
+            >
+              <component v-if="app.vulnSummary?.hasKev" :is="ICONS.DangerTriangle" :size="10" weight="Linear" />
+              {{ riskLabel(app) }}
             </span>
             <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
           </div>

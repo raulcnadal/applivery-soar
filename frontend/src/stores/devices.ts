@@ -72,6 +72,12 @@ export interface NormalizedDevice {
   vulnServiceStatus: Record<string, any> | null;
   osLifecycleStatus: Record<string, any> | null;
   appleAppUpdateStatus: Record<string, any> | null;
+  // Backs the Device modal's Apps tab — see deviceNormalize.ts's own field
+  // doc comment. Each entry: identifier/name/version/source/updateAvailable/
+  // productCode/enforcedByPolicy plus an optional per-app `vuln` (same shape
+  // as compliance.ts's AppVersionVulnInfo) when the Vulnerability Service
+  // has a fresh cached match for that exact version.
+  installedAppsDetail?: Array<Record<string, any>> | null;
   // Windows-only feature-update name (e.g. "Windows 11, version 25H2") for
   // this device's raw osVersion build number — Applivery's own inventory
   // never reports a marketing name, only the bare build string.

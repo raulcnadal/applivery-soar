@@ -23,7 +23,7 @@ import { loadOsLifecycleCatalog, computeOsLifecycleStatus } from "../catalogs/os
 import { loadGdmfCatalog } from "../catalogs/gdmfCatalog";
 import { loadAppleDeviceIdentifiers } from "../catalogs/appleDeviceIdentifiers";
 import { loadInstalledAppsStore, type InstalledAppsEntry } from "../appLists/installedApps.service";
-import { getVulnServiceConfig, computeVulnServiceStatus } from "../catalogs/vulnService";
+import { getVulnServiceConfig, computeVulnServiceStatus, computeDeviceAppsDetail } from "../catalogs/vulnService";
 import { loadDevicePushDataCache } from "./deviceData.service";
 import { LOCATION_CACHE_KEY } from "../analytics/locationsSync.service";
 import { executeMdmAction } from "../workflows/mdmActionExecutor";
@@ -372,6 +372,12 @@ export async function getDevicesFull(
     const appsEntry: InstalledAppsEntry | null = installedAppsStore[String(deviceId)] ?? null;
     d.appleAppUpdateStatus = d.platform === "apple" || d.platform === "macos" ? appsEntry?.appleAppUpdates ?? null : null;
     d.vulnServiceStatus = vulnServiceCfg.enabled ? await computeVulnServiceStatus(slugKey, d, appsEntry) : null;
+    // Backs the Device modal's Apps tab — every app this device reports,
+    // each paired with its own cached CVE result when one exists. The app
+    // list itself is always populated (plain installed-apps inventory);
+    // vulnServiceCfg.enabled only gates whether computeDeviceAppsDetail
+    // spends a cache lookup per app trying to attach CVE data to each.
+    d.installedAppsDetail = await computeDeviceAppsDetail(slugKey, d, appsEntry, vulnServiceCfg.enabled);
 
     Object.assign(d, computeDeviceRisk(d, openCases, activeViolations));
   }

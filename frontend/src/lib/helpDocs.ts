@@ -37,6 +37,7 @@ export const DOC_FILE_TO_SLUG: Record<string, string> = {
   "settings.md": "settings",
   "audit-logs.md": "audit-logs",
   "playground.md": "playground",
+  "apps.md": "apps",
   "README.md": "readme",
   "ARCHITECTURE.md": "architecture",
 };
@@ -51,6 +52,7 @@ export const DOC_TITLES: Record<string, string> = {
   settings: "Settings — Admin Guide",
   "audit-logs": "Audit Logs — Admin Guide",
   playground: "Playground — Admin Guide",
+  apps: "Apps — Admin Guide",
   readme: "README",
   architecture: "Architecture Guide",
 };

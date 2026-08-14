@@ -4,6 +4,7 @@ import { resolveOrgBase } from "../auth/rbac.service";
 import { extractItems } from "../../utils/extractItems";
 import { platformPathSegment, type NormalizedDevice } from "../devices/deviceNormalize";
 import { fetchWindowsDeviceMsiApps } from "./windowsDeviceApps.service";
+import type { AppVulnSummary } from "../catalogs/vulnService";
 
 type Headers = Record<string, string>;
 
@@ -317,6 +318,13 @@ export interface ReportedAppSummary {
   // present on the device for some other reason).
   devicesEnforcedByPolicy: number;
   devices: ReportedAppDeviceRef[];
+  // Populated by appLists.controller.ts after this function returns, via
+  // vulnService.ts's computeReportedAppsVulnSummaries — kept optional/absent
+  // here (rather than always-present-but-null) so this function's own return
+  // type doesn't imply it queries the Vulnerability Service itself, which it
+  // deliberately doesn't (keeps this module free of vuln-service concerns;
+  // see the controller route's own comment for why the merge happens there).
+  vulnSummary?: AppVulnSummary | null;
 }
 
 /**

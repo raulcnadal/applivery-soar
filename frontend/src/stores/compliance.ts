@@ -217,6 +217,28 @@ export interface ReportedAppDeviceRef {
   productCode: string | null;
   enforcedByPolicy: boolean;
 }
+// Per-version CVE detail — one entry per (app, version) combo with a fresh
+// cached Vulnerability Service match. Mirrors backend/vulnService.ts's
+// AppVersionVulnInfo.
+export interface AppVersionVulnInfo {
+  checked: boolean;
+  mapped: boolean;
+  counts: Record<string, number>;
+  hasKev: boolean;
+  maxEpss: number;
+  cveList: Array<Record<string, any>>;
+  cachedAt: string | null;
+}
+// Fleet-wide roll-up for one app across every version currently reported —
+// mirrors backend/vulnService.ts's AppVulnSummary (computeReportedAppsVulnSummaries).
+// Absent/null when the Vulnerability Service isn't enabled for this workspace.
+export interface AppVulnSummary {
+  riskScore: number;
+  maxSeverity: string | null;
+  hasKev: boolean;
+  totalCveCount: number;
+  byVersion: Record<string, AppVersionVulnInfo>;
+}
 export interface ReportedAppSummary {
   identifier: string;
   name: string;
@@ -227,6 +249,7 @@ export interface ReportedAppSummary {
   devicesWithPendingUpdate: number;
   devicesEnforcedByPolicy: number;
   devices: ReportedAppDeviceRef[];
+  vulnSummary?: AppVulnSummary | null;
 }
 
 export const useComplianceStore = defineStore("compliance", () => {

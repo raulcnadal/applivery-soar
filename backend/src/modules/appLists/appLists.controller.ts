@@ -18,6 +18,7 @@ import {
 import { lookupAndroidAppByPackageName, searchApps } from "./appSearch.service";
 import { fetchWindowsApplicationDetail, fetchWindowsApplications, matchWindowsApplication } from "./windowsAppCatalog.service";
 import { resolveOrgBase } from "../auth/rbac.service";
+import { computeReportedAppsVulnSummaries } from "../catalogs/vulnService";
 import {
   getAppleAppUpdatesStatus,
   getInstalledAppsStatus,
@@ -178,7 +179,22 @@ appListsRouter.get(
     const workspaceSlug = req.header("X-Workspace-Slug");
     requireCreds(authorization, workspaceSlug);
     const devicesResp = await getDevicesFull(authorization, workspaceSlug!, false);
-    res.json(await getReportedAppsOverview(workspaceSlug!, devicesResp.items));
+    const overview = await getReportedAppsOverview(workspaceSlug!, devicesResp.items);
+    // Merged here rather than inside getReportedAppsOverview itself — keeps
+    // installedApps.service.ts free of Vulnerability Service concerns (it
+    // already has no other dependency on vulnService.ts) and lets this one
+    // bulk lookup cover every app in the overview in a single query instead
+    // of one per app. Risk score column (ReportedAppsPanel.vue) and the App
+    // detail modal's per-version CVE breakdown (AppDetailModal.vue) both
+    // read this same vulnSummary field.
+    const vulnSummaries = await computeReportedAppsVulnSummaries(
+      workspaceSlug!,
+      overview.apps.map((a) => ({ identifier: a.identifier, platform: a.platform, versions: a.versions })),
+    );
+    for (const app of overview.apps) {
+      app.vulnSummary = vulnSummaries.get(`${app.platform}:${app.identifier}`) ?? null;
+    }
+    res.json(overview);
   }),
 );
 

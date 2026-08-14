@@ -35,6 +35,7 @@ import type { Workflow } from "../../stores/workflows";
 import { useWorkflowsStore } from "../../stores/workflows";
 import { flattenSegments } from "../../lib/segments";
 import { msrcUrl, vulnLink } from "../../utils/vulnLinks";
+import HelpIcon from "../shared/HelpIcon.vue";
 import PolicyPickerModal from "./PolicyPickerModal.vue";
 import SegmentPickerModal from "./SegmentPickerModal.vue";
 import TagEditorModal from "./TagEditorModal.vue";
@@ -56,6 +57,13 @@ function riskMeta(tier: string) {
   return RISK_TIER_META[tier] || RISK_TIER_META.low;
 }
 
+// Apps tab — entry.source values as written by installedApps.service.ts
+// (fetchAndStoreInstalledApps = "server_fetch", reportDeviceApps/
+// deviceData.service.ts = "self_reported"), same labels ReportedAppsPanel.vue
+// uses. SEVERITY_COLOR mirrors AppDetailModal.vue's own per-CVE severity map.
+const APP_SOURCE_LABELS: Record<string, string> = { self_reported: "Self-reported", server_fetch: "Applivery UEM" };
+const SEVERITY_COLOR: Record<string, string> = { CRITICAL: "#EF4444", HIGH: "#F97316", MEDIUM: "#F59E0B", LOW: "#3B82F6" };
+
 const PLATFORM_PATH: Record<string, string> = { apple: "apple", macos: "apple", android: "android", windows: "windows" };
 
 // Loosely typed — accepts either a full NormalizedDevice (Devices view,
@@ -70,7 +78,7 @@ const complianceStore = useComplianceStore();
 const workflowsStore = useWorkflowsStore();
 const router = useRouter();
 
-const tab = ref<"overview" | "compliance" | "location" | "agent">("overview");
+const tab = ref<"overview" | "compliance" | "apps" | "location" | "agent">("overview");
 const activePicker = ref<null | "segment" | "policy" | "tags">(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
@@ -437,7 +445,10 @@ function logBody(l: Record<string, any>): string {
                 <component :is="ICONS.Smartphone" :size="20" weight="Linear" class="text-gray-400" />
               </div>
               <div class="min-w-0">
-                <p class="font-semibold truncate text-gray-900 dark:text-white">{{ device.displayName }}</p>
+                <p class="font-semibold truncate text-gray-900 dark:text-white flex items-center gap-1">
+                  {{ device.displayName }}
+                  <HelpIcon slug="devices" anchor="apps-tab" title="Device details admin guide" />
+                </p>
                 <p class="text-xs truncate text-gray-400">{{ device.platformLabel }} · {{ device.manufacturer ? `${device.manufacturer} ${device.model}`.trim() : device.model || "—" }}</p>
               </div>
             </div>
@@ -476,6 +487,7 @@ function logBody(l: Record<string, any>): string {
             v-for="t in [
               { key: 'overview', label: 'Overview' },
               { key: 'compliance', label: 'Compliance' },
+              { key: 'apps', label: 'Apps' },
               { key: 'location', label: 'Location' },
               { key: 'agent', label: 'Agent' },
             ]"
@@ -937,6 +949,51 @@ function logBody(l: Record<string, any>): string {
                   <span class="truncate text-gray-900 dark:text-white">{{ c.title }}</span>
                   <span class="text-[10px] font-semibold shrink-0" :style="{ color: PRIMARY_BLUE }">{{ c.severity }} →</span>
                 </button>
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="tab === 'apps'">
+            <!-- Every app this device reports as installed — same underlying
+                 data as the Apps main-nav view's Reported Apps table
+                 (installedApps.service.ts), scoped to just this device, with
+                 each app's own CVE data (when the Vulnerability Service is
+                 enabled and has a fresh cached match) via devices.service.ts's
+                 computeDeviceAppsDetail. See docs/apps.md#vulnerability-service-risk-scoring. -->
+            <div v-if="(device.installedAppsDetail || []).length === 0" class="text-xs text-gray-400 px-3 py-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+              No app inventory reported yet for this device — via the SOAR Agent's App Inventory Reporting, or the background refresher once a Compliance Policy references an App List.
+            </div>
+            <div v-else class="space-y-2.5">
+              <div v-for="a in device.installedAppsDetail" :key="`${a.identifier}-${a.version}`" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="min-w-0">
+                    <p class="text-sm text-gray-900 dark:text-white truncate flex items-center gap-1.5">
+                      {{ a.name || a.identifier }}
+                      <component v-if="a.enforcedByPolicy" :is="ICONS.ShieldCheck" :size="11" weight="Linear" class="text-emerald-500 shrink-0" title="Enforced by Applivery's Windows App Distribution policy" />
+                      <component v-if="a.updateAvailable" :is="ICONS.CloudDownload" :size="11" weight="Linear" class="text-blue-500 shrink-0" title="Update available" />
+                    </p>
+                    <p class="text-[11px] text-gray-400 truncate">{{ a.identifier }} · v{{ a.version }}</p>
+                  </div>
+                  <span
+                    class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold shrink-0"
+                    :class="a.source === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+                  >
+                    {{ APP_SOURCE_LABELS[a.source] || a.source }}
+                  </span>
+                </div>
+                <div v-if="a.vuln && a.vuln.cveList.length > 0" class="mt-1.5 space-y-1">
+                  <div v-for="c in a.vuln.cveList" :key="c.id" class="flex items-center justify-between gap-2 px-2.5 py-1 rounded-lg text-[11px] bg-white dark:bg-gray-800">
+                    <span class="text-gray-900 dark:text-white">
+                      <a v-if="vulnLink(c.id)" :href="vulnLink(c.id)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.id }}</a>
+                      <template v-else>{{ c.id }}</template>
+                      <span v-if="c.fixed_in" class="text-gray-400"> · fixed in {{ c.fixed_in }}</span>
+                    </span>
+                    <span class="font-semibold shrink-0" :style="{ color: SEVERITY_COLOR[c.severity] || '#9CA3AF' }">
+                      {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}
+                    </span>
+                  </div>
+                </div>
+                <p v-else-if="a.vuln" class="mt-1 text-[10px]" :style="{ color: SUCCESS }">No known CVEs for this version.</p>
               </div>
             </div>
           </template>

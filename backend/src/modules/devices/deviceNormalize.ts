@@ -212,6 +212,11 @@ export interface NormalizedDevice {
   osLifecycleStatus?: Record<string, any> | null;
   appleAppUpdateStatus?: Record<string, any> | null;
   vulnServiceStatus?: Record<string, any> | null;
+  // Backs the Device modal's Apps tab (devices.service.ts's getDevicesFull,
+  // via vulnService.ts's computeDeviceAppsDetail) — every app this device
+  // reports (self-reported or MDM-fetched), each with its own CVE result
+  // when the Vulnerability Service is enabled and has a fresh cached match.
+  installedAppsDetail?: Array<Record<string, any>> | null;
   riskScore?: number;
   riskTier?: string;
   riskFactors?: Array<{ label: string; points: number }>;

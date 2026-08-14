@@ -46,7 +46,7 @@ Both "Add tag" and "Move segment" report a summary afterward (e.g. "Applied on 8
 
 ## Device detail drawer
 
-Click any row to open the drawer. The header shows device name, platform + hardware, Compliance badge, Risk badge, assigned user, and a **Run workflow** button. Three tabs: **Overview**, **Compliance**, and **Location**.
+Click any row to open the drawer. The header shows device name, platform + hardware, Compliance badge, Risk badge, assigned user, and a **Run workflow** button — plus an **(i)** help icon that opens this guide. Five tabs: **Overview**, **Compliance**, **Apps**, **Location**, and **Agent**.
 
 ### Overview tab, section by section
 
@@ -72,6 +72,14 @@ Everything about this device's standing against your [Compliance Policies](compl
 3. **Compliance Policy Violations** — every currently-open violation against this device (regardless of review status), with its policy name and status (pending / approved / dismissed / auto-fired), or a green "no open violations" state.
 4. **Awaiting Review** — the subset of violations still sitting in the [review queue](compliance.md#violations--review-queue); clickable rows that jump to the [Audit Log](audit-logs.md) filtered to this device.
 5. **Open Cases** — clickable rows that open the linked [Case](cases.md).
+
+### Apps tab
+
+Every app this specific device reports as installed — self-reported (SOAR Agent App Inventory Reporting) or Applivery-UEM-fetched — each row showing version, source, an "update available" flag (Apple/macOS only), and (Windows only) whether it's assigned/enforced via Applivery's Windows App Distribution policy. This is the same underlying data as the [Apps](apps.md) main-nav view's Reported Apps table, scoped to just this device.
+
+When [Vulnerability Service](settings.md#vulnerability-service) is enabled, each app row also shows its own CVE count/severity for the exact installed version, with a link out to each CVE's detail page — see [Apps → Vulnerability Service risk scoring](apps.md#vulnerability-service-risk-scoring) for how this differs from the Compliance tab's Vulnerability Service section (that one is a device-wide OS+apps rollup; this tab breaks it down per app). With the integration off, or no cached match yet for a given app/version, the row just shows plain inventory with no CVE badge — never an error.
+
+No installed-app data yet for this device shows an empty state pointing at [App Inventory Reporting](settings.md#app-inventory-reporting--security-attestation-reporting) or the paced background refresher (only runs for devices in scope of an App List compliance condition).
 
 ### Location tab
 
@@ -103,4 +111,5 @@ A tab switcher at the top of the Devices header ("Devices" / "Playground") switc
 - [Compliance](compliance.md) — how Compliance Policies compute the "Compliance Policies" signal and the risk-affecting conditions shown here.
 - [Workflows](workflows.md) — running workflows against one or many devices, and the Firewall Policy Library referenced in the drawer.
 - [Cases](cases.md) — the cases linked from a device's Open Cases section.
+- [Apps](apps.md) — the fleet-wide Reported Apps table and App Catalog the Apps tab's per-device view is scoped from.
 - [Settings](settings.md) — Vulnerability Service, Device Data Webhook (self-report scripts), and OS Updates/Lifecycle catalogs that feed the badges on this page.

@@ -351,3 +351,193 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
     counts: totalCounts, uncertain: totalUncertain, hasKev, maxEpss: Math.round(maxEpss * 10000) / 10000, topCves: allCves.slice(0, 15),
   };
 }
+
+// ── Per-app / per-device CVE detail — added for the Apps view's "risk
+// score" column, the App detail modal's per-version breakdown, and the
+// Device modal's new Apps tab. computeVulnServiceStatus above only ever
+// returns an OS+apps-merged view for one device's overall posture (its
+// appResults loop discards per-app identity once folded into totalCounts/
+// allCves) — none of that is reusable for "which CVEs affect THIS app at
+// THIS version", so these are new, deliberately separate reads rather than
+// a refactor of computeVulnServiceStatus (which stays exactly as the
+// Compliance tab's existing Vulnerability Service section already expects).
+
+export interface AppVersionVulnInfo {
+  checked: boolean;
+  mapped: boolean;
+  counts: Record<string, number>;
+  hasKev: boolean;
+  maxEpss: number;
+  cveList: Array<Record<string, any>>;
+  cachedAt: string | null;
+}
+
+export interface AppVulnSummary {
+  riskScore: number;
+  maxSeverity: string | null;
+  hasKev: boolean;
+  totalCveCount: number;
+  byVersion: Record<string, AppVersionVulnInfo>;
+}
+
+const SEVERITY_RANK: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+const SEVERITY_WEIGHT: Record<string, number> = { CRITICAL: 40, HIGH: 20, MEDIUM: 8, LOW: 2 };
+const KEV_BONUS = 25;
+
+function isFreshCache(cachedAt: Date | undefined | null): boolean {
+  return Boolean(cachedAt) && Date.now() - cachedAt!.getTime() < CACHE_TTL_MS;
+}
+
+/** Turns one VulnServiceCache row's raw Worker result into the per-version shape both functions below share. */
+function toVersionVulnInfo(row: { result: unknown; cachedAt: Date }): AppVersionVulnInfo {
+  const result = row.result as any;
+  const mapped = Boolean(result?.mapped);
+  const cveList: Array<Record<string, any>> = mapped ? (result.cve_list ?? []) : [];
+  const counts: Record<string, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  let hasKev = false;
+  let maxEpss = 0;
+  for (const c of cveList) {
+    if (c.severity && counts[c.severity] !== undefined) counts[c.severity] += 1;
+    if (c.is_kev) hasKev = true;
+    maxEpss = Math.max(maxEpss, c.epss_score ?? 0);
+  }
+  return {
+    checked: true, mapped, counts, hasKev, maxEpss: Math.round(maxEpss * 10000) / 10000,
+    cveList: cveList
+      .slice()
+      .sort((a, b) => (Number(Boolean(b.is_kev)) - Number(Boolean(a.is_kev))) || ((SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0)))
+      .slice(0, 15),
+    cachedAt: row.cachedAt.toISOString(),
+  };
+}
+
+function rollUpAppSummary(byVersion: Record<string, AppVersionVulnInfo>): AppVulnSummary {
+  let score = 0;
+  let maxRank = 0;
+  let maxSeverity: string | null = null;
+  let hasKev = false;
+  let totalCveCount = 0;
+  for (const v of Object.values(byVersion)) {
+    totalCveCount += v.cveList.length;
+    if (v.hasKev) hasKev = true;
+    for (const sev of Object.keys(SEVERITY_WEIGHT)) {
+      const n = v.counts[sev] ?? 0;
+      score += n * SEVERITY_WEIGHT[sev];
+      if (n > 0 && SEVERITY_RANK[sev] > maxRank) {
+        maxRank = SEVERITY_RANK[sev];
+        maxSeverity = sev;
+      }
+    }
+  }
+  if (hasKev) score += KEV_BONUS;
+  return { riskScore: Math.min(100, Math.round(score)), maxSeverity, hasKev, totalCveCount, byVersion };
+}
+
+/**
+ * Bulk read for the Apps view — one `findMany` covering every distinct
+ * (app, version) combo currently reported across the fleet, rather than a
+ * per-app/per-version round trip. Returns a Map keyed the same way
+ * getReportedAppsOverview's own `byIdentifier` map is (`${platform}:${identifier}`)
+ * so the controller can merge results straight onto each ReportedAppSummary.
+ * Cache-only (never calls the Worker inline) — same contract as
+ * computeVulnServiceStatus. Returns an empty Map (not per-app nulls) when the
+ * Vulnerability Service isn't enabled for this workspace, so callers can
+ * treat "no data" and "not enabled" identically without an extra config
+ * fetch of their own.
+ */
+export async function computeReportedAppsVulnSummaries(
+  workspaceSlug: string,
+  apps: Array<{ identifier: string; platform: string; versions: string[] }>,
+): Promise<Map<string, AppVulnSummary>> {
+  const cfg = await loadConfigRow(workspaceSlug);
+  if (!cfg?.enabled) return new Map();
+
+  const keyToAppVersion = new Map<string, { appKey: string; version: string }>();
+  for (const app of apps) {
+    const workerPlatform = PLATFORM_MAP[app.platform];
+    if (!workerPlatform) continue;
+    const appKey = `${app.platform}:${app.identifier}`;
+    for (const version of app.versions) {
+      keyToAppVersion.set(`${app.identifier.toLowerCase()}|${version}|${workerPlatform}`, { appKey, version });
+    }
+  }
+  if (keyToAppVersion.size === 0) return new Map();
+
+  const rows = await prisma.vulnServiceCache.findMany({ where: { workspaceSlug, key: { in: Array.from(keyToAppVersion.keys()) } } });
+
+  const byVersionByApp = new Map<string, Record<string, AppVersionVulnInfo>>();
+  for (const row of rows) {
+    const mapping = keyToAppVersion.get(row.key);
+    if (!mapping) continue;
+    if (!isFreshCache(row.cachedAt)) continue;
+    let byVersion = byVersionByApp.get(mapping.appKey);
+    if (!byVersion) {
+      byVersion = {};
+      byVersionByApp.set(mapping.appKey, byVersion);
+    }
+    byVersion[mapping.version] = toVersionVulnInfo(row);
+  }
+
+  const summaries = new Map<string, AppVulnSummary>();
+  for (const [appKey, byVersion] of byVersionByApp) {
+    summaries.set(appKey, rollUpAppSummary(byVersion));
+  }
+  return summaries;
+}
+
+/**
+ * Per-device read for the Device modal's Apps tab — pairs each app this
+ * device actually reports (appsEntry.apps, from InstalledAppsEntry) with
+ * its own cached CVE result, so the tab can show "this specific device has
+ * Chrome 118 with these 3 CVEs" rather than the fleet-wide aggregate
+ * computeReportedAppsVulnSummaries returns. One query per installed app
+ * (not batched) — acceptable since this runs inside getDevicesFull's
+ * per-device loop, same cost class as computeVulnServiceStatus's own
+ * per-app cache reads immediately above, and that whole response is cached
+ * for DEVICES_CACHE_TTL_SECONDS (15 min), not recomputed per request.
+ * `vulnServiceEnabled` mirrors the caller's own vulnServiceCfg.enabled
+ * check for computeVulnServiceStatus: false skips every cache lookup here
+ * too (a device with 80 self-reported apps would otherwise add 80 no-op
+ * queries per fleet-cache refresh for a workspace that never turned the
+ * integration on) and every app gets `vuln: null` at zero extra DB cost —
+ * the tab still shows the plain installed-apps inventory either way.
+ */
+export async function computeDeviceAppsDetail(
+  workspaceSlug: string,
+  device: NormalizedDevice,
+  appsEntry: InstalledAppsEntry | null,
+  vulnServiceEnabled: boolean,
+): Promise<Array<{
+  identifier: string;
+  name: string | null;
+  version: string;
+  source: string;
+  updateAvailable: boolean;
+  productCode: string | null;
+  enforcedByPolicy: boolean;
+  vuln: AppVersionVulnInfo | null;
+}>> {
+  const apps = appsEntry?.apps ?? [];
+  if (apps.length === 0) return [];
+  const workerPlatform = vulnServiceEnabled ? PLATFORM_MAP[device.platform] : null;
+  const source = appsEntry!.source;
+
+  const out: Array<{
+    identifier: string; name: string | null; version: string; source: string; updateAvailable: boolean;
+    productCode: string | null; enforcedByPolicy: boolean; vuln: AppVersionVulnInfo | null;
+  }> = [];
+  for (const a of apps) {
+    let vuln: AppVersionVulnInfo | null = null;
+    if (workerPlatform && a.version) {
+      const key = `${a.identifier.toLowerCase()}|${a.version}|${workerPlatform}`;
+      const row = await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
+      if (row && isFreshCache(row.cachedAt)) vuln = toVersionVulnInfo(row);
+    }
+    out.push({
+      identifier: a.identifier, name: a.name ?? null, version: a.version, source,
+      updateAvailable: Boolean(a.updateAvailable), productCode: a.productCode ?? null, enforcedByPolicy: Boolean(a.enforcedByPolicy),
+      vuln,
+    });
+  }
+  return out;
+}

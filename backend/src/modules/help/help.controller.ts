@@ -29,6 +29,7 @@ const HELP_DOC_SLUGS: Record<string, string> = {
   "audit-logs": "audit-logs.md",
   playground: "playground.md",
   geofencing: "geofencing.md",
+  apps: "apps.md",
   readme: "README.md",
   architecture: "ARCHITECTURE.md",
 };
