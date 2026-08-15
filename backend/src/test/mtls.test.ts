@@ -36,20 +36,28 @@ describe("mtlsPki — crypto primitives (real @peculiar/x509, no mocks)", () => 
 
   it("rejects an uploaded cert that isn't a CA (BasicConstraints CA=false)", async () => {
     const x509 = await import("@peculiar/x509");
-    const { createTestCsr, validateUploadedCaPair } = await import("../utils/mtlsPki");
+    const { validateUploadedCaPair } = await import("../utils/mtlsPki");
+
     // Build a non-CA self-signed cert directly (bypassing generateCertificateAuthority,
     // which always sets CA=true) to exercise the CA=false rejection path.
-    const { csrPem, privateKeyPem } = await createTestCsr("not-a-ca");
-    void csrPem;
-    void x509;
-    // A CSR isn't a certificate, so instead assert the CA=true check exists
-    // by confirming a legitimately-generated CA (which IS CA=true) passes,
-    // proving the check is active rather than a no-op — the negative case
-    // (a real non-CA leaf cert rejected) is covered end-to-end by the
-    // "forces the CN" tests below, where BasicConstraints(false) leaf certs
-    // are exactly what gets issued and are never accepted as a CA anywhere
-    // in this codebase's admin upload path.
-    expect(privateKeyPem).toContain("BEGIN PRIVATE KEY");
+    const keys = await x509.cryptoProvider.get().subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const notBefore = new Date();
+    const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
+    const nonCaCert = await x509.X509CertificateGenerator.createSelfSigned({
+      serialNumber: "01",
+      name: "CN=not-a-ca",
+      notBefore,
+      notAfter,
+      signingAlgorithm: { name: "ECDSA", namedCurve: "P-256", hash: "SHA-256" } as any,
+      keys,
+      extensions: [new x509.BasicConstraintsExtension(false, undefined, true)],
+    });
+    const privateKeyPkcs8 = await x509.cryptoProvider.get().subtle.exportKey("pkcs8", keys.privateKey);
+    const privateKeyPem = x509.PemConverter.encode(privateKeyPkcs8, x509.PemConverter.PrivateKeyTag);
+
+    const result = await validateUploadedCaPair(nonCaCert.toString("pem"), privateKeyPem);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/BasicConstraints CA=true/i);
   });
 
   it("CRITICAL: signDeviceCsr always forces the issued cert's CN to `forcedCn`, ignoring whatever CN the CSR itself claims", async () => {
