@@ -53,6 +53,13 @@ export interface CertificateStatus {
   issuedAt: string;
 }
 
+export interface EnrollmentCandidate {
+  serialNumber: string;
+  displayName: string;
+  platform: string;
+  mtlsStatus: "none" | "pending" | "active" | "expiring-soon" | "expired" | "revoked" | "superseded";
+}
+
 export const useMtlsStore = defineStore("mtls", () => {
   const caStatus = ref<CaStatus | null>(null);
   const caLoading = ref(false);
@@ -71,6 +78,12 @@ export const useMtlsStore = defineStore("mtls", () => {
   const certsLoading = ref(false);
   const certsError = ref<string | null>(null);
   const certBusy = ref(false);
+
+  const enrollmentCandidates = ref<EnrollmentCandidate[]>([]);
+  const enrollmentCandidatesAvailable = ref<boolean | null>(null); // null = not fetched yet
+  const enrollmentCandidatesReason = ref<string | null>(null);
+  const enrollmentCandidatesLoading = ref(false);
+  const enrollmentCandidatesError = ref<string | null>(null);
 
   const enforcementEnabled = ref<boolean | null>(null);
   const enforcementLoading = ref(false);
@@ -205,6 +218,22 @@ export const useMtlsStore = defineStore("mtls", () => {
     }
   }
 
+  async function fetchEnrollmentCandidates() {
+    enrollmentCandidatesLoading.value = true;
+    enrollmentCandidatesError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/mtls/enrollment-candidates");
+      enrollmentCandidatesAvailable.value = res.data.available;
+      enrollmentCandidatesReason.value = res.data.reason ?? null;
+      enrollmentCandidates.value = res.data.items;
+    } catch (err: any) {
+      enrollmentCandidatesError.value = errMsg(err, "Failed to load the device fleet from Applivery.");
+    } finally {
+      enrollmentCandidatesLoading.value = false;
+    }
+  }
+
   async function fetchCertificates() {
     certsLoading.value = true;
     certsError.value = null;
@@ -268,6 +297,8 @@ export const useMtlsStore = defineStore("mtls", () => {
     fetchCaStatus, generateCa, uploadCa, setLeafValidityDays,
     bootstrapTokens, tokensLoading, tokensError, tokenBusy, lastMintedTokens,
     fetchBootstrapTokens, mintBootstrapToken, mintBootstrapTokensBulk, dismissMintedTokens, revokeBootstrapToken,
+    enrollmentCandidates, enrollmentCandidatesAvailable, enrollmentCandidatesReason, enrollmentCandidatesLoading, enrollmentCandidatesError,
+    fetchEnrollmentCandidates,
     certificates, certsLoading, certsError, certBusy,
     fetchCertificates, revokeCertificate,
     enforcementEnabled, enforcementLoading, enforcementError, enforcementBusy,

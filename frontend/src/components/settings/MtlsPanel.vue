@@ -76,7 +76,12 @@ async function doSaveLeafValidity() {
 
 // ── Bootstrap tokens ──
 
-const mintMode = ref<"single" | "bulk">("single");
+// "fleet" (default) reads candidate serial numbers straight from Applivery
+// UEM's own device list — requested specifically so the admin never has to
+// type or paste serial numbers Applivery already knows. "single"/"bulk"
+// stay available as a manual fallback (a device not yet visible to
+// Applivery, or a workspace with no Automation Credential configured yet).
+const mintMode = ref<"fleet" | "single" | "bulk">("fleet");
 const mintSerial = ref("");
 const mintSerialsBulk = ref("");
 const mintExpiresInDays = ref(7);
@@ -86,13 +91,73 @@ async function doMint() {
     if (!mintSerial.value.trim()) return;
     await store.mintBootstrapToken(mintSerial.value.trim(), mintExpiresInDays.value);
     mintSerial.value = "";
-  } else {
+  } else if (mintMode.value === "bulk") {
     const serials = mintSerialsBulk.value.split("\n").map((s) => s.trim()).filter(Boolean);
     if (serials.length === 0) return;
     await store.mintBootstrapTokensBulk(serials, mintExpiresInDays.value);
     mintSerialsBulk.value = "";
+  } else {
+    const serials = Array.from(fleetSelected.value);
+    if (serials.length === 0) return;
+    await store.mintBootstrapTokensBulk(serials, mintExpiresInDays.value);
+    fleetSelected.value.clear();
   }
 }
+
+// ── Fleet picker (mintMode === "fleet") ──
+
+const fleetSearch = ref("");
+const fleetPlatformFilter = ref("windows"); // only the Windows Agent exists so far (roadmap: macOS fast-follow)
+const fleetHideEnrolled = ref(true);
+const fleetSelected = ref<Set<string>>(new Set());
+
+const fleetPlatforms = computed(() => {
+  const set = new Set(store.enrollmentCandidates.map((c) => c.platform));
+  return Array.from(set).sort();
+});
+
+const ENROLLED_STATUSES = new Set(["active", "expiring-soon"]);
+const filteredFleet = computed(() => {
+  const q = fleetSearch.value.trim().toLowerCase();
+  return store.enrollmentCandidates.filter((c) => {
+    if (fleetPlatformFilter.value !== "all" && c.platform !== fleetPlatformFilter.value) return false;
+    if (fleetHideEnrolled.value && ENROLLED_STATUSES.has(c.mtlsStatus)) return false;
+    if (q && !c.serialNumber.toLowerCase().includes(q) && !c.displayName.toLowerCase().includes(q)) return false;
+    return true;
+  });
+});
+
+function toggleFleetSelect(serialNumber: string) {
+  if (fleetSelected.value.has(serialNumber)) fleetSelected.value.delete(serialNumber);
+  else fleetSelected.value.add(serialNumber);
+  // Set mutations aren't tracked by Vue's reactivity on their own — reassign to trigger re-render.
+  fleetSelected.value = new Set(fleetSelected.value);
+}
+function selectAllVisible() {
+  fleetSelected.value = new Set([...fleetSelected.value, ...filteredFleet.value.map((c) => c.serialNumber)]);
+}
+function clearFleetSelection() {
+  fleetSelected.value = new Set();
+}
+
+const FLEET_STATUS_COLOR: Record<string, string> = {
+  none: "bg-gray-300 dark:bg-gray-600",
+  pending: "bg-amber-500",
+  active: "bg-emerald-500",
+  "expiring-soon": "bg-amber-500",
+  expired: "bg-gray-400",
+  revoked: "bg-red-500",
+  superseded: "bg-gray-400",
+};
+const FLEET_STATUS_LABEL: Record<string, string> = {
+  none: "not enrolled",
+  pending: "token pending",
+  active: "enrolled",
+  "expiring-soon": "enrolled (expiring soon)",
+  expired: "cert expired",
+  revoked: "cert revoked",
+  superseded: "cert superseded",
+};
 
 function copyToken(token: string) {
   navigator.clipboard.writeText(token);
@@ -143,6 +208,7 @@ async function doToggleEnforcement() {
 onMounted(async () => {
   await store.fetchCaStatus();
   await store.fetchBootstrapTokens();
+  await store.fetchEnrollmentCandidates();
   await store.fetchCertificates();
   await store.fetchEnforcement();
 });
@@ -276,18 +342,72 @@ onMounted(async () => {
 
         <div class="flex items-center gap-1.5">
           <button
-            v-for="m in ['single', 'bulk']"
+            v-for="m in ['fleet', 'single', 'bulk']"
             :key="m"
             type="button"
             class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors"
             :class="mintMode === m ? 'text-white bg-blue-500 border-blue-500' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'"
-            @click="mintMode = m as 'single' | 'bulk'"
+            @click="mintMode = m as 'fleet' | 'single' | 'bulk'"
           >
-            {{ m === "single" ? "Single device" : "Bulk (multiple)" }}
+            {{ m === "fleet" ? "From Applivery fleet" : m === "single" ? "Single (manual)" : "Bulk (manual)" }}
           </button>
         </div>
 
-        <Input v-if="mintMode === 'single'" v-model="mintSerial" label="Device serial number" placeholder="PF3ABCDE" :disabled="!canEdit()" />
+        <template v-if="mintMode === 'fleet'">
+          <Alert v-if="store.enrollmentCandidatesError" type="danger">{{ store.enrollmentCandidatesError }}</Alert>
+          <Alert v-else-if="store.enrollmentCandidatesAvailable === false" type="warning">
+            {{ store.enrollmentCandidatesReason }}
+          </Alert>
+          <template v-else>
+            <p class="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+              Read live from Applivery UEM — no need to know or type serial numbers. Selecting a device here still mints
+              it its own one-time token; how that token then reaches the device (imaging, an installer step, a
+              provisioning script) is unchanged.
+            </p>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <Input v-model="fleetSearch" placeholder="Search serial or name…" class="flex-1 min-w-[140px]" />
+              <select
+                v-model="fleetPlatformFilter"
+                class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+              >
+                <option value="all">All platforms</option>
+                <option v-for="p in fleetPlatforms" :key="p" :value="p">{{ p }}</option>
+              </select>
+              <Button size="sm" variant="ghost" :loading="store.enrollmentCandidatesLoading" @click="store.fetchEnrollmentCandidates()">Refresh</Button>
+            </div>
+            <label class="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
+              <input type="checkbox" v-model="fleetHideEnrolled" /> Hide already-enrolled devices
+            </label>
+
+            <p v-if="store.enrollmentCandidatesLoading" class="text-xs text-gray-500 dark:text-gray-400">Loading fleet from Applivery…</p>
+            <template v-else>
+              <div class="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
+                <span>{{ filteredFleet.length }} device(s) shown · {{ fleetSelected.size }} selected</span>
+                <div class="flex gap-2">
+                  <button type="button" class="underline" @click="selectAllVisible">Select all shown</button>
+                  <button type="button" class="underline" @click="clearFleetSelection">Clear</button>
+                </div>
+              </div>
+              <div class="max-h-56 overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-700 rounded-lg p-1.5">
+                <label
+                  v-for="c in filteredFleet"
+                  :key="c.serialNumber"
+                  class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                >
+                  <input type="checkbox" :checked="fleetSelected.has(c.serialNumber)" :disabled="!canEdit()" @change="toggleFleetSelect(c.serialNumber)" />
+                  <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="FLEET_STATUS_COLOR[c.mtlsStatus]" />
+                  <div class="min-w-0 flex-1">
+                    <p class="text-xs font-medium truncate text-gray-900 dark:text-white">{{ c.displayName }}</p>
+                    <p class="text-[10px] font-mono text-gray-500 dark:text-gray-400">{{ c.serialNumber }} · {{ c.platform }} · {{ FLEET_STATUS_LABEL[c.mtlsStatus] }}</p>
+                  </div>
+                </label>
+                <p v-if="filteredFleet.length === 0" class="text-xs text-gray-500 dark:text-gray-400 px-2 py-1.5">No matching devices.</p>
+              </div>
+            </template>
+          </template>
+        </template>
+
+        <Input v-else-if="mintMode === 'single'" v-model="mintSerial" label="Device serial number" placeholder="PF3ABCDE" :disabled="!canEdit()" />
         <div v-else>
           <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Device serial numbers (one per line)</label>
           <textarea
@@ -300,7 +420,15 @@ onMounted(async () => {
         </div>
         <div class="flex items-center gap-2">
           <Input v-model.number="mintExpiresInDays" type="number" min="1" max="30" label="Expires in (days)" class="w-32" :disabled="!canEdit()" />
-          <Button size="sm" class="mt-4" :disabled="!canEdit() || !store.caStatus?.configured" :loading="store.tokenBusy" @click="doMint">Mint</Button>
+          <Button
+            size="sm"
+            class="mt-4"
+            :disabled="!canEdit() || !store.caStatus?.configured || (mintMode === 'fleet' && fleetSelected.size === 0)"
+            :loading="store.tokenBusy"
+            @click="doMint"
+          >
+            {{ mintMode === "fleet" ? `Mint for ${fleetSelected.size} selected` : "Mint" }}
+          </Button>
         </div>
         <Alert v-if="!store.caStatus?.configured" type="warning">Generate or upload a CA above first — tokens can't be minted without one.</Alert>
 

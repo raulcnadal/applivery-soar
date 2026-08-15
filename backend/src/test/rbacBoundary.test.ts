@@ -149,6 +149,7 @@ const CASES: Case[] = [
   { label: "mtls: POST /api/mtls/bootstrap-tokens", method: "post", path: "/api/mtls/bootstrap-tokens", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
   { label: "mtls: GET /api/mtls/certificates", method: "get", path: "/api/mtls/certificates", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
   { label: "mtls: POST /api/mtls/certificates/:id/revoke", method: "post", path: "/api/mtls/certificates/cert-1/revoke", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
+  { label: "mtls: GET /api/mtls/enrollment-candidates", method: "get", path: "/api/mtls/enrollment-candidates", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
 ];
 
 describe("RBAC boundary — insufficient access is denied, sufficient access clears the gate", () => {

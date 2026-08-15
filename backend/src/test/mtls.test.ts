@@ -459,3 +459,115 @@ describe("deviceData.service.verifyDeviceIdentity — Phase C enforcement-flag b
     expect(findUnique).not.toHaveBeenCalled();
   });
 });
+
+describe("enrollmentCandidates.service — Applivery-fleet-backed bootstrap token picker", () => {
+  // Requested directly by the admin after using Phase C's UI: instead of
+  // typing serial numbers by hand into Settings > mTLS > Bootstrap Tokens,
+  // read the candidate list from Applivery UEM's own device fleet (which
+  // already knows every serial number) and merge in this workspace's
+  // existing cert/token status per device. The one-time, serial-bound token
+  // model itself (consumeBootstrapToken) is completely unchanged — this is
+  // purely an admin-UI convenience layer on top.
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("returns available:false with a reason when no automation credential is configured, and never touches Prisma", async () => {
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => null) }));
+    const getDevicesFull = vi.fn();
+    vi.doMock("../modules/devices/devices.service", () => ({ getDevicesFull }));
+
+    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
+    const result = await listEnrollmentCandidates("acme");
+
+    expect(result).toEqual({ available: false, reason: expect.stringMatching(/automation credential/i), items: [] });
+    expect(getDevicesFull).not.toHaveBeenCalled();
+  });
+
+  it("labels a device with no certificate and no pending token as 'none'", async () => {
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
+    vi.doMock("../modules/devices/devices.service", () => ({
+      getDevicesFull: vi.fn(async () => ({
+        items: [{ id: "dev-1", serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows" }],
+        total: 1,
+        fetchedAt: new Date().toISOString(),
+      })),
+    }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({ listCertificates: vi.fn(async () => []) }));
+    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ listBootstrapTokens: vi.fn(async () => []) }));
+
+    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
+    const result = await listEnrollmentCandidates("acme");
+
+    expect(result.available).toBe(true);
+    expect(result.items).toEqual([{ serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows", mtlsStatus: "none" }]);
+  });
+
+  it("labels a device with a pending bootstrap token (and no certificate yet) as 'pending'", async () => {
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
+    vi.doMock("../modules/devices/devices.service", () => ({
+      getDevicesFull: vi.fn(async () => ({ items: [{ id: "dev-1", serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows" }], total: 1, fetchedAt: "now" })),
+    }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({ listCertificates: vi.fn(async () => []) }));
+    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({
+      listBootstrapTokens: vi.fn(async () => [{ id: "tok-1", serialNumber: "SN-1", status: "pending", expiresAt: "later", usedAt: null, createdBy: "admin", createdAt: "now" }]),
+    }));
+
+    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
+    const result = await listEnrollmentCandidates("acme");
+    expect(result.items[0].mtlsStatus).toBe("pending");
+  });
+
+  it("prefers an active certificate's status over a stray pending token for the same device", async () => {
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
+    vi.doMock("../modules/devices/devices.service", () => ({
+      getDevicesFull: vi.fn(async () => ({ items: [{ id: "dev-1", serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows" }], total: 1, fetchedAt: "now" })),
+    }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({
+      listCertificates: vi.fn(async () => [{ id: "cert-1", serialNumber: "SN-1", serialHex: "01", status: "active", notBefore: "then", notAfter: "later", supersededAt: null, revokedAt: null, revokedReason: null, issuedAt: "then" }]),
+    }));
+    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({
+      // A re-enrollment token minted while a cert is already active — should be ignored in favor of "active".
+      listBootstrapTokens: vi.fn(async () => [{ id: "tok-1", serialNumber: "SN-1", status: "pending", expiresAt: "later", usedAt: null, createdBy: "admin", createdAt: "now" }]),
+    }));
+
+    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
+    const result = await listEnrollmentCandidates("acme");
+    expect(result.items[0].mtlsStatus).toBe("active");
+  });
+
+  it("surfaces a historical (expired/revoked/superseded) certificate's status when there's no currently-active one", async () => {
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
+    vi.doMock("../modules/devices/devices.service", () => ({
+      getDevicesFull: vi.fn(async () => ({ items: [{ id: "dev-1", serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows" }], total: 1, fetchedAt: "now" })),
+    }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({
+      listCertificates: vi.fn(async () => [{ id: "cert-1", serialNumber: "SN-1", serialHex: "01", status: "revoked", notBefore: "then", notAfter: "later", supersededAt: null, revokedAt: "now", revokedReason: "lost device", issuedAt: "then" }]),
+    }));
+    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ listBootstrapTokens: vi.fn(async () => []) }));
+
+    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
+    const result = await listEnrollmentCandidates("acme");
+    expect(result.items[0].mtlsStatus).toBe("revoked");
+  });
+
+  it("filters out Applivery devices with no serial number reported yet", async () => {
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
+    vi.doMock("../modules/devices/devices.service", () => ({
+      getDevicesFull: vi.fn(async () => ({
+        items: [
+          { id: "dev-1", serialNumber: "", displayName: "No serial yet", platform: "windows" },
+          { id: "dev-2", serialNumber: "SN-2", displayName: "Has a serial", platform: "windows" },
+        ],
+        total: 2,
+        fetchedAt: "now",
+      })),
+    }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({ listCertificates: vi.fn(async () => []) }));
+    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ listBootstrapTokens: vi.fn(async () => []) }));
+
+    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
+    const result = await listEnrollmentCandidates("acme");
+    expect(result.items.map((i) => i.serialNumber)).toEqual(["SN-2"]);
+  });
+});

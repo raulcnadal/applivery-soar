@@ -15,6 +15,7 @@ import { generateCa, getCaStatus, setLeafValidityDays, uploadCa } from "./ca.ser
 import { listBootstrapTokens, mintBootstrapToken, mintBootstrapTokensBulk, revokeBootstrapToken } from "./bootstrapTokens.service";
 import { listCertificates, revokeCertificate } from "./certificates.service";
 import { getMtlsEnforcementEnabled, setMtlsEnforcementEnabled } from "./mtlsEnforcement.service";
+import { listEnrollmentCandidates } from "./enrollmentCandidates.service";
 
 /**
  * Admin-facing mTLS management — Settings > (new) mTLS panel. Dashboard-
@@ -76,6 +77,13 @@ mtlsRouter.post("/api/mtls/bootstrap-tokens", ...manageMtls, asyncHandler(async 
 mtlsRouter.post("/api/mtls/bootstrap-tokens/bulk", ...manageMtls, asyncHandler(async (req, res) => {
   const payload = bootstrapTokenBulkPayloadSchema.parse(req.body);
   res.json({ items: await mintBootstrapTokensBulk(workspaceOf(req), actorOf(req), payload.serialNumbers, payload.expiresInDays) });
+}));
+
+// "Pick devices to mint tokens for" — reads Applivery UEM's live fleet
+// instead of requiring the admin to type serial numbers by hand. See
+// enrollmentCandidates.service.ts's module doc.
+mtlsRouter.get("/api/mtls/enrollment-candidates", ...readMtls, asyncHandler(async (req, res) => {
+  res.json(await listEnrollmentCandidates(workspaceOf(req)));
 }));
 
 mtlsRouter.delete("/api/mtls/bootstrap-tokens/:id", ...manageMtls, asyncHandler(async (req, res) => {
