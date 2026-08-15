@@ -141,16 +141,26 @@ The exact snippet to hand the user depends on the proxy in front of the backend.
 
 ```nginx
 # In the proxy host's Advanced config (or equivalent nginx server block)
-ssl_verify_client optional;   # "optional" not "on" — /register must still work pre-cert
-ssl_client_certificate /path/to/soar-ca.pem;   # the CA cert exported from SOAR (GET /api/mtls/ca)
+ssl_verify_client optional;   # "optional" not "on" — registration (/api/device-mtls/register)
+                               # has no cert yet, and reporting (/api/device-data/*) is only
+                               # cert-gated once the workspace's Enforcement flag is on. The
+                               # backend decides per request whether a cert is actually required.
+ssl_client_certificate /path/to/soar-ca.pem;   # download from Settings > mTLS Agent
+                                                # Authentication > Certificate Authority >
+                                                # Download CA certificate (also GET /api/mtls/ca)
 
-location /api/device-mtls/ {
+# Covers BOTH agent registration/renewal (/api/device-mtls/*) AND device reporting
+# (/api/device-data/*) — both need the verified-cert headers forwarded. Do not extend this
+# block to any other location: the dashboard/frontend never needs client-cert headers.
+location /api/device- {
     proxy_set_header X-Client-Cert-Verified $ssl_client_verify;
     proxy_set_header X-Client-Cert-CN       $ssl_client_s_dn_cn;
     proxy_set_header X-Internal-Proxy-Secret "<the MTLS_INTERNAL_PROXY_SECRET value>";
     proxy_pass http://soar-backend:8000;
 }
 ```
+
+**Location-block scoping, made explicit:** three categories, three different needs. (1) **Agent registration** (`POST /api/device-mtls/register`) never requires a client cert — the bootstrap token is the credential, and `verifyMtlsIdentity` is never applied to this route (see §4.1/§10) — but it's still inside the `/api/device-` block above, which is harmless since the route never reads the forwarded cert headers anyway. Renewal (`POST /api/device-mtls/renew`) is the opposite: it's *always* gated by `verifyMtlsIdentity`, cert required unconditionally, same location block. (2) **Device reporting** (`POST/GET /api/device-data/*` — report, report-apps, custom-checks, evaluate-now, agent-status, event-watches, event-notify) is cert-gated only once Enforcement is switched on for that workspace; before that it accepts the legacy `X-Device-Report-Secret` instead. This block was originally scoped to `/api/device-mtls/` only and silently missed `/api/device-data/` — a real gap, since enabling Enforcement without also covering this prefix means every reporting call fails closed once a device's request actually needs the cert headers. The `/api/device-` prefix above fixes this by covering both in one block (and doesn't accidentally match `/api/devices/...`, the plural dashboard-facing routes, since `s` ≠ `-`). (3) **Frontend and all other dashboard/admin routes** (`/`, `/api/mtls/*`, everything else under `/api/*`) never need client-cert headers forwarded at all — leave them out of this location block entirely.
 
 For a non-nginx-family proxy, the same three values are needed: (1) trust the SOAR-issued CA cert for client verification, (2) forward the verification result and the client cert's CN as headers, (3) inject the shared secret. Traefik does this via `passTLSClientCert` middleware (has direct equivalents to `$ssl_client_verify`/CN extraction); Caddy via `tls.client_auth` plus `header_up` directives; HAProxy via `ssl_c_verify`/`ssl_c_s_dn` fetches converted to headers in the backend section. None of these require backend code changes — only the header *names* need to line up with `MTLS_HEADER_CERT_VERIFIED`/`MTLS_HEADER_CERT_CN` env vars, which default to the nginx/NPM names but can be repointed.
 

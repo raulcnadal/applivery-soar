@@ -86,6 +86,33 @@ async function doSaveLeafValidity() {
   }
 }
 
+// The CA cert (public material, no private key) is what a reverse proxy needs for
+// `ssl_client_certificate` — download-as-file mirrors Device Data Webhook's snippet
+// pattern so admins have one consistent way to pull config material out of Settings.
+function downloadCaCert() {
+  const pem = store.caStatus?.certPem;
+  if (!pem) return;
+  const blob = new Blob([pem], { type: "application/x-pem-file" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "soar-ca.pem";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+const caCertCopied = ref(false);
+async function copyCaCert() {
+  const pem = store.caStatus?.certPem;
+  if (!pem) return;
+  const ok = await copyToClipboard(pem);
+  if (ok) {
+    caCertCopied.value = true;
+    setTimeout(() => { caCertCopied.value = false; }, 2000);
+  } else {
+    alert("Couldn't copy automatically — this usually happens when the dashboard is loaded over plain HTTP instead of HTTPS. Use the download button instead.");
+  }
+}
+
 // ── Global Bootstrap Token ──
 // The single, workspace-wide credential every device in the fleet uses to
 // register — see globalBootstrapToken.service.ts's module doc (backend) for
@@ -128,10 +155,16 @@ const proxySnippet = computed(() => {
   const c = store.proxyConfig;
   if (!c) return "";
   return `# In the proxy host's Advanced config (or equivalent nginx server block)
-ssl_verify_client optional;   # "optional" not "on" — /register must still work pre-cert
-ssl_client_certificate /path/to/soar-ca.pem;   # the CA cert exported from SOAR (GET /api/mtls/ca)
+ssl_verify_client optional;   # "optional" not "on" — registration (/api/device-mtls/register)
+                               # has no cert yet, and reporting (/api/device-data/*) is only
+                               # cert-gated once Enforcement below is switched on. The backend
+                               # decides per request whether a cert is actually required.
+ssl_client_certificate /path/to/soar-ca.pem;   # download above (Certificate Authority > Download CA certificate)
 
-location /api/device-mtls/ {
+# Covers agent registration/renewal (/api/device-mtls/*) AND device reporting
+# (/api/device-data/*) — both need the verified-cert headers forwarded. Do not add this
+# block to any other location: the dashboard/frontend never needs client-cert headers.
+location /api/device- {
     proxy_set_header ${c.headerCertVerified} $ssl_client_verify;
     proxy_set_header ${c.headerCertCn}       $ssl_client_s_dn_cn;
     proxy_set_header ${c.headerProxySecret} "<the MTLS_INTERNAL_PROXY_SECRET value>";
@@ -227,6 +260,20 @@ onMounted(async () => {
               renewal traffic. 90 days (60-day safety margin) is the default; 47 is the floor, chosen to stay ahead of
               the CA/Browser Forum's trend toward shorter public TLS lifetimes.
             </p>
+          </div>
+
+          <div v-if="store.caStatus?.configured" class="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <p class="text-[10px] leading-relaxed text-gray-400 max-w-xs">
+              Public cert only — needed by your reverse proxy's <code>ssl_client_certificate</code> directive. See
+              Reverse Proxy Configuration below.
+            </p>
+            <div class="flex gap-1.5 shrink-0">
+              <Button variant="ghost" size="sm" @click="downloadCaCert">Download CA certificate</Button>
+              <Button variant="ghost" size="sm" @click="copyCaCert">
+                <component v-if="caCertCopied" :is="ICONS.CheckCircle" :size="12" weight="Linear" style="color: #10b981" />
+                <component v-else :is="ICONS.Copy" :size="12" weight="Linear" />
+              </Button>
+            </div>
           </div>
 
           <div class="flex flex-wrap justify-end gap-2 pt-1">

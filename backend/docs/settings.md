@@ -80,7 +80,9 @@ Replaces the shared `X-Device-Report-Secret` with per-device client certificates
 renews itself automatically. Fully additive/opt-in until enforcement is turned on. Every mutating control requires the `canManageMtlsCA`
 permission. Windows only today — the macOS Agent has no mTLS support yet.
 
-- **Certificate Authority** — generate one (choice of key algorithm, leaf validity) or upload an external CA cert + key.
+- **Certificate Authority** — generate one (choice of key algorithm, leaf validity) or upload an external CA cert + key. **Download CA
+  certificate** grabs the public cert (no private key) as `soar-ca.pem`, ready to paste into a reverse proxy's `ssl_client_certificate`
+  directive — no separate export step needed.
 - **Global Bootstrap Token** — one value, the SAME on every device in the fleet (not per-device, not one-time). A device proves it's allowed to
   register with this token PLUS a live check that its own serial number is currently a known, enrolled device in this workspace's Applivery UEM
   fleet — only devices Applivery already knows about can ever register. Issued immediately on success, no admin approval step. A device that
@@ -88,7 +90,9 @@ permission. Windows only today — the macOS Agent has no mTLS support yet.
   [Device Data Webhook](#device-data-webhook)'s combined download once generated here.
 - **Reverse Proxy Configuration** — the exact nginx/NPM config reference (with your workspace's actual header names) plus a live status check for
   whether the internal proxy secret is configured on this backend. Required before enforcement below will work — without it, every mTLS-gated
-  request fails closed (503).
+  request fails closed (503). The reference config's single `location /api/device-` block deliberately covers both agent registration/renewal
+  (`/api/device-mtls/*`) and device reporting (`/api/device-data/*`) — reporting is the prefix that's actually cert-gated once Enforcement is
+  on, so it must forward the verified-cert headers too, not just registration. Never extend this block to the dashboard/frontend.
 - **Certificates** — issued fleet, with per-device status (active/expiring-soon/expired/revoked/superseded) and a **Revoke** action.
 - **Enforcement** — the cutover switch: once enabled, every device-caller route requires a valid client certificate and the legacy secret stops
   being accepted for that workspace. Cuts off any macOS device on the workspace entirely (no mTLS support), not just unregistered Windows ones.
