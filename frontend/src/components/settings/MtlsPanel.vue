@@ -15,6 +15,9 @@ import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useAuthStore } from "../../stores/auth";
 import { useMtlsStore, type SelfServiceMode } from "../../stores/mtls";
+import { copyToClipboard } from "../../lib/clipboard";
+
+const emit = defineEmits<{ goToTab: [id: string] }>();
 
 const store = useMtlsStore();
 const auth = useAuthStore();
@@ -167,31 +170,6 @@ const FLEET_STATUS_LABEL: Record<string, string> = {
 // to the older execCommand("copy") path (no secure-context requirement,
 // still supported everywhere despite being deprecated) and surfaces a clear
 // message if even that fails, instead of failing silently.
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (window.isSecureContext && navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // fall through to the legacy path below
-  }
-  try {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(textarea);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 const copiedTokenId = ref<string | null>(null);
 async function copyToken(token: string, id: string) {
   const ok = await copyToClipboard(token);
@@ -363,6 +341,10 @@ onMounted(async () => {
         backend/docs/mtls-agent-auth-roadmap.md §5.5. Fully additive until you flip enforcement on below.
       </p>
       <Alert v-if="!canEdit()" type="info">Your role doesn't have the canManageMtlsCA permission — every control below is read-only.</Alert>
+      <Alert type="info">
+        Ready to push this to the fleet? <button type="button" class="underline font-semibold" @click="emit('goToTab', 'agent-deployment')">Agent Deployment</button>
+        combines the CA/secret status here with the reporting toggles into one downloadable Managed Configuration bundle.
+      </Alert>
     </div>
 
     <!-- Certificate Authority -->

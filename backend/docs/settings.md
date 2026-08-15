@@ -54,6 +54,22 @@ Background jobs (the compliance evaluator, snapshot capture, [scheduled report s
 
 No permission gate — any signed-in admin can set the automation credential to be their own session.
 
+## Agent Deployment
+
+The single Managed Configuration generator for the whole fleet — combines the [Device Data Webhook](#device-data-webhook) secret and reporting
+toggles with an optional [mTLS](#mtls-agent-authentication) self-service enrollment secret into one downloadable/copyable bundle, instead of
+assembling both by hand.
+
+- **Prerequisites** — status of the device report secret (generate/rotate inline), the mTLS CA, and the self-service enrollment secret + mode
+  (read-only here; managed from their own tabs, linked inline).
+- **What this agent reports** — checkboxes for **App Inventory Reporting**, **Security Attestation Reporting**, and **mTLS Certificate Enrollment
+  (Windows only — the macOS agent has no mTLS support yet)**, plus the report interval.
+- **Download** — Windows Script (`.ps1`) / macOS Script (`.sh`) (recommended: paste into an Applivery Script resource and assign to a Policy for
+  zero-touch fleet push), or a manually-imported Windows `.reg` / macOS `.json`.
+
+Per-device bootstrap tokens are intentionally not part of this bundle (they can't be pushed via a single fleet-wide profile) — mint those
+individually from [mTLS Agent Authentication](#mtls-agent-authentication) instead.
+
 ## Device Data Webhook
 
 Lets a scheduled script running **on managed devices** push extra attributes (disk encryption, firewall status, patch level, etc.) that aren't available from Applivery's own data. Devices are matched by serial number. Once reported, these become usable as **Self-Reported Attribute** conditions in [Compliance Policies](compliance.md#conditions--the-full-field-catalog).
@@ -64,6 +80,25 @@ Lets a scheduled script running **on managed devices** push extra attributes (di
 - **Security Attestation Reporting** sub-section — downloads scripts reporting hardware/OS security posture: Secure Boot, VBS, Credential Guard, HVCI, BitLocker, TPM (Windows); FileVault, firewall, XProtect, Secure Token, screen lock (macOS). No Android/iOS equivalent exists — there's no way to run an unattended privileged script on those platforms.
 
 Both script sections stay disabled until the webhook secret above exists. No permission gate.
+
+## mTLS Agent Authentication
+
+Replaces the shared `X-Device-Report-Secret` with per-device client certificates — each device gets its own keypair and a short-lived cert that
+renews itself automatically. Fully additive/opt-in until enforcement is turned on. Every mutating control requires the `canManageMtlsCA`
+permission.
+
+- **Certificate Authority** — generate one (choice of key algorithm, leaf validity) or upload an external CA cert + key.
+- **Bootstrap Tokens** — one-time, per-device tokens a device uses exactly once to enroll for its own certificate, bound to its serial number.
+  Recipients can be picked from Applivery's live device fleet instead of typing serial numbers manually.
+- **Self-Service Enrollment** — a shared, fleet-wide secret (not one-time) for zero-touch deployment via a single Managed Configuration push: a
+  device proves it belongs by presenting the secret plus a serial number Applivery currently recognizes as enrolled. Two modes: **Approval
+  required** (default — requests queue below for an admin to Approve/Reject) or **Silent** (issues immediately, no admin step). A serial number
+  that already has an active certificate can never be silently re-claimed by this path, even in Silent mode.
+- **Certificates** — issued fleet, with per-device status (active/expiring-soon/expired/revoked/superseded) and a **Revoke** action.
+- **Enforcement** — the cutover switch: once enabled, every device-caller route requires a valid client certificate and the legacy secret stops
+  being accepted for that workspace. Roll out the fleet first, then flip this — see `backend/docs/mtls-agent-auth-roadmap.md` for the full runbook.
+
+For a single combined download instead of assembling the report secret and enrollment secret separately, use [Agent Deployment](#agent-deployment).
 
 ## Log Export
 

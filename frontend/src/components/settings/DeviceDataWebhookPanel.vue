@@ -11,6 +11,8 @@ import { useAuthStore } from "../../stores/auth";
 import { useDeviceReportSecretStore } from "../../stores/deviceReportSecret";
 import { AGENT_VARIANTS, useAgentDownloadsStore, variantKey, type AgentAsset, type AgentVariant } from "../../stores/agentDownloads";
 
+const emit = defineEmits<{ goToTab: [id: string] }>();
+
 const store = useDeviceReportSecretStore();
 const auth = useAuthStore();
 const agentStore = useAgentDownloadsStore();
@@ -251,6 +253,10 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-6">
+    <Alert type="info">
+      Deploying to a new fleet? <button type="button" class="underline font-semibold" @click="emit('goToTab', 'agent-deployment')">Agent Deployment</button>
+      assembles the secret below plus reporting toggles and (optionally) mTLS identity into one combined Managed Configuration download.
+    </Alert>
     <div>
       <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Applivery SOAR Agent</h3>
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
