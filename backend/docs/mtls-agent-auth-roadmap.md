@@ -1,0 +1,192 @@
+# mTLS Agent Authentication — Roadmap
+
+**Status:** proposed, not started. This is a planning document only — no code in this roadmap has been written yet. Written after a research pass over the existing auth model (see §1) and four scoping decisions confirmed with the user (see §0).
+
+**Goal:** replace today's per-workspace shared secret (`X-Device-Report-Secret`) with per-device mutual TLS: every agent gets its own client certificate, generated and privately held on-device, issued by a SOAR-operated CA after a one-time bootstrap-token handshake, and renewed autonomously before expiry — with no bespoke script and no bootstrap token ever needed again after first enrollment.
+
+---
+
+## 0. Decisions already confirmed with the user
+
+1. **CA custody** — SOAR generates and holds the CA by default (self-signed root, private key generated in-process, encrypted at rest). An admin can *also* upload an externally-generated CA (cert + private key) to replace it — this is the rotation/override path, not the primary one.
+2. **Reverse proxy's role** — the reverse proxy in front of the backend (NPM today, but the design must not assume NPM specifically — see the note below) terminates the mTLS handshake and forwards the verified client identity to the backend via headers over the internal network. The backend trusts and validates those headers rather than re-terminating TLS itself.
+3. **Rollout mode** — hard cutover, not permanent dual-auth. Once the backend requires the mTLS identity header on a route, the old shared secret stops being accepted on that route — no toggle to keep both alive indefinitely. (§7 below spells out the actual multi-step rollout runbook this implies operationally, since "hard cutover" in the code is still a staged rollout in practice — Phase A ships without breaking anything, Phase C is the deliberate cutover moment.)
+4. **Agent scope this round** — Windows Agent first, end to end. macOS Agent (confirmed live in production, not a stub) gets the exact same client logic ported as an immediate fast-follow round once Windows is proven.
+
+**Reverse-proxy portability note (added after review):** NPM is the proxy in use today, but nothing in the backend design should be NPM-specific — the user runs NPM now but wants the freedom to swap in any other reverse proxy that can terminate mTLS and forward verified identity via headers (Traefik, Caddy, HAProxy, a raw nginx config, Envoy, etc. all support this pattern). Concretely this means: the header names the backend reads must be configurable, not hardcoded; the docs below give the exact config for nginx-family proxies (NPM's underlying engine) as the primary example, with a note on the equivalent for the most common alternatives; and nothing in the backend or agent code encodes an NPM-specific assumption. Everywhere "NPM" appears below as a concrete example, read it as "your reverse proxy" — the mechanism, not the product, is what this design depends on.
+
+---
+
+## 1. What this replaces (current state, confirmed against the codebase)
+
+- `verifyDeviceReportSecret` (`deviceData.service.ts`) — one secret **per workspace**, shared by every device in that workspace's fleet, checked via constant-time compare against `X-Device-Report-Secret`. Provisioned/rotated today via `deviceReportSecret.service.ts` + `GET/POST/DELETE /api/settings/device-report-secret`. Gates 6 routes in `deviceData.controller.ts` (`report`, `report-apps`, `custom-checks`, `evaluate-now`, `agent-status`, `event-watches`, `event-notify`).
+- This is a real security gap this roadmap closes: **one leaked secret compromises every device in the workspace**, and there's no per-device revocation — you can only rotate the whole workspace's secret and re-push it everywhere.
+- `secretCipher.ts` (AES-256-GCM, key derived from `DASHBOARD_SECRET`) is the existing at-rest encryption utility, already used for `AutomationCredential`'s tokens — reused here for the CA private key, consistent with everything else this app encrypts at rest.
+- No existing PKI/certificate code anywhere in the backend (confirmed by grep) — this is a greenfield build on the backend side. No existing Windows Certificate Store / keystore interaction in the Windows Agent either (confirmed by grep) — the agent-side keystore is also greenfield.
+- The edge reverse proxy (NPM today) is **not** version-controlled in this repo — `docker-compose.yml` runs the frontend's Nginx as a plain-HTTP reverse proxy to the backend over the internal Compose network; TLS termination (today: server-only; after this roadmap: mutual) happens entirely at the edge proxy, outside anything this repo can configure directly. This roadmap's backend code assumes the edge proxy forwards a verified-identity header, and treats "the backend's Docker network port is only reachable through the trusted proxy chain" as a hard precondition — see §5.4. The backend has no dependency on which proxy product does this; only the header contract matters, and that contract is configurable (§5).
+
+---
+
+## 2. Data model
+
+Three new Prisma models. Device identity is anchored on **`serialNumber`**, not a new "Device ID" concept — every other agent-facing route in this codebase already keys devices by `serialNumber` (matches Applivery's own device inventory), so the certificate's Common Name is the device's serial number, full stop. No new identifier scheme.
+
+```prisma
+model CertificateAuthority {
+  workspaceSlug String   @id
+  certPem       String   @db.Text   // CA public certificate, PEM — safe to expose to admins/agents
+  privateKeyPem String   @db.Text   // encrypted at rest via secretCipher (existing AES-256-GCM utility)
+  keyAlgorithm  String   // "ECDSA-P256" — matches the leaf certificate algorithm (see §3)
+  source        String   // "generated" | "uploaded"
+  serialCounter Int      @default(1)   // next leaf-cert serial to issue, monotonically increasing
+  leafValidityDays Int   @default(90)  // configurable leaf-cert lifecycle; enforced minimum 47
+                                        // days at the service layer (see §3) — future-proofing
+                                        // against shorter industry-standard lifetimes
+  notBefore     DateTime
+  notAfter      DateTime
+  uploadedBy    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model DeviceBootstrapToken {
+  id            String    @id @default(uuid())
+  workspaceSlug String
+  serialNumber  String    // which device this token is bound to — a token minted for one
+                          // serial can never be used to enroll a different one, see §4.1
+  tokenHash     String    // SHA-256 of the actual token; the plaintext token is shown to
+                          // the admin exactly once at creation and never stored
+  expiresAt     DateTime  // short-lived — default 7 days, admin-configurable per token
+  usedAt        DateTime? // null until consumed; one-shot, see §4.1
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([workspaceSlug, tokenHash])
+  @@index([workspaceSlug, serialNumber])
+}
+
+model DeviceCertificate {
+  id            String    @id @default(uuid())
+  workspaceSlug String
+  serialNumber  String
+  serialHex     String    // the certificate's own X.509 serial number (hex) — distinct from
+                          // DeviceCertificate.id, this is what a CRL/revocation check keys on
+  certPem       String    @db.Text  // issued certificate, public only — the private key never
+                                    // leaves the device, SOAR never sees or stores it
+  notBefore     DateTime
+  notAfter      DateTime
+  supersededAt  DateTime? // set when a renewal issues a newer cert for the same serialNumber
+  revokedAt     DateTime?
+  revokedReason String?
+  issuedAt      DateTime  @default(now())
+
+  @@unique([workspaceSlug, serialHex])
+  @@index([workspaceSlug, serialNumber])
+}
+```
+
+Migration will be hand-authored SQL, same established workaround as every other schema change this session (no `binaries.prisma.sh` network route in the dev sandbox).
+
+---
+
+## 3. Certificate mechanics
+
+- **Key algorithm: ECDSA P-256** (per the user's own spec) for both the CA and every leaf certificate — smaller keys/certs than RSA-2048 at an equivalent security level, native support in Go's `crypto/ecdsa` + `crypto/x509` (stdlib, **zero new Go dependency** — unlike the ETW work, this needs nothing beyond what Go already ships).
+- **CA**: self-signed, `CN=Applivery SOAR CA (<workspaceSlug>)`, generated with a long validity (e.g. 10 years) since rotating it is a fleet-wide event. Generation happens in the Node backend using `node:crypto`'s `generateKeyPairSync("ec", { namedCurve: "P-256" })` plus a small X.509-building layer — Node's built-in `crypto` can generate the keypair natively but does **not** build X.509 structures on its own; this needs either `node-forge` (pure JS, no native deps, well-established, MIT-licensed) or `@peculiar/x509` (built on WebCrypto, more modern/typed). Recommendation: `@peculiar/x509` — actively maintained, TypeScript-native, uses the platform's real WebCrypto (Node 20+ has `crypto.webcrypto` built in) rather than its own crypto implementation, which is a meaningfully better security posture for something signing every device's identity in the fleet. Flagged as a decision point, not assumed — see §8.
+- **Leaf certs**: `CN=<serialNumber>`, short validity, **default 90 days, admin-configurable via `CertificateAuthority.leafValidityDays`**, renewed at the 30-day-remaining mark per the user's own spec. The service layer enforces a **hard floor of 47 days** on this setting — the admin API rejects any value below it — as future-proofing against the industry's ongoing push toward shorter TLS certificate lifetimes (the CA/Browser Forum has been trending public TLS certs toward ~47 days over the next few years; picking the same floor here keeps this system consistent with where the ecosystem is heading even though these are private, not publicly-trusted, certificates). Renewal timing (today: "30 days remaining") should scale proportionally for short configured lifetimes rather than stay a fixed 30 days — e.g. renew at 1/3 of `leafValidityDays` remaining, so a 47-day cert renews around the 16-day mark instead of waiting past its own lifetime.
+- **CSR validation on issuance is strict**: the backend **always issues with `CN` set to the bootstrap token's own bound `serialNumber`**, never trusting whatever CN the agent's CSR claims. A token minted for device A can never be used to mint a cert claiming to be device B, even if the CSR body says otherwise — this is the actual security boundary of the whole system, not a nice-to-have.
+
+---
+
+## 4. New endpoints
+
+### 4.1 Agent-facing (device-caller, no dashboard token — same class as today's `/api/device-data/*`)
+
+- **`POST /api/device-mtls/register`** — body `{csrPem, serialNumber}`, header `X-Bootstrap-Token: <token>` (matching this repo's existing `X-` header convention, not a bearer scheme). No client cert on this call — can't be, the device doesn't have one yet. Validates: token exists for this workspace, `tokenHash` matches, unexpired, unused, and its bound `serialNumber` matches the request body. Consumes the token (`usedAt = now`, checked-and-set in one transaction so a replayed request can never double-issue). Signs the CSR (CN forced to the token's `serialNumber`, ignoring the CSR's own claimed CN if different), records a `DeviceCertificate` row, returns `{certPem, caCertPem}`. The agent needs `caCertPem` too, so it can verify SOAR's own server certificate going forward if it isn't already trust-anchored via the CA cert the user is separately deploying through Applivery UEM.
+- **`POST /api/device-mtls/renew`** — body `{csrPem, serialNumber}`. This call **must arrive already mTLS-authenticated** — gated by the same `verifyMtlsIdentity` middleware (§5) protecting the report routes, using the device's *current, still-valid* certificate. Validates the identity header's CN matches `serialNumber` in the body, issues a fresh cert (new serial, new key — the agent generates a new keypair per the user's own spec, this isn't a cert-only renewal), marks the old `DeviceCertificate` row `supersededAt`, returns the new cert. No bootstrap token ever needed again — this is the self-sustaining loop from the user's spec.
+
+### 4.2 Admin-facing (Settings, dashboard token + RBAC — new `canManageMtlsCA` risky-action flag under the existing `settings` area, mirroring `canExportOrImportConfig`'s pattern given how consequential replacing the fleet's trust root is)
+
+- `GET /api/mtls/ca` — status only (exists? generated vs. uploaded, fingerprint, expiry) — **never** returns the private key, not even to an admin.
+- `POST /api/mtls/ca/generate` — generates a new self-signed CA. Refuses to silently overwrite an existing one (must pass an explicit `confirmReplace: true` once a CA already exists, since replacing it invalidates every currently-issued leaf cert's chain of trust).
+- `POST /api/mtls/ca/upload` — body `{certPem, privateKeyPem}` — validates the pair actually matches (signs and verifies a throwaway challenge) before accepting, same `confirmReplace` guard as generate.
+- `POST /api/mtls/bootstrap-tokens` — body `{serialNumber, expiresInDays?}` — mints one token, returns the **plaintext token exactly once** in the response (never retrievable again, matching how e.g. API keys are typically surfaced). Supports a `POST /api/mtls/bootstrap-tokens/bulk` variant (array of serials) for enrolling a fleet at once.
+- `GET /api/mtls/bootstrap-tokens` — list, `tokenHash`/plaintext never included, just status (pending/used/expired).
+- `DELETE /api/mtls/bootstrap-tokens/:id` — revoke an unused token.
+- `GET /api/mtls/certificates` — list issued certs with status (active/expiring-soon/expired/revoked) — this is the fleet-migration dashboard the admin uses to know when it's safe to flip the cutover in §7.
+- `POST /api/mtls/certificates/:id/revoke` — body `{reason}` — for a decommissioned or suspected-compromised device. Checked by `verifyMtlsIdentity` on every request (§5) — a revoked cert stops authenticating immediately, no waiting for expiry.
+
+---
+
+## 5. `verifyMtlsIdentity` middleware
+
+Confirmed decisions folded in: the header contract is a **configuration surface, not a hardcoded constant** — this is what makes the design portable across reverse proxies — and the internal-proxy-secret defense-in-depth layer (originally proposed as optional) is now **in scope for this round**, not deferred.
+
+1. Reads two headers from env-configured names (`MTLS_HEADER_CERT_VERIFIED` / `MTLS_HEADER_CERT_CN`, defaulting to `X-Client-Cert-Verified` / `X-Client-Cert-CN` — the user's confirmed choice, matching what NPM's underlying nginx engine calls `$ssl_client_verify` / `$ssl_client_s_dn_cn`). Because these are env vars rather than literals in code, swapping to a different reverse proxy that names its forwarded headers differently — or renaming them for any other reason — is a config change, not a code change.
+2. Reads a third header, also env-configured (`MTLS_HEADER_PROXY_SECRET`, default `X-Internal-Proxy-Secret`), and rejects (401) unless it exactly matches a new `MTLS_INTERNAL_PROXY_SECRET` env var. This closes the gap where an attacker reaching the backend's port directly could simply set `X-Client-Cert-Verified: SUCCESS` themselves — the header alone is never sufficient, the shared secret must also be present, and only the reverse proxy is configured to know it. This check runs *before* the CN lookup, so a request missing/wrong on the secret never even reaches step 3.
+3. Rejects (401) if the verified header isn't exactly `SUCCESS`, or the CN header is missing/empty.
+4. Looks up `DeviceCertificate` by `(workspaceSlug, serialNumber=CN)` where `revokedAt IS NULL` and `notAfter > now()` — rejects if none matches (covers revocation and "the proxy verified the chain but the specific cert was revoked after issuance, which the proxy's own CRL checking may not catch depending on how it's configured").
+5. Attaches the verified `serialNumber` to the request for downstream handlers.
+
+### 5.4 Hard precondition: the backend's port must not be reachable except through the trusted reverse proxy
+
+The entire trust model in §5 depends on the backend only ever seeing these headers when they genuinely came from the reverse proxy's own TLS termination — if an attacker could reach the backend's Docker/host port directly, they could otherwise impersonate any device. Two layers, both now in scope:
+
+1. **Network-level**: confirm (this is an infra check for the user, not something this repo enforces) that the backend's container port is only bound to the Docker-internal network, never published to the host directly — only the reverse proxy should be able to reach it.
+2. **Defense in depth, confirmed in scope for this round**: the reverse proxy also forwards a static shared secret only it knows (`X-Internal-Proxy-Secret` by default, configurable per above), and `verifyMtlsIdentity` rejects any request missing or mismatching it (step 2 above) — so even a network-level misconfiguration doesn't silently downgrade to "trust anyone who sets a header." This is one new env var (`MTLS_INTERNAL_PROXY_SECRET`, a long random value generated once at Phase A setup) plus the one header check.
+
+### 5.5 Reverse-proxy config reference
+
+The exact snippet to hand the user depends on the proxy in front of the backend. Since NPM is nginx under the hood, the reference config is written against nginx's `ssl_client_*` directives and applies to NPM's "Advanced" config box directly:
+
+```nginx
+# In the proxy host's Advanced config (or equivalent nginx server block)
+ssl_verify_client optional;   # "optional" not "on" — /register must still work pre-cert
+ssl_client_certificate /path/to/soar-ca.pem;   # the CA cert exported from SOAR (GET /api/mtls/ca)
+
+location /api/device-mtls/ {
+    proxy_set_header X-Client-Cert-Verified $ssl_client_verify;
+    proxy_set_header X-Client-Cert-CN       $ssl_client_s_dn_cn;
+    proxy_set_header X-Internal-Proxy-Secret "<the MTLS_INTERNAL_PROXY_SECRET value>";
+    proxy_pass http://soar-backend:8000;
+}
+```
+
+For a non-nginx-family proxy, the same three values are needed: (1) trust the SOAR-issued CA cert for client verification, (2) forward the verification result and the client cert's CN as headers, (3) inject the shared secret. Traefik does this via `passTLSClientCert` middleware (has direct equivalents to `$ssl_client_verify`/CN extraction); Caddy via `tls.client_auth` plus `header_up` directives; HAProxy via `ssl_c_verify`/`ssl_c_s_dn` fetches converted to headers in the backend section. None of these require backend code changes — only the header *names* need to line up with `MTLS_HEADER_CERT_VERIFIED`/`MTLS_HEADER_CERT_CN` env vars, which default to the nginx/NPM names but can be repointed.
+
+---
+
+## 6. Windows Agent client (this round)
+
+New file, e.g. `mtls_windows.go`, plus a new `Config.BootstrapToken` field read from `HKLM\SOFTWARE\Policies\Applivery\SOAR` (same Managed Configuration delivery mechanism `ReportSecret` already uses today, per the user's own spec — Applivery UEM pushes this alongside the existing config).
+
+- **Local keystore (v1, disclosed simplification)**: not the Windows Certificate Store (CNG) — that's a meaningfully bigger integration with no existing groundwork in this repo (confirmed zero `CertOpenStore`/keystore code exists). v1 stores `device-cert.pem` and `device-key.pem` under `%ProgramData%\Applivery\SOAR\mtls\`, with the private key file's ACL locked to `SYSTEM`/`Administrators` only (the agent already runs as LocalSystem, same as every other privileged operation it does today). Genuine CNG/Certificate Store integration is flagged as a §8 hardening item, not assumed here — worth being explicit that this is a gap versus a from-scratch "OS keystore," not silently substituted without saying so.
+- **Registration**: on startup, if no local cert exists (or it's expired/revoked — a 401 from a report call is also a trigger to re-check), generate an ECDSA P-256 keypair (`crypto/ecdsa`, `crypto/x509` — Go stdlib, no new dependency), build a CSR with `x509.CreateCertificateRequest`, POST to `/api/device-mtls/register` with the bootstrap token, save the returned cert + CA cert.
+- **Renewal**: a daily check (own lightweight ticker, or folded into the existing report cycle's daily-ish cadence) — when `notAfter` is within 30 days, generate a fresh keypair + CSR, POST to `/api/device-mtls/renew` using an mTLS-configured `http.Client` (`tls.Config{Certificates: []tls.Certificate{current}}` — native `net/http` support, no library needed), atomically swap the cert/key files on success.
+- **Outbound calls once registered**: every existing `sendWebhook` call (report, report-apps, custom-checks, event-notify, event-watches, agent-status, evaluate-now) switches to the mTLS-configured client instead of sending `X-Device-Report-Secret` — consistent with the hard-cutover decision, no dual-auth code path to maintain on the agent side either.
+
+---
+
+## 7. Rollout runbook (what "hard cutover" actually looks like operationally)
+
+Even with no dual-auth code path, deploying this safely is still a sequence, not a flag flip:
+
+1. **Ship Phase A (backend)** — CA/bootstrap-token/certificate models, admin routes, `/register` + `/renew`, `verifyMtlsIdentity` middleware built and mounted but **not yet required** on `report`/`report-apps`/etc. — those routes keep accepting `X-Device-Report-Secret` exactly as today. Deploying this breaks nothing.
+2. **Ship Phase B (Windows Agent)** — new agent build with registration/renewal logic. Devices don't yet have bootstrap tokens, so they keep running on the old build/old auth until upgraded.
+3. **Admin generates a CA** (`POST /api/mtls/ca/generate`) and bulk-mints bootstrap tokens for the fleet, delivered via Applivery UEM's existing Managed Configuration push (same mechanism as `ReportSecret` today) alongside the new agent build.
+4. **Fleet upgrades** — as each device gets the new agent build + its bootstrap token, it self-registers on first run. Admin watches `GET /api/mtls/certificates` fill up.
+5. **Cutover moment** — once the admin confirms (via that same dashboard) that every active device has a valid certificate, they: (a) reconfigure the reverse proxy (per §5.5's config reference for whichever product is in front — NPM today) to require and verify client certs against the uploaded/generated CA cert on the agent-facing routes, and (b) the backend build for this phase requires `verifyMtlsIdentity` (instead of `verifyDeviceReportSecret`) on those routes. Any device still on the old build or without a valid cert goes dark at this point — an explicit, accepted consequence of the "hard cutover" decision, not a surprise.
+6. **Phase D (macOS fast-follow)** ports the identical client logic to the macOS Agent so the whole fleet reaches parity quickly rather than leaving macOS on the retired auth model for an extended window.
+
+---
+
+## 8. Decisions — resolved
+
+All four open items are now confirmed:
+
+1. **X.509 library** — `@peculiar/x509`, confirmed. First new backend dependency for this feature.
+2. **Leaf cert validity window** — default 90 days, renewed at 1/3-remaining. Admin-configurable via `CertificateAuthority.leafValidityDays`, with a **hard floor of 47 days** enforced server-side (§3) — future-proofing against shorter industry-standard TLS lifetimes.
+3. **Reverse-proxy header names** — `X-Client-Cert-Verified` / `X-Client-Cert-CN`, confirmed as the *default* values, but implemented as env-configured (`MTLS_HEADER_CERT_VERIFIED`/`MTLS_HEADER_CERT_CN`) rather than hardcoded, so the design isn't coupled to NPM specifically (§5, §5.5) and swapping reverse proxies is a config change.
+4. **Internal proxy secret** — in scope for this round, not deferred. New `MTLS_INTERNAL_PROXY_SECRET` env var + `X-Internal-Proxy-Secret` header (configurable name), checked before the CN lookup (§5.4).
+
+No open decisions remain — ready for Phase A once you give the go-ahead.

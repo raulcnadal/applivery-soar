@@ -67,4 +67,21 @@ export const env = {
   // download to every workspace, no GitHub PAT required). Same
   // optional/fail-closed-if-unset shape as TRIGGER_SECRET above.
   agentBuildIngestSecret: process.env.AGENT_BUILD_INGEST_SECRET ?? "",
+
+  // mTLS agent authentication (backend/docs/mtls-agent-auth-roadmap.md §5) —
+  // header names are configurable (not hardcoded) so this design isn't
+  // coupled to any one reverse-proxy product; the defaults below match
+  // NPM's underlying nginx engine ($ssl_client_verify/$ssl_client_s_dn_cn),
+  // which is what's actually deployed today, but any proxy that can forward
+  // equivalent values under different header names just needs these three
+  // env vars repointed, no code change. MTLS_INTERNAL_PROXY_SECRET has no
+  // default — verifyMtlsIdentity fails closed (503) until an operator
+  // explicitly configures it, same fail-closed-until-configured shape as
+  // DeviceReportSecret above, since this secret is the defense-in-depth
+  // layer against a network-level misconfiguration exposing the backend
+  // port directly (roadmap §5.4).
+  mtlsHeaderCertVerified: process.env.MTLS_HEADER_CERT_VERIFIED ?? "X-Client-Cert-Verified",
+  mtlsHeaderCertCn: process.env.MTLS_HEADER_CERT_CN ?? "X-Client-Cert-CN",
+  mtlsHeaderProxySecret: process.env.MTLS_HEADER_PROXY_SECRET ?? "X-Internal-Proxy-Secret",
+  mtlsInternalProxySecret: process.env.MTLS_INTERNAL_PROXY_SECRET ?? "",
 };

@@ -65,6 +65,7 @@ const RISKY_ACTIONS: Array<{ key: RiskyAction; label: string; description: strin
   { key: "canEditIntegrationSecrets", label: "Create/edit/delete/test Integrations & Threat Intel providers", description: "also gates Vulnerability Service edits" },
   { key: "canExportOrImportConfig", label: "Export, import, or clone workspace configuration", description: "" },
   { key: "canBulkTriage", label: "Bulk-approve/dismiss violations, or bulk-update Cases", description: "" },
+  { key: "canManageMtlsCA", label: "Generate/upload/replace the mTLS Certificate Authority, mint or revoke device bootstrap tokens and certificates", description: "replacing the CA invalidates every issued device certificate" },
 ];
 
 function emptyFeatureAccess(): Record<FeatureArea, FeatureLevel> {

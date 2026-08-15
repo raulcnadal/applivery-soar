@@ -137,6 +137,18 @@ const CASES: Case[] = [
 
   // ── deviceReportScripts.controller.ts — newly gated (deep audit) ──
   { label: "deviceReportScripts: GET /api/settings/device-report-scripts/:platform", method: "get", path: "/api/settings/device-report-scripts/macos", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+
+  // ── mtls.controller.ts (Phase A) — read routes reuse settings:read; every
+  // mutating route additionally requires the canManageMtlsCA risky-action
+  // flag on top of settings:manage, since generating/uploading a CA or
+  // minting/revoking device credentials is exactly the class of
+  // consequential action that flag category exists for. ──
+  { label: "mtls: GET /api/mtls/ca", method: "get", path: "/api/mtls/ca", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "mtls: POST /api/mtls/ca/generate", method: "post", path: "/api/mtls/ca/generate", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
+  { label: "mtls: GET /api/mtls/bootstrap-tokens", method: "get", path: "/api/mtls/bootstrap-tokens", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "mtls: POST /api/mtls/bootstrap-tokens", method: "post", path: "/api/mtls/bootstrap-tokens", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
+  { label: "mtls: GET /api/mtls/certificates", method: "get", path: "/api/mtls/certificates", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "mtls: POST /api/mtls/certificates/:id/revoke", method: "post", path: "/api/mtls/certificates/cert-1/revoke", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
 ];
 
 describe("RBAC boundary — insufficient access is denied, sufficient access clears the gate", () => {

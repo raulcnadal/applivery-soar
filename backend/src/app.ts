@@ -9,6 +9,8 @@ import { deviceAudiencesRouter } from "./modules/devices/deviceAudiences.control
 import { deviceCatalogRouter } from "./modules/devices/deviceCatalog.controller";
 import { devicesRouter } from "./modules/devices/devices.controller";
 import { deviceDataRouter } from "./modules/devices/deviceData.controller";
+import { mtlsRouter } from "./modules/mtls/mtls.controller";
+import { deviceMtlsRouter } from "./modules/mtls/deviceMtls.controller";
 import { healthRouter } from "./modules/health/health.controller";
 import { rolesRouter } from "./modules/roles/roles.controller";
 import { appListsRouter } from "./modules/appLists/appLists.controller";
@@ -52,6 +54,8 @@ export function createApp() {
   app.use(rolesRouter);
   app.use(devicesRouter);
   app.use(deviceDataRouter);
+  app.use(mtlsRouter);
+  app.use(deviceMtlsRouter);
   app.use(deviceCatalogRouter);
   app.use(deviceAudiencesRouter);
   app.use(appListsRouter);

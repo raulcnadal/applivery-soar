@@ -51,6 +51,7 @@ export const SOAR_RISKY_ACTIONS = [
   "canEditIntegrationSecrets",
   "canExportOrImportConfig",
   "canBulkTriage",
+  "canManageMtlsCA",
 ] as const;
 export type RiskyAction = (typeof SOAR_RISKY_ACTIONS)[number];
 

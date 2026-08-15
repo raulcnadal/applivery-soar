@@ -17,7 +17,8 @@ export type RiskyAction =
   | "canRunDestructiveWorkflow"
   | "canEditIntegrationSecrets"
   | "canExportOrImportConfig"
-  | "canBulkTriage";
+  | "canBulkTriage"
+  | "canManageMtlsCA";
 
 export interface SoarRole {
   id: string;

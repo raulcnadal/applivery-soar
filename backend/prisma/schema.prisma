@@ -1092,3 +1092,56 @@ model ConfigOperationLog {
   actor         String
   createdAt     DateTime @default(now())
 }
+
+// ────────────────────────────────────────────────────────────────
+// mTLS agent authentication (Phase A — backend PKI foundation).
+// See backend/docs/mtls-agent-auth-roadmap.md for the full design.
+// Additive only: nothing here is consulted by the existing
+// verifyDeviceReportSecret auth path yet.
+// ────────────────────────────────────────────────────────────────
+
+model CertificateAuthority {
+  workspaceSlug    String   @id
+  certPem          String   @db.Text // CA public certificate, PEM — safe to expose to admins/agents
+  privateKeyPem    String   @db.Text // encrypted at rest via secretCipher
+  keyAlgorithm     String // "ECDSA-P256"
+  source           String // "generated" | "uploaded"
+  serialCounter    Int      @default(1) // next leaf-cert serial to issue, monotonically increasing
+  leafValidityDays Int      @default(90) // admin-configurable; service layer enforces a 47-day floor
+  notBefore        DateTime
+  notAfter         DateTime
+  uploadedBy       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model DeviceBootstrapToken {
+  id            String    @id @default(uuid())
+  workspaceSlug String
+  serialNumber  String // the CSR's CN is always forced to this value on registration, never trusted from the CSR itself
+  tokenHash     String // SHA-256 of the plaintext token; the plaintext is shown to the admin exactly once and never stored
+  expiresAt     DateTime
+  usedAt        DateTime? // one-shot: set (in the same transaction as consumption) so a replay can never double-issue
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([workspaceSlug, tokenHash])
+  @@index([workspaceSlug, serialNumber])
+}
+
+model DeviceCertificate {
+  id            String    @id @default(uuid())
+  workspaceSlug String
+  serialNumber  String // device identity (matches Applivery's own device serial), the cert's CN
+  serialHex     String // the certificate's OWN X.509 serial number (hex) — distinct from serialNumber above; what revocation/CRL checks key on
+  certPem       String    @db.Text // issued certificate, public only — the private key never leaves the device
+  notBefore     DateTime
+  notAfter      DateTime
+  supersededAt  DateTime? // set when a renewal issues a newer cert for the same serialNumber
+  revokedAt     DateTime?
+  revokedReason String?
+  issuedAt      DateTime  @default(now())
+
+  @@unique([workspaceSlug, serialHex])
+  @@index([workspaceSlug, serialNumber])
+}
