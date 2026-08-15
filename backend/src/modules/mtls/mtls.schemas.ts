@@ -29,6 +29,10 @@ export const certificateRevokePayloadSchema = z.object({
   reason: z.string().min(1),
 });
 
+export const mtlsEnforcementPayloadSchema = z.object({
+  enabled: z.boolean(),
+});
+
 export const deviceMtlsRegisterPayloadSchema = z.object({
   csrPem: z.string().min(1),
   serialNumber: z.string().min(1),

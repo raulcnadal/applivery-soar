@@ -1,3 +1,4 @@
+import type { Request } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -176,22 +177,17 @@ describe("ca.service — leaf validity floor", () => {
   });
 });
 
-describe("verifyMtlsIdentity middleware — header/secret/revocation chain", () => {
-  function fakeReqRes(headers: Record<string, string | undefined>) {
-    const req: any = { header: (name: string) => headers[name] };
-    let statusCode = 200;
-    let jsonBody: unknown;
-    const res: any = {
-      status: (code: number) => {
-        statusCode = code;
-        return res;
-      },
-      json: (body: unknown) => {
-        jsonBody = body;
-        return res;
-      },
-    };
-    return { req, res, getStatus: () => statusCode, getBody: () => jsonBody };
+describe("assertMtlsIdentity — header/secret/revocation chain", () => {
+  // Phase C refactor: assertMtlsIdentity is the reusable throwing-async core
+  // (HttpError, matching this codebase's usual auth-check shape) — tested
+  // directly here rather than via the Express-middleware wrapper
+  // (verifyMtlsIdentity), which is now just asyncHandler(assertMtlsIdentity)
+  // and used unconditionally on POST /api/device-mtls/renew. The Phase C
+  // enforcement-flag branch (deviceData.service.ts's verifyDeviceIdentity)
+  // also calls assertMtlsIdentity directly, so this is the shared surface
+  // both paths depend on.
+  function fakeReq(headers: Record<string, string | undefined>): Request {
+    return { header: (name: string) => headers[name] } as unknown as Request;
   }
 
   beforeEach(() => {
@@ -200,78 +196,52 @@ describe("verifyMtlsIdentity middleware — header/secret/revocation chain", () 
 
   it("fails closed (503) when MTLS_INTERNAL_PROXY_SECRET is not configured", async () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "";
-    const { verifyMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
-    const ctx = fakeReqRes({});
-    let calledNext = false;
-    await verifyMtlsIdentity(ctx.req, ctx.res, () => {
-      calledNext = true;
-    });
-    expect(calledNext).toBe(false);
-    expect(ctx.getStatus()).toBe(503);
+    const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
+    await expect(assertMtlsIdentity(fakeReq({}))).rejects.toMatchObject({ statusCode: 503 });
   });
 
   it("rejects a request missing/wrong on the internal proxy secret, even with a well-formed identity header (closes the 'reach the backend directly and spoof the header' gap)", async () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
-    const { verifyMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
-    const ctx = fakeReqRes({
+    const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
+    const req = fakeReq({
       "X-Internal-Proxy-Secret": "wrong-secret",
       "X-Client-Cert-Verified": "SUCCESS",
       "X-Client-Cert-CN": "DEVICE-1",
     });
-    let calledNext = false;
-    await verifyMtlsIdentity(ctx.req, ctx.res, () => {
-      calledNext = true;
-    });
-    expect(calledNext).toBe(false);
-    expect(ctx.getStatus()).toBe(401);
+    await expect(assertMtlsIdentity(req)).rejects.toMatchObject({ statusCode: 401 });
   });
 
   it("rejects when the proxy secret is correct but no verified cert identity is present", async () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
-    const { verifyMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
-    const ctx = fakeReqRes({ "X-Internal-Proxy-Secret": "the-real-secret" });
-    let calledNext = false;
-    await verifyMtlsIdentity(ctx.req, ctx.res, () => {
-      calledNext = true;
-    });
-    expect(calledNext).toBe(false);
-    expect(ctx.getStatus()).toBe(401);
+    const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
+    const req = fakeReq({ "X-Internal-Proxy-Secret": "the-real-secret" });
+    await expect(assertMtlsIdentity(req)).rejects.toMatchObject({ statusCode: 401 });
   });
 
   it("rejects when everything is present but there's no active DeviceCertificate row for that CN (revoked/superseded/expired/never-issued)", async () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
     vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => null) }));
-    const { verifyMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
-    const ctx = fakeReqRes({
+    const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
+    const req = fakeReq({
       "X-Internal-Proxy-Secret": "the-real-secret",
       "X-Client-Cert-Verified": "SUCCESS",
       "X-Client-Cert-CN": "DEVICE-1",
       "X-Workspace-Slug": "acme",
     });
-    let calledNext = false;
-    await verifyMtlsIdentity(ctx.req, ctx.res, () => {
-      calledNext = true;
-    });
-    expect(calledNext).toBe(false);
-    expect(ctx.getStatus()).toBe(401);
+    await expect(assertMtlsIdentity(req)).rejects.toMatchObject({ statusCode: 401 });
   });
 
-  it("clears the gate and attaches req.mtlsSerialNumber when everything checks out", async () => {
+  it("returns the verified serial number when everything checks out", async () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
     vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => ({ id: "cert-1" })) }));
-    const { verifyMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
-    const ctx = fakeReqRes({
+    const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
+    const req = fakeReq({
       "X-Internal-Proxy-Secret": "the-real-secret",
       "X-Client-Cert-Verified": "SUCCESS",
       "X-Client-Cert-CN": "DEVICE-1",
       "X-Workspace-Slug": "acme",
     });
-    let calledNext = false;
-    await verifyMtlsIdentity(ctx.req, ctx.res, () => {
-      calledNext = true;
-    });
-    expect(calledNext).toBe(true);
-    expect(ctx.req.mtlsSerialNumber).toBe("DEVICE-1");
+    await expect(assertMtlsIdentity(req)).resolves.toBe("DEVICE-1");
   });
 
   it("respects env-configured (non-default) header names, proving the design isn't NPM/nginx-specific", async () => {
@@ -280,17 +250,13 @@ describe("verifyMtlsIdentity middleware — header/secret/revocation chain", () 
     process.env.MTLS_HEADER_CERT_CN = "X-Custom-CN";
     process.env.MTLS_HEADER_PROXY_SECRET = "X-Custom-Proxy-Secret";
     vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => ({ id: "cert-1" })) }));
-    const { verifyMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
-    const ctx = fakeReqRes({
+    const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
+    const req = fakeReq({
       "X-Custom-Proxy-Secret": "the-real-secret",
       "X-Custom-Verified": "SUCCESS",
       "X-Custom-CN": "DEVICE-1",
     });
-    let calledNext = false;
-    await verifyMtlsIdentity(ctx.req, ctx.res, () => {
-      calledNext = true;
-    });
-    expect(calledNext).toBe(true);
+    await expect(assertMtlsIdentity(req)).resolves.toBe("DEVICE-1");
 
     delete process.env.MTLS_HEADER_CERT_VERIFIED;
     delete process.env.MTLS_HEADER_CERT_CN;
@@ -364,5 +330,132 @@ describe("deviceMtls.service — register/renew identity-forcing behavior (persi
     await renewDevice("acme", { csrPem, serialNumber: "DEVICE-A" }, "DEVICE-A");
 
     expect(callOrder).toEqual(["supersede", "issue"]);
+  });
+});
+
+describe("mtlsEnforcement.service — the Phase C cutover flag", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("getMtlsEnforcementEnabled defaults to false when the workspace has no WorkspaceState row yet", async () => {
+    const findUnique = vi.fn(async () => null);
+    vi.doMock("../services/prisma", () => ({ prisma: { workspaceState: { findUnique } } }));
+    const { getMtlsEnforcementEnabled } = await import("../modules/mtls/mtlsEnforcement.service");
+    await expect(getMtlsEnforcementEnabled("acme")).resolves.toBe(false);
+  });
+
+  it("getMtlsEnforcementEnabled reflects the stored flag once a row exists", async () => {
+    const findUnique = vi.fn(async () => ({ mtlsEnforcementEnabled: true }));
+    vi.doMock("../services/prisma", () => ({ prisma: { workspaceState: { findUnique } } }));
+    const { getMtlsEnforcementEnabled } = await import("../modules/mtls/mtlsEnforcement.service");
+    await expect(getMtlsEnforcementEnabled("acme")).resolves.toBe(true);
+  });
+
+  it("refuses to enable enforcement when no CA is configured for the workspace yet — the fleet-lockout guard", async () => {
+    const findUniqueCa = vi.fn(async () => null);
+    const upsert = vi.fn();
+    vi.doMock("../services/prisma", () => ({
+      prisma: { certificateAuthority: { findUnique: findUniqueCa }, workspaceState: { upsert } },
+    }));
+    const { setMtlsEnforcementEnabled } = await import("../modules/mtls/mtlsEnforcement.service");
+    await expect(setMtlsEnforcementEnabled("acme", "tester", true)).rejects.toMatchObject({ statusCode: 400 });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("enables enforcement once a CA exists, upserting WorkspaceState and recording an audit event", async () => {
+    const findUniqueCa = vi.fn(async () => ({ workspaceSlug: "acme" }));
+    const upsert = vi.fn(async () => undefined);
+    const create = vi.fn(async () => ({ id: "log-1" }));
+    vi.doMock("../services/prisma", () => ({
+      prisma: { certificateAuthority: { findUnique: findUniqueCa }, workspaceState: { upsert }, auditLogEntry: { create } },
+    }));
+    const { setMtlsEnforcementEnabled } = await import("../modules/mtls/mtlsEnforcement.service");
+    await expect(setMtlsEnforcementEnabled("acme", "tester", true)).resolves.toEqual({ enabled: true });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { workspaceSlug: "acme" },
+      create: { workspaceSlug: "acme", mtlsEnforcementEnabled: true },
+      update: { mtlsEnforcementEnabled: true },
+    }));
+  });
+
+  it("disabling enforcement never checks for a CA — always allowed, to give an admin an escape hatch", async () => {
+    const findUniqueCa = vi.fn();
+    const upsert = vi.fn(async () => undefined);
+    vi.doMock("../services/prisma", () => ({
+      prisma: { certificateAuthority: { findUnique: findUniqueCa }, workspaceState: { upsert }, auditLogEntry: { create: vi.fn(async () => ({ id: "log-1" })) } },
+    }));
+    const { setMtlsEnforcementEnabled } = await import("../modules/mtls/mtlsEnforcement.service");
+    await expect(setMtlsEnforcementEnabled("acme", "tester", false)).resolves.toEqual({ enabled: false });
+    expect(findUniqueCa).not.toHaveBeenCalled();
+  });
+});
+
+describe("deviceData.service.verifyDeviceIdentity — Phase C enforcement-flag branching", () => {
+  // The combinator every one of the 6 device-caller routes now goes through
+  // (deviceData.controller.ts) instead of calling verifyDeviceReportSecret
+  // directly. These tests are the actual proof of the "hard cutover, never
+  // both accepted on the same request" property the rollout design depends
+  // on — see deviceData.service.ts's own doc comment on verifyDeviceIdentity.
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("flag OFF: authenticates via the legacy X-Device-Report-Secret and never calls assertMtlsIdentity", async () => {
+    vi.doMock("../modules/mtls/mtlsEnforcement.service", () => ({ getMtlsEnforcementEnabled: vi.fn(async () => false) }));
+    const assertMtlsIdentity = vi.fn();
+    vi.doMock("../middleware/mtlsIdentity.middleware", () => ({ assertMtlsIdentity }));
+    const findUnique = vi.fn(async () => ({ secret: "encrypted-blob" }));
+    vi.doMock("../services/prisma", () => ({ prisma: { deviceReportSecret: { findUnique } } }));
+    vi.doMock("../utils/secretCipher", () => ({ decryptSecret: vi.fn(() => "the-real-secret") }));
+
+    const { verifyDeviceIdentity } = await import("../modules/devices/deviceData.service");
+    const req = { header: (name: string) => (name === "X-Device-Report-Secret" ? "the-real-secret" : undefined) } as any;
+
+    await expect(verifyDeviceIdentity(req, "acme")).resolves.toBeUndefined();
+    expect(assertMtlsIdentity).not.toHaveBeenCalled();
+    expect(findUnique).toHaveBeenCalledWith({ where: { workspaceSlug: "acme" } });
+  });
+
+  it("flag OFF: still rejects a wrong legacy secret exactly as before Phase C", async () => {
+    vi.doMock("../modules/mtls/mtlsEnforcement.service", () => ({ getMtlsEnforcementEnabled: vi.fn(async () => false) }));
+    vi.doMock("../middleware/mtlsIdentity.middleware", () => ({ assertMtlsIdentity: vi.fn() }));
+    vi.doMock("../services/prisma", () => ({ prisma: { deviceReportSecret: { findUnique: vi.fn(async () => ({ secret: "encrypted-blob" })) } } }));
+    vi.doMock("../utils/secretCipher", () => ({ decryptSecret: vi.fn(() => "the-real-secret") }));
+
+    const { verifyDeviceIdentity } = await import("../modules/devices/deviceData.service");
+    const req = { header: () => "wrong-secret" } as any;
+    await expect(verifyDeviceIdentity(req, "acme")).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it("flag ON: delegates entirely to assertMtlsIdentity and never touches the legacy-secret table, even with no X-Device-Report-Secret header at all", async () => {
+    vi.doMock("../modules/mtls/mtlsEnforcement.service", () => ({ getMtlsEnforcementEnabled: vi.fn(async () => true) }));
+    const assertMtlsIdentity = vi.fn(async () => "DEVICE-1");
+    vi.doMock("../middleware/mtlsIdentity.middleware", () => ({ assertMtlsIdentity }));
+    const findUnique = vi.fn();
+    vi.doMock("../services/prisma", () => ({ prisma: { deviceReportSecret: { findUnique } } }));
+
+    const { verifyDeviceIdentity } = await import("../modules/devices/deviceData.service");
+    const req = { header: () => undefined } as any;
+    await expect(verifyDeviceIdentity(req, "acme")).resolves.toBeUndefined();
+    expect(assertMtlsIdentity).toHaveBeenCalledWith(req);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("flag ON: propagates assertMtlsIdentity's rejection instead of falling back to a validly-presented legacy secret — no dual-accept", async () => {
+    vi.doMock("../modules/mtls/mtlsEnforcement.service", () => ({ getMtlsEnforcementEnabled: vi.fn(async () => true) }));
+    const { HttpError } = await import("../utils/httpError");
+    vi.doMock("../middleware/mtlsIdentity.middleware", () => ({
+      assertMtlsIdentity: vi.fn(async () => {
+        throw new HttpError(401, "no active certificate");
+      }),
+    }));
+    const findUnique = vi.fn();
+    vi.doMock("../services/prisma", () => ({ prisma: { deviceReportSecret: { findUnique } } }));
+
+    const { verifyDeviceIdentity } = await import("../modules/devices/deviceData.service");
+    const req = { header: () => "some-legacy-secret-that-would-have-worked-before-cutover" } as any;
+    await expect(verifyDeviceIdentity(req, "acme")).rejects.toMatchObject({ statusCode: 401 });
+    expect(findUnique).not.toHaveBeenCalled();
   });
 });

@@ -120,6 +120,17 @@ model WorkspaceState {
   // override, defer to whatever's set in the registry on each device".
   eventDrivenDetectionEnabled       Boolean   @default(true)
   eventDrivenRemoteIntervalSec      Int?
+  // mTLS agent authentication (Phase C — cutover). Off by default,
+  // deliberately: unlike eventDrivenDetectionEnabled above, this is NOT a
+  // safe-to-default-on convenience toggle — flipping it to true changes
+  // what auth the 6 device-caller routes in deviceData.controller.ts
+  // require. See backend/docs/mtls-agent-auth-roadmap.md §7's rollout
+  // runbook: an admin only sets this once GET /api/mtls/certificates shows
+  // full fleet coverage, and mtls.service.ts's setMtlsEnforcementEnabled
+  // refuses to enable it at all if no CertificateAuthority is configured
+  // yet (that would lock out the entire fleet with no way back in except
+  // flipping this back off).
+  mtlsEnforcementEnabled            Boolean   @default(false)
   updatedAt                         DateTime  @updatedAt
 }
 

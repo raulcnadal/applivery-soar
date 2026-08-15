@@ -1,0 +1,403 @@
+<script setup lang="ts">
+// "mTLS Agent Authentication" tab — disclosed new feature, no main.py/App.jsx
+// equivalent. Admin surface for backend/docs/mtls-agent-auth-roadmap.md's
+// full Phase A-C build: the workspace's Certificate Authority (generate or
+// upload), one-time bootstrap tokens that let a device enroll for its own
+// client certificate, the resulting fleet of issued device certificates, and
+// the Phase C cutover switch that makes mTLS mandatory instead of optional
+// on the 6 device-caller routes (deviceData.controller.ts). Every mutating
+// action here requires the canManageMtlsCA risky-action flag
+// (rbac.middleware.ts / RoleDialog.vue) — replacing the CA or flipping
+// enforcement are exactly the class of consequential, hard-to-reverse action
+// that flag category exists for.
+import { computed, onMounted, reactive, ref } from "vue";
+import { Alert, Button, Input } from "@applivery/bluesky-vue";
+import { ICONS } from "../../lib/solarIcons";
+import { useAuthStore } from "../../stores/auth";
+import { useMtlsStore } from "../../stores/mtls";
+
+const store = useMtlsStore();
+const auth = useAuthStore();
+const canEdit = () => auth.hasRiskyAction("canManageMtlsCA");
+
+function fmt(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString();
+}
+
+// ── CA ──
+
+const showUploadForm = ref(false);
+const uploadForm = reactive({ certPem: "", privateKeyPem: "" });
+const uploadBusy = ref(false);
+const leafValidityInput = ref(90);
+const leafValidityDirty = ref(false);
+
+const caStatusColor = computed(() => (store.caStatus?.configured ? "bg-emerald-500" : "bg-amber-500"));
+
+async function doGenerateCa() {
+  const replace = Boolean(store.caStatus?.configured);
+  if (replace && !confirm("Replace the existing Certificate Authority? Every currently-issued device certificate's chain of trust becomes invalid immediately — devices will need to re-register with a fresh bootstrap token.")) {
+    return;
+  }
+  try {
+    await store.generateCa(replace);
+  } catch {
+    // Surfaced via store.caError in the template.
+  }
+}
+
+async function doUploadCa() {
+  const replace = Boolean(store.caStatus?.configured);
+  if (replace && !confirm("Replace the existing Certificate Authority with the uploaded pair? Every currently-issued device certificate's chain of trust becomes invalid immediately.")) {
+    return;
+  }
+  uploadBusy.value = true;
+  try {
+    await store.uploadCa(uploadForm.certPem, uploadForm.privateKeyPem, replace);
+    uploadForm.certPem = "";
+    uploadForm.privateKeyPem = "";
+    showUploadForm.value = false;
+  } catch {
+    // Surfaced via store.caError in the template.
+  } finally {
+    uploadBusy.value = false;
+  }
+}
+
+async function doSaveLeafValidity() {
+  try {
+    await store.setLeafValidityDays(Number(leafValidityInput.value));
+    leafValidityDirty.value = false;
+  } catch {
+    // Surfaced via store.caError in the template.
+  }
+}
+
+// ── Bootstrap tokens ──
+
+const mintMode = ref<"single" | "bulk">("single");
+const mintSerial = ref("");
+const mintSerialsBulk = ref("");
+const mintExpiresInDays = ref(7);
+
+async function doMint() {
+  if (mintMode.value === "single") {
+    if (!mintSerial.value.trim()) return;
+    await store.mintBootstrapToken(mintSerial.value.trim(), mintExpiresInDays.value);
+    mintSerial.value = "";
+  } else {
+    const serials = mintSerialsBulk.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (serials.length === 0) return;
+    await store.mintBootstrapTokensBulk(serials, mintExpiresInDays.value);
+    mintSerialsBulk.value = "";
+  }
+}
+
+function copyToken(token: string) {
+  navigator.clipboard.writeText(token);
+}
+
+async function doRevokeToken(id: string, serialNumber: string) {
+  if (!confirm(`Revoke the pending bootstrap token for "${serialNumber}"? It will no longer be able to register.`)) return;
+  await store.revokeBootstrapToken(id);
+}
+
+const TOKEN_STATUS_COLOR: Record<string, string> = {
+  pending: "bg-amber-500",
+  used: "bg-emerald-500",
+  expired: "bg-gray-400",
+};
+
+// ── Certificates ──
+
+const CERT_STATUS_COLOR: Record<string, string> = {
+  active: "bg-emerald-500",
+  "expiring-soon": "bg-amber-500",
+  expired: "bg-gray-400",
+  revoked: "bg-red-500",
+  superseded: "bg-gray-400",
+};
+
+async function doRevokeCert(id: string, serialNumber: string) {
+  const reason = prompt(`Revoke the device certificate for "${serialNumber}"? Enter a reason (this device goes dark until it re-registers):`);
+  if (!reason) return;
+  await store.revokeCertificate(id, reason);
+}
+
+// ── Enforcement ──
+
+async function doToggleEnforcement() {
+  const enabling = !store.enforcementEnabled;
+  const msg = enabling
+    ? "Enable mTLS enforcement for this workspace? Every device on the 6 report/status routes must present a valid client certificate from this point forward — any device that hasn't registered yet goes dark until it does."
+    : "Disable mTLS enforcement? The legacy X-Device-Report-Secret becomes acceptable again on the 6 device-caller routes.";
+  if (!confirm(msg)) return;
+  try {
+    await store.setEnforcement(enabling);
+  } catch {
+    // Surfaced via store.enforcementError in the template.
+  }
+}
+
+onMounted(async () => {
+  await store.fetchCaStatus();
+  await store.fetchBootstrapTokens();
+  await store.fetchCertificates();
+  await store.fetchEnforcement();
+});
+</script>
+
+<template>
+  <div class="space-y-6">
+    <div>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">mTLS Agent Authentication</h3>
+      <p class="text-[11px] leading-relaxed mb-3 text-gray-500 dark:text-gray-400">
+        Replaces the shared X-Device-Report-Secret with per-device client certificates: each device generates its own
+        keypair, enrolls once using a one-time bootstrap token below, and from then on authenticates with a short-lived
+        cert that renews itself automatically. The reverse proxy in front of this backend (nginx/NPM, Traefik, Caddy,
+        HAProxy — any TLS-terminating proxy) must be configured to request and forward the client cert per
+        backend/docs/mtls-agent-auth-roadmap.md §5.5. Fully additive until you flip enforcement on below.
+      </p>
+      <Alert v-if="!canEdit()" type="info">Your role doesn't have the canManageMtlsCA permission — every control below is read-only.</Alert>
+    </div>
+
+    <!-- Certificate Authority -->
+    <div>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Certificate Authority</h3>
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
+        <Alert v-if="store.caError" type="danger">{{ store.caError }}</Alert>
+        <p v-if="store.caLoading" class="text-xs text-gray-500 dark:text-gray-400">Checking status…</p>
+        <template v-else>
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full shrink-0" :class="caStatusColor" />
+            <span class="text-xs font-semibold text-gray-900 dark:text-white">
+              <template v-if="store.caStatus?.configured">CA configured ({{ store.caStatus.source }})</template>
+              <template v-else>No CA configured yet for this workspace</template>
+            </span>
+          </div>
+
+          <div v-if="store.caStatus?.configured" class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
+            <span>Key algorithm: <span class="font-mono text-gray-900 dark:text-white">{{ store.caStatus.keyAlgorithm }}</span></span>
+            <span>Leaf validity: <span class="font-mono text-gray-900 dark:text-white">{{ store.caStatus.leafValidityDays }} days</span></span>
+            <span>Valid from: {{ fmt(store.caStatus.notBefore) }}</span>
+            <span>Valid until: {{ fmt(store.caStatus.notAfter) }}</span>
+            <span v-if="store.caStatus.uploadedBy">Uploaded by: {{ store.caStatus.uploadedBy }}</span>
+            <span>Updated: {{ fmt(store.caStatus.updatedAt) }}</span>
+          </div>
+
+          <div v-if="store.caStatus?.configured" class="pt-1">
+            <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Leaf certificate validity (days, minimum 47)</label>
+            <div class="flex items-center gap-2">
+              <Input
+                v-model.number="leafValidityInput"
+                type="number"
+                min="47"
+                :disabled="!canEdit()"
+                class="w-28"
+                @update:model-value="leafValidityDirty = true"
+              />
+              <Button size="sm" variant="ghost" :disabled="!canEdit() || !leafValidityDirty" :loading="store.caBusy" @click="doSaveLeafValidity">Save</Button>
+            </div>
+            <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
+              Devices renew automatically once a third of this window remains — a shorter window means more frequent
+              renewal traffic. 90 days (60-day safety margin) is the default; 47 is the floor, chosen to stay ahead of
+              the CA/Browser Forum's trend toward shorter public TLS lifetimes.
+            </p>
+          </div>
+
+          <div class="flex flex-wrap justify-end gap-2 pt-1">
+            <Button variant="ghost" size="sm" :disabled="!canEdit()" @click="showUploadForm = !showUploadForm">
+              {{ showUploadForm ? "Cancel upload" : "Upload external CA" }}
+            </Button>
+            <Button size="sm" :disabled="!canEdit()" :loading="store.caBusy" @click="doGenerateCa">
+              {{ store.caStatus?.configured ? "Regenerate CA" : "Generate CA" }}
+            </Button>
+          </div>
+
+          <div v-if="showUploadForm" class="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
+            <p class="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
+              Paste a PEM-encoded CA certificate and its matching private key. The private key is encrypted at rest and
+              never returned by any endpoint after this.
+            </p>
+            <div>
+              <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">CA certificate (PEM)</label>
+              <textarea
+                v-model="uploadForm.certPem"
+                rows="4"
+                :disabled="!canEdit()"
+                class="w-full px-2 py-1.5 rounded-lg text-[10px] font-mono outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+                placeholder="-----BEGIN CERTIFICATE-----"
+              />
+            </div>
+            <div>
+              <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">CA private key (PEM)</label>
+              <textarea
+                v-model="uploadForm.privateKeyPem"
+                rows="4"
+                :disabled="!canEdit()"
+                class="w-full px-2 py-1.5 rounded-lg text-[10px] font-mono outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+                placeholder="-----BEGIN PRIVATE KEY-----"
+              />
+            </div>
+            <div class="flex justify-end">
+              <Button size="sm" :disabled="!canEdit() || !uploadForm.certPem || !uploadForm.privateKeyPem" :loading="uploadBusy" @click="doUploadCa">Upload &amp; replace</Button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Bootstrap tokens -->
+    <div>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Bootstrap Tokens</h3>
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
+        <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          A one-time password a device uses exactly once to enroll for its own certificate, bound to its serial number.
+          Deploy it via the same Managed Configuration channel as the legacy webhook secret (registry key / plist —
+          BootstrapToken field). Shown in full only once, right here, at mint time.
+        </p>
+        <Alert v-if="store.tokensError" type="danger">{{ store.tokensError }}</Alert>
+
+        <div v-if="store.lastMintedTokens.length > 0" class="p-3 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <p class="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">Copy these now — they won't be shown again</p>
+            <button type="button" class="text-[10px] text-gray-500 dark:text-gray-400 underline" @click="store.dismissMintedTokens">Dismiss</button>
+          </div>
+          <div v-for="t in store.lastMintedTokens" :key="t.id" class="flex items-center gap-1.5">
+            <code class="flex-1 min-w-0 px-2 py-1 rounded text-[10px] font-mono overflow-x-auto whitespace-nowrap bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white">
+              {{ t.serialNumber }}: {{ t.token }}
+            </code>
+            <button type="button" class="p-1.5 rounded border border-gray-200 dark:border-gray-700 shrink-0" @click="copyToken(t.token)">
+              <component :is="ICONS.Copy" :size="11" weight="Linear" />
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <button
+            v-for="m in ['single', 'bulk']"
+            :key="m"
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors"
+            :class="mintMode === m ? 'text-white bg-blue-500 border-blue-500' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'"
+            @click="mintMode = m as 'single' | 'bulk'"
+          >
+            {{ m === "single" ? "Single device" : "Bulk (multiple)" }}
+          </button>
+        </div>
+
+        <Input v-if="mintMode === 'single'" v-model="mintSerial" label="Device serial number" placeholder="PF3ABCDE" :disabled="!canEdit()" />
+        <div v-else>
+          <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Device serial numbers (one per line)</label>
+          <textarea
+            v-model="mintSerialsBulk"
+            rows="4"
+            :disabled="!canEdit()"
+            class="w-full px-2 py-1.5 rounded-lg text-xs font-mono outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+            placeholder="PF3ABCDE&#10;PF3FGHIJ"
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <Input v-model.number="mintExpiresInDays" type="number" min="1" max="30" label="Expires in (days)" class="w-32" :disabled="!canEdit()" />
+          <Button size="sm" class="mt-4" :disabled="!canEdit() || !store.caStatus?.configured" :loading="store.tokenBusy" @click="doMint">Mint</Button>
+        </div>
+        <Alert v-if="!store.caStatus?.configured" type="warning">Generate or upload a CA above first — tokens can't be minted without one.</Alert>
+
+        <div v-if="store.bootstrapTokens.length > 0" class="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-1.5">
+          <div v-for="t in store.bootstrapTokens" :key="t.id" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="TOKEN_STATUS_COLOR[t.status]" />
+                <span class="text-xs font-mono truncate text-gray-900 dark:text-white">{{ t.serialNumber }}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">{{ t.status }}</span>
+              </div>
+              <p class="text-[10px] text-gray-500 dark:text-gray-400">
+                Expires {{ fmt(t.expiresAt) }}<template v-if="t.usedAt"> · used {{ fmt(t.usedAt) }}</template><template v-if="t.createdBy"> · minted by {{ t.createdBy }}</template>
+              </p>
+            </div>
+            <button
+              v-if="t.status === 'pending'"
+              type="button"
+              class="p-1.5 rounded disabled:opacity-40 shrink-0"
+              style="color: #ef4444"
+              :disabled="!canEdit()"
+              @click="doRevokeToken(t.id, t.serialNumber)"
+            >
+              <component :is="ICONS.TrashBinMinimalistic" :size="13" weight="Linear" />
+            </button>
+          </div>
+        </div>
+        <p v-else-if="!store.tokensLoading" class="text-xs text-gray-500 dark:text-gray-400">No bootstrap tokens minted yet.</p>
+      </div>
+    </div>
+
+    <!-- Issued certificates -->
+    <div>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Issued Device Certificates</h3>
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2 max-w-2xl shadow-sm">
+        <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          The fleet-migration dashboard — check this covers every device before flipping enforcement on below.
+        </p>
+        <Alert v-if="store.certsError" type="danger">{{ store.certsError }}</Alert>
+        <div v-if="store.certificates.length > 0" class="space-y-1.5">
+          <div v-for="c in store.certificates" :key="c.id" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR[c.status]" />
+                <span class="text-xs font-mono truncate text-gray-900 dark:text-white">{{ c.serialNumber }}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">{{ c.status }}</span>
+              </div>
+              <p class="text-[10px] text-gray-500 dark:text-gray-400">
+                Issued {{ fmt(c.issuedAt) }} · valid until {{ fmt(c.notAfter) }}
+                <template v-if="c.revokedAt"> · revoked {{ fmt(c.revokedAt) }} ({{ c.revokedReason }})</template>
+              </p>
+            </div>
+            <button
+              v-if="c.status === 'active' || c.status === 'expiring-soon'"
+              type="button"
+              class="p-1.5 rounded disabled:opacity-40 shrink-0"
+              style="color: #ef4444"
+              :disabled="!canEdit()"
+              @click="doRevokeCert(c.id, c.serialNumber)"
+            >
+              <component :is="ICONS.TrashBinMinimalistic" :size="13" weight="Linear" />
+            </button>
+          </div>
+        </div>
+        <p v-else-if="!store.certsLoading" class="text-xs text-gray-500 dark:text-gray-400">No devices have registered yet.</p>
+      </div>
+    </div>
+
+    <!-- Enforcement cutover -->
+    <div>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Enforcement</h3>
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
+        <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          Off by default: both the legacy X-Device-Report-Secret and mTLS certificates work side by side, and each
+          device migrates independently the moment it registers. Turning this on is the hard cutover — the 6
+          device-caller routes stop accepting the legacy secret for this workspace entirely, and any device without a
+          valid certificate goes dark until it registers. There's no partial/dual-accept mode once this is on.
+        </p>
+        <Alert v-if="store.enforcementError" type="danger">{{ store.enforcementError }}</Alert>
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full shrink-0" :class="store.enforcementEnabled ? 'bg-red-500' : 'bg-emerald-500'" />
+          <span class="text-xs font-semibold text-gray-900 dark:text-white">
+            {{ store.enforcementEnabled ? "mTLS enforcement is ON — legacy secret rejected" : "mTLS enforcement is OFF — legacy secret still accepted" }}
+          </span>
+        </div>
+        <div class="flex justify-end">
+          <Button
+            size="sm"
+            :variant="store.enforcementEnabled ? 'ghost' : undefined"
+            :disabled="!canEdit() || (!store.enforcementEnabled && !store.caStatus?.configured)"
+            :loading="store.enforcementBusy"
+            @click="doToggleEnforcement"
+          >
+            {{ store.enforcementEnabled ? "Disable enforcement" : "Enable enforcement" }}
+          </Button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

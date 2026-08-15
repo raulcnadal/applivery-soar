@@ -9,10 +9,12 @@ import {
   bootstrapTokenBulkPayloadSchema,
   bootstrapTokenPayloadSchema,
   certificateRevokePayloadSchema,
+  mtlsEnforcementPayloadSchema,
 } from "./mtls.schemas";
 import { generateCa, getCaStatus, setLeafValidityDays, uploadCa } from "./ca.service";
 import { listBootstrapTokens, mintBootstrapToken, mintBootstrapTokensBulk, revokeBootstrapToken } from "./bootstrapTokens.service";
 import { listCertificates, revokeCertificate } from "./certificates.service";
+import { getMtlsEnforcementEnabled, setMtlsEnforcementEnabled } from "./mtlsEnforcement.service";
 
 /**
  * Admin-facing mTLS management — Settings > (new) mTLS panel. Dashboard-
@@ -91,4 +93,15 @@ mtlsRouter.post("/api/mtls/certificates/:id/revoke", ...manageMtls, asyncHandler
   const payload = certificateRevokePayloadSchema.parse(req.body);
   await revokeCertificate(workspaceOf(req), req.params.id, actorOf(req), payload.reason);
   res.json({ status: "ok" });
+}));
+
+// ── Enforcement (Phase C cutover switch) ──
+
+mtlsRouter.get("/api/mtls/enforcement", ...readMtls, asyncHandler(async (req, res) => {
+  res.json({ enabled: await getMtlsEnforcementEnabled(workspaceOf(req)) });
+}));
+
+mtlsRouter.put("/api/mtls/enforcement", ...manageMtls, asyncHandler(async (req, res) => {
+  const payload = mtlsEnforcementPayloadSchema.parse(req.body);
+  res.json(await setMtlsEnforcementEnabled(workspaceOf(req), actorOf(req), payload.enabled));
 }));

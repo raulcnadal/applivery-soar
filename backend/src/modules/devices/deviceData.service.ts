@@ -1,10 +1,13 @@
 import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
+import type { Request } from "express";
 import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
 import { HttpError } from "../../utils/httpError";
 import { decryptSecret } from "../../utils/secretCipher";
 import { liveCacheGet } from "../../services/liveCache";
 import { DEVICE_SERIAL_INDEX_SOURCE } from "./devices.service";
+import { assertMtlsIdentity } from "../../middleware/mtlsIdentity.middleware";
+import { getMtlsEnforcementEnabled } from "../mtls/mtlsEnforcement.service";
 
 // invalidateDevicesCache is loaded dynamically (not a static top-level
 // import) below, same as compliance.service.ts/workflows.service.ts's own
@@ -24,10 +27,15 @@ import { normalizePushedAttributes, type DeviceAppReportPayload, type DeviceRepo
  * The two device self-report webhooks a device's scheduled script POSTs to
  * — port of `report_device_data`/`report_device_apps` (main.py:7758-7804,
  * 9714-9804). Neither is dashboard-token protected: the caller is an
- * unattended script on an end-user device, not a logged-in admin. Auth is
- * entirely the X-Device-Report-Secret + X-Workspace-Slug header pair
- * (verifyDeviceReportSecret below), same trust model as Triggers'
- * /api/triggers/fire/{id}/{secret}.
+ * unattended script on an end-user device, not a logged-in admin. Auth was
+ * originally entirely the X-Device-Report-Secret + X-Workspace-Slug header
+ * pair (verifyDeviceReportSecret below), same trust model as Triggers'
+ * /api/triggers/fire/{id}/{secret} — as of mTLS Phase C, every device-caller
+ * route in this file (and the other 5 in deviceData.controller.ts) instead
+ * calls verifyDeviceIdentity, which branches on this workspace's
+ * mtlsEnforcementEnabled flag to require either a valid client certificate
+ * or this legacy secret, never both on the same request. See
+ * backend/docs/mtls-agent-auth-roadmap.md §7.
  */
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -47,6 +55,32 @@ export async function verifyDeviceReportSecret(workspaceSlug: string, providedSe
   if (!providedSecret || !timingSafeEqual(providedSecret, secret)) {
     throw new HttpError(401, "Invalid device-report secret");
   }
+}
+
+/**
+ * mTLS Phase C — the enforcement-aware combinator every one of the 6
+ * device-caller routes in deviceData.controller.ts now goes through instead
+ * of calling verifyDeviceReportSecret directly. See
+ * backend/docs/mtls-agent-auth-roadmap.md §7's rollout runbook: this
+ * workspace's mtlsEnforcementEnabled flag (mtlsEnforcement.service.ts)
+ * decides which auth this request must satisfy — the two modes are never
+ * both accepted on the same request, matching the "hard cutover" rollout
+ * mode confirmed for this feature. Devices themselves don't know or care
+ * which mode is active; a Windows Agent switches to presenting its client
+ * certificate the moment it holds one (mtls_windows.go's
+ * applyLegacyAuthIfNeeded), independent of whether the backend has flipped
+ * this flag yet — that's what makes the staged rollout (Phase B ships,
+ * fleet migrates, THEN this flag flips) safe: both auth paths coexist at
+ * the code level throughout, only the flag decides which one this specific
+ * workspace's backend will currently accept.
+ */
+export async function verifyDeviceIdentity(req: Request, workspaceSlug: string): Promise<void> {
+  const enforced = await getMtlsEnforcementEnabled(workspaceSlug);
+  if (enforced) {
+    await assertMtlsIdentity(req);
+    return;
+  }
+  await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
 }
 
 /**

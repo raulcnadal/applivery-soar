@@ -1,6 +1,8 @@
 import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
-import type { NextFunction, Request, Response } from "express";
+import type { Request } from "express";
 import { env } from "../config/env";
+import { HttpError } from "../utils/httpError";
+import { asyncHandler } from "../utils/asyncHandler";
 import { findActiveCertificate } from "../modules/mtls/certificates.service";
 
 /**
@@ -21,8 +23,15 @@ import { findActiveCertificate } from "../modules/mtls/certificates.service";
  *     this specific cert was revoked/superseded after issuance", which the
  *     proxy's own CRL checking may not catch depending on how it's set up.
  *
- * On success, attaches the verified serial number to the request as
- * `req.mtlsSerialNumber` for downstream handlers (see deviceMtls.controller.ts).
+ * `assertMtlsIdentity` is the reusable core (throws HttpError, matching this
+ * codebase's usual auth-check shape — see verifyDeviceReportSecret in
+ * deviceData.service.ts) — used two ways:
+ *  - directly, by deviceData.service.ts's Phase C enforcement-aware
+ *    verifyDeviceIdentity, alongside the legacy secret check;
+ *  - wrapped as `verifyMtlsIdentity` Express middleware (asyncHandler-based,
+ *    same as every other route in this app) for POST /api/device-mtls/renew,
+ *    which is unconditionally mTLS-only regardless of the enforcement flag —
+ *    there's no bootstrap-token fallback for renewal by design.
  */
 
 declare global {
@@ -45,31 +54,31 @@ function workspaceOf(req: Request): string {
   return req.header("X-Workspace-Slug") || "global";
 }
 
-export async function verifyMtlsIdentity(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function assertMtlsIdentity(req: Request): Promise<string> {
   if (!env.mtlsInternalProxySecret) {
-    res.status(503).json({ detail: "MTLS_INTERNAL_PROXY_SECRET is not configured for this deployment — mTLS enforcement is not active yet." });
-    return;
+    throw new HttpError(503, "MTLS_INTERNAL_PROXY_SECRET is not configured for this deployment — mTLS enforcement is not active yet.");
   }
   const providedProxySecret = req.header(env.mtlsHeaderProxySecret);
   if (!providedProxySecret || !timingSafeEqual(providedProxySecret, env.mtlsInternalProxySecret)) {
-    res.status(401).json({ detail: "Missing or invalid internal proxy secret." });
-    return;
+    throw new HttpError(401, "Missing or invalid internal proxy secret.");
   }
 
   const verified = req.header(env.mtlsHeaderCertVerified);
   const cn = req.header(env.mtlsHeaderCertCn);
   if (verified !== "SUCCESS" || !cn) {
-    res.status(401).json({ detail: "No verified client certificate identity was presented." });
-    return;
+    throw new HttpError(401, "No verified client certificate identity was presented.");
   }
 
   const workspaceSlug = workspaceOf(req);
   const activeCert = await findActiveCertificate(workspaceSlug, cn);
   if (!activeCert) {
-    res.status(401).json({ detail: "The presented client certificate is not a currently active certificate for this workspace (it may be revoked, superseded, or expired)." });
-    return;
+    throw new HttpError(401, "The presented client certificate is not a currently active certificate for this workspace (it may be revoked, superseded, or expired).");
   }
 
-  req.mtlsSerialNumber = cn;
-  next();
+  return cn;
 }
+
+export const verifyMtlsIdentity = asyncHandler(async (req, _res, next) => {
+  req.mtlsSerialNumber = await assertMtlsIdentity(req);
+  next();
+});

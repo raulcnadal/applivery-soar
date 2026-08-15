@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { deviceAppReportPayloadSchema, deviceReportPayloadSchema, eventNotifyPayloadSchema } from "./deviceData.schemas";
-import { getAgentStatus, handleEventNotify, reportDeviceApps, reportDeviceData, verifyDeviceReportSecret } from "./deviceData.service";
+import { getAgentStatus, handleEventNotify, reportDeviceApps, reportDeviceData, verifyDeviceIdentity } from "./deviceData.service";
 import { listEnabledChecksForAgent } from "../compliance/customChecks.service";
 import { getEventDrivenSettings, listEnabledWatchesForAgent } from "../compliance/eventWatches.service";
 import { forceEvaluateNow } from "../compliance/compliance.service";
@@ -18,7 +18,7 @@ deviceDataRouter.post(
   "/api/device-data/report",
   asyncHandler(async (req, res) => {
     const workspaceSlug = workspaceOf(req);
-    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    await verifyDeviceIdentity(req, workspaceSlug);
     const payload = deviceReportPayloadSchema.parse(req.body);
     res.json(await reportDeviceData(workspaceSlug, payload));
   }),
@@ -28,7 +28,7 @@ deviceDataRouter.post(
   "/api/device-data/report-apps",
   asyncHandler(async (req, res) => {
     const workspaceSlug = workspaceOf(req);
-    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    await verifyDeviceIdentity(req, workspaceSlug);
     const payload = deviceAppReportPayloadSchema.parse(req.body);
     res.json(await reportDeviceApps(workspaceSlug, payload));
   }),
@@ -46,7 +46,7 @@ deviceDataRouter.get(
   "/api/device-data/custom-checks",
   asyncHandler(async (req, res) => {
     const workspaceSlug = workspaceOf(req);
-    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    await verifyDeviceIdentity(req, workspaceSlug);
     const platform = typeof req.query.platform === "string" ? req.query.platform : "";
     if (platform !== "windows" && platform !== "macos") {
       res.status(400).json({ detail: "platform query param must be 'windows' or 'macos'" });
@@ -80,7 +80,7 @@ deviceDataRouter.post(
   "/api/device-data/evaluate-now",
   asyncHandler(async (req, res) => {
     const workspaceSlug = workspaceOf(req);
-    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    await verifyDeviceIdentity(req, workspaceSlug);
     res.json(await forceEvaluateNow(workspaceSlug));
   }),
 );
@@ -89,7 +89,7 @@ deviceDataRouter.get(
   "/api/device-data/agent-status",
   asyncHandler(async (req, res) => {
     const workspaceSlug = workspaceOf(req);
-    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    await verifyDeviceIdentity(req, workspaceSlug);
     const serialNumber = typeof req.query.serialNumber === "string" ? req.query.serialNumber.trim() : "";
     const platform = typeof req.query.platform === "string" ? req.query.platform : "";
     if (!serialNumber) {
@@ -120,7 +120,7 @@ deviceDataRouter.get(
   "/api/device-data/event-watches",
   asyncHandler(async (req, res) => {
     const workspaceSlug = workspaceOf(req);
-    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    await verifyDeviceIdentity(req, workspaceSlug);
     const platform = typeof req.query.platform === "string" ? req.query.platform : "";
     if (platform !== "windows") {
       res.status(400).json({ detail: "platform query param must be 'windows'" });
@@ -144,7 +144,7 @@ deviceDataRouter.post(
   "/api/device-data/event-notify",
   asyncHandler(async (req, res) => {
     const workspaceSlug = workspaceOf(req);
-    await verifyDeviceReportSecret(workspaceSlug, req.header("X-Device-Report-Secret"));
+    await verifyDeviceIdentity(req, workspaceSlug);
     const payload = eventNotifyPayloadSchema.parse(req.body);
     res.json(await handleEventNotify(workspaceSlug, payload));
   }),
