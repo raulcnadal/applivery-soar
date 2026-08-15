@@ -2,15 +2,19 @@ import type { Request } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * mTLS agent-authentication (Phase A) functional tests — see
- * backend/docs/mtls-agent-auth-roadmap.md. Boundary/route-gating coverage
- * (dashboard-token requirement, RBAC area/level/action) already lives in
- * authRequired.test.ts and rbacBoundary.test.ts; this file instead exercises
- * the actual security properties the design depends on:
+ * mTLS agent-authentication functional tests — see
+ * backend/docs/mtls-agent-auth-roadmap.md, including the Global Bootstrap
+ * Token addendum that replaced the original per-device Bootstrap Tokens and
+ * the Phase E self-service-mode addendum with one always-on mechanism.
+ * Boundary/route-gating coverage (dashboard-token requirement, RBAC
+ * area/level/action) already lives in authRequired.test.ts and
+ * rbacBoundary.test.ts; this file instead exercises the actual security
+ * properties the design depends on:
  *   - the CSR's own claimed CN is never trusted — the issued cert's CN is
- *     always forced to the identity the caller already proved (bootstrap
- *     token's bound serial, or the mTLS-authenticated renewal caller)
- *   - bootstrap tokens are truly one-shot and device-bound
+ *     always forced to the identity the caller already proved (the
+ *     request's own claimed serialNumber for register, or the
+ *     mTLS-authenticated renewal caller for renew)
+ *   - registerDevice's full token/anti-hijack/Applivery-known-device chain
  *   - the leaf-validity floor is enforced
  *   - verifyMtlsIdentity's full header/secret/revocation check chain
  */
@@ -93,61 +97,19 @@ describe("mtlsPki — crypto primitives (real @peculiar/x509, no mocks)", () => 
 });
 
 /**
- * NOTE on mocking `prisma` directly in these two describe blocks: the
- * shared setup.ts prisma mock is a Proxy whose `get` trap returns a BRAND
- * NEW `vi.fn()` on every single property access (by design — see its own
- * comment: it exists to make any Prisma call resolve to *something*
- * generic, not to support per-test `.mockResolvedValueOnce` overrides).
- * That means `prisma.deviceBootstrapToken.updateMany` in a test file and
- * the same expression evaluated inside application code are two entirely
- * different mock-function instances — configuring one has zero effect on
- * the other. Both blocks below instead `vi.doMock("../services/prisma", ...)`
+ * NOTE on mocking `prisma` directly below: the shared setup.ts prisma mock
+ * is a Proxy whose `get` trap returns a BRAND NEW `vi.fn()` on every single
+ * property access (by design — see its own comment: it exists to make any
+ * Prisma call resolve to *something* generic, not to support per-test
+ * `.mockResolvedValueOnce` overrides). That means `prisma.certificateAuthority.findUnique`
+ * in a test file and the same expression evaluated inside application code
+ * are two entirely different mock-function instances — configuring one has
+ * zero effect on the other. Blocks below instead `vi.doMock("../services/prisma", ...)`
  * with a small, STABLE local mock object (plain object literals, not a
  * Proxy) so the exact same `vi.fn()` reference is shared between the test's
  * setup and the service code under test — the only way to actually assert
  * on call counts/sequenced return values here.
  */
-
-describe("bootstrapTokens.service — one-shot, device-bound consumption", () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  it("consumeBootstrapToken succeeds once, then rejects a replay of the same token", async () => {
-    const updateMany = vi.fn();
-    vi.doMock("../services/prisma", () => ({ prisma: { deviceBootstrapToken: { updateMany } } }));
-    const { consumeBootstrapToken } = await import("../modules/mtls/bootstrapTokens.service");
-
-    // First call: the atomic updateMany claims exactly one row.
-    updateMany.mockResolvedValueOnce({ count: 1 });
-    await expect(consumeBootstrapToken("acme", "DEVICE-1", "plaintext-token")).resolves.toBeUndefined();
-
-    // Replay: the same WHERE clause (usedAt: null) no longer matches anything.
-    updateMany.mockResolvedValueOnce({ count: 0 });
-    await expect(consumeBootstrapToken("acme", "DEVICE-1", "plaintext-token")).rejects.toThrow(/invalid, expired, already-used/i);
-    expect(updateMany).toHaveBeenCalledTimes(2);
-  });
-
-  it("rejects a token bound to a DIFFERENT serialNumber than the request claims (matched entirely via the WHERE clause, before any CSR is even parsed)", async () => {
-    const updateMany = vi.fn(async () => ({ count: 0 }));
-    vi.doMock("../services/prisma", () => ({ prisma: { deviceBootstrapToken: { updateMany } } }));
-    const { consumeBootstrapToken } = await import("../modules/mtls/bootstrapTokens.service");
-
-    // The token exists and is valid, but was minted for DEVICE-A — a request
-    // claiming to be DEVICE-B can never match the WHERE clause's serialNumber
-    // filter, so updateMany affects 0 rows regardless of the token's own validity.
-    await expect(consumeBootstrapToken("acme", "DEVICE-B", "token-minted-for-device-a")).rejects.toThrow(/invalid, expired, already-used, or mismatched-device/i);
-    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ serialNumber: "DEVICE-B" }) }));
-  });
-
-  it("rejects a missing token outright, without touching the database", async () => {
-    const updateMany = vi.fn();
-    vi.doMock("../services/prisma", () => ({ prisma: { deviceBootstrapToken: { updateMany } } }));
-    const { consumeBootstrapToken } = await import("../modules/mtls/bootstrapTokens.service");
-    await expect(consumeBootstrapToken("acme", "DEVICE-1", undefined)).rejects.toThrow(/missing bootstrap token/i);
-    expect(updateMany).not.toHaveBeenCalled();
-  });
-});
 
 describe("ca.service — leaf validity floor", () => {
   beforeEach(() => {
@@ -270,31 +232,83 @@ describe("deviceMtls.service — register/renew identity-forcing behavior (persi
     vi.doUnmock("../modules/mtls/certificates.service");
   });
 
-  it("registerDevice issues a cert whose CN matches the token's bound serialNumber, never the CSR's own claimed CN", async () => {
+  it("registerDevice issues a cert whose CN matches the request's serialNumber, never the CSR's own claimed CN, once the token and Applivery both check out", async () => {
     const { generateCertificateAuthority, createTestCsr } = await import("../utils/mtlsPki");
     const x509 = await import("@peculiar/x509");
     const ca = await generateCertificateAuthority("acme");
 
-    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ consumeBootstrapToken: vi.fn(async () => undefined) }));
+    vi.doMock("../modules/mtls/globalBootstrapToken.service", () => ({ getGlobalBootstrapTokenStatus: vi.fn(async () => ({ configured: true, secret: "the-real-token" })) }));
+    const findActiveCertificate = vi.fn(async () => null);
+    const issueCertificateRecord = vi.fn(async () => undefined);
+    vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate, issueCertificateRecord, supersedeActiveCertificates: vi.fn(async () => undefined) }));
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
+    vi.doMock("../modules/devices/devices.service", () => ({
+      getDevicesFull: vi.fn(async () => ({ items: [{ serialNumber: "REAL-SERIAL-99", displayName: "Laptop 99" }], total: 1, fetchedAt: "now" })),
+    }));
     vi.doMock("../modules/mtls/ca.service", () => ({
       getCaForSigning: vi.fn(async () => ({ certPem: ca.certPem, privateKeyPem: ca.privateKeyPem, leafValidityDays: 90 })),
       claimNextSerial: vi.fn(async () => 7),
     }));
-    const issueCertificateRecord = vi.fn(async () => undefined);
-    vi.doMock("../modules/mtls/certificates.service", () => ({ issueCertificateRecord, supersedeActiveCertificates: vi.fn(async () => undefined) }));
 
     const { registerDevice } = await import("../modules/mtls/deviceMtls.service");
     const { csrPem } = await createTestCsr("whatever-the-agent-put-in-the-csr");
 
-    const result = await registerDevice("acme", { csrPem, serialNumber: "REAL-SERIAL-99" }, "some-bootstrap-token");
+    const result = await registerDevice("acme", { csrPem, serialNumber: "REAL-SERIAL-99" }, "the-real-token");
 
     const parsed = new x509.X509Certificate(result.certPem);
     expect(parsed.subject).toBe("CN=REAL-SERIAL-99");
     expect(issueCertificateRecord).toHaveBeenCalledWith(expect.objectContaining({ serialNumber: "REAL-SERIAL-99" }));
   });
 
+  it("registerDevice fails closed (503) when no global bootstrap token is configured for the workspace", async () => {
+    vi.doMock("../modules/mtls/globalBootstrapToken.service", () => ({ getGlobalBootstrapTokenStatus: vi.fn(async () => ({ configured: false, secret: null })) }));
+    const { registerDevice } = await import("../modules/mtls/deviceMtls.service");
+    await expect(registerDevice("acme", { csrPem: "x", serialNumber: "SN-1" }, "any-token")).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it("registerDevice rejects a wrong or missing token", async () => {
+    vi.doMock("../modules/mtls/globalBootstrapToken.service", () => ({ getGlobalBootstrapTokenStatus: vi.fn(async () => ({ configured: true, secret: "the-real-token" })) }));
+    const { registerDevice } = await import("../modules/mtls/deviceMtls.service");
+    await expect(registerDevice("acme", { csrPem: "x", serialNumber: "SN-1" }, "wrong-token")).rejects.toMatchObject({ statusCode: 401 });
+    await expect(registerDevice("acme", { csrPem: "x", serialNumber: "SN-1" }, undefined)).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it("CRITICAL: rejects a device that already has an active certificate, before ever calling out to Applivery — the anti-hijack backstop", async () => {
+    vi.doMock("../modules/mtls/globalBootstrapToken.service", () => ({ getGlobalBootstrapTokenStatus: vi.fn(async () => ({ configured: true, secret: "the-real-token" })) }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => ({ id: "cert-1" })) }));
+    const getDevicesFull = vi.fn();
+    vi.doMock("../modules/devices/devices.service", () => ({ getDevicesFull }));
+
+    const { registerDevice } = await import("../modules/mtls/deviceMtls.service");
+    await expect(registerDevice("acme", { csrPem: "x", serialNumber: "SN-1" }, "the-real-token")).rejects.toMatchObject({ statusCode: 409 });
+    expect(getDevicesFull).not.toHaveBeenCalled();
+  });
+
+  it("rejects a serial number Applivery doesn't currently recognize as an enrolled device", async () => {
+    vi.doMock("../modules/mtls/globalBootstrapToken.service", () => ({ getGlobalBootstrapTokenStatus: vi.fn(async () => ({ configured: true, secret: "the-real-token" })) }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => null) }));
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
+    vi.doMock("../modules/devices/devices.service", () => ({
+      getDevicesFull: vi.fn(async () => ({ items: [{ serialNumber: "SOME-OTHER-SN", displayName: "Other" }], total: 1, fetchedAt: "now" })),
+    }));
+
+    const { registerDevice } = await import("../modules/mtls/deviceMtls.service");
+    await expect(registerDevice("acme", { csrPem: "x", serialNumber: "SN-1" }, "the-real-token")).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it("registerDevice fails closed (503) when no Automation Credential is configured, without ever signing anything", async () => {
+    vi.doMock("../modules/mtls/globalBootstrapToken.service", () => ({ getGlobalBootstrapTokenStatus: vi.fn(async () => ({ configured: true, secret: "the-real-token" })) }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => null) }));
+    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => null) }));
+    const getDevicesFull = vi.fn();
+    vi.doMock("../modules/devices/devices.service", () => ({ getDevicesFull }));
+
+    const { registerDevice } = await import("../modules/mtls/deviceMtls.service");
+    await expect(registerDevice("acme", { csrPem: "x", serialNumber: "SN-1" }, "the-real-token")).rejects.toMatchObject({ statusCode: 503 });
+    expect(getDevicesFull).not.toHaveBeenCalled();
+  });
+
   it("renewDevice rejects when the request body's serialNumber doesn't match the mTLS-verified identity", async () => {
-    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ consumeBootstrapToken: vi.fn() }));
     vi.doMock("../modules/mtls/ca.service", () => ({ getCaForSigning: vi.fn(), claimNextSerial: vi.fn() }));
     vi.doMock("../modules/mtls/certificates.service", () => ({ issueCertificateRecord: vi.fn(), supersedeActiveCertificates: vi.fn() }));
 
@@ -310,7 +324,6 @@ describe("deviceMtls.service — register/renew identity-forcing behavior (persi
     const ca = await generateCertificateAuthority("acme");
 
     const callOrder: string[] = [];
-    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ consumeBootstrapToken: vi.fn() }));
     vi.doMock("../modules/mtls/ca.service", () => ({
       getCaForSigning: vi.fn(async () => {
         callOrder.push("issue");
@@ -460,114 +473,3 @@ describe("deviceData.service.verifyDeviceIdentity — Phase C enforcement-flag b
   });
 });
 
-describe("enrollmentCandidates.service — Applivery-fleet-backed bootstrap token picker", () => {
-  // Requested directly by the admin after using Phase C's UI: instead of
-  // typing serial numbers by hand into Settings > mTLS > Bootstrap Tokens,
-  // read the candidate list from Applivery UEM's own device fleet (which
-  // already knows every serial number) and merge in this workspace's
-  // existing cert/token status per device. The one-time, serial-bound token
-  // model itself (consumeBootstrapToken) is completely unchanged — this is
-  // purely an admin-UI convenience layer on top.
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  it("returns available:false with a reason when no automation credential is configured, and never touches Prisma", async () => {
-    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => null) }));
-    const getDevicesFull = vi.fn();
-    vi.doMock("../modules/devices/devices.service", () => ({ getDevicesFull }));
-
-    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
-    const result = await listEnrollmentCandidates("acme");
-
-    expect(result).toEqual({ available: false, reason: expect.stringMatching(/automation credential/i), items: [] });
-    expect(getDevicesFull).not.toHaveBeenCalled();
-  });
-
-  it("labels a device with no certificate and no pending token as 'none'", async () => {
-    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
-    vi.doMock("../modules/devices/devices.service", () => ({
-      getDevicesFull: vi.fn(async () => ({
-        items: [{ id: "dev-1", serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows" }],
-        total: 1,
-        fetchedAt: new Date().toISOString(),
-      })),
-    }));
-    vi.doMock("../modules/mtls/certificates.service", () => ({ listCertificates: vi.fn(async () => []) }));
-    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ listBootstrapTokens: vi.fn(async () => []) }));
-
-    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
-    const result = await listEnrollmentCandidates("acme");
-
-    expect(result.available).toBe(true);
-    expect(result.items).toEqual([{ serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows", mtlsStatus: "none" }]);
-  });
-
-  it("labels a device with a pending bootstrap token (and no certificate yet) as 'pending'", async () => {
-    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
-    vi.doMock("../modules/devices/devices.service", () => ({
-      getDevicesFull: vi.fn(async () => ({ items: [{ id: "dev-1", serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows" }], total: 1, fetchedAt: "now" })),
-    }));
-    vi.doMock("../modules/mtls/certificates.service", () => ({ listCertificates: vi.fn(async () => []) }));
-    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({
-      listBootstrapTokens: vi.fn(async () => [{ id: "tok-1", serialNumber: "SN-1", status: "pending", expiresAt: "later", usedAt: null, createdBy: "admin", createdAt: "now" }]),
-    }));
-
-    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
-    const result = await listEnrollmentCandidates("acme");
-    expect(result.items[0].mtlsStatus).toBe("pending");
-  });
-
-  it("prefers an active certificate's status over a stray pending token for the same device", async () => {
-    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
-    vi.doMock("../modules/devices/devices.service", () => ({
-      getDevicesFull: vi.fn(async () => ({ items: [{ id: "dev-1", serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows" }], total: 1, fetchedAt: "now" })),
-    }));
-    vi.doMock("../modules/mtls/certificates.service", () => ({
-      listCertificates: vi.fn(async () => [{ id: "cert-1", serialNumber: "SN-1", serialHex: "01", status: "active", notBefore: "then", notAfter: "later", supersededAt: null, revokedAt: null, revokedReason: null, issuedAt: "then" }]),
-    }));
-    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({
-      // A re-enrollment token minted while a cert is already active — should be ignored in favor of "active".
-      listBootstrapTokens: vi.fn(async () => [{ id: "tok-1", serialNumber: "SN-1", status: "pending", expiresAt: "later", usedAt: null, createdBy: "admin", createdAt: "now" }]),
-    }));
-
-    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
-    const result = await listEnrollmentCandidates("acme");
-    expect(result.items[0].mtlsStatus).toBe("active");
-  });
-
-  it("surfaces a historical (expired/revoked/superseded) certificate's status when there's no currently-active one", async () => {
-    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
-    vi.doMock("../modules/devices/devices.service", () => ({
-      getDevicesFull: vi.fn(async () => ({ items: [{ id: "dev-1", serialNumber: "SN-1", displayName: "Laptop 1", platform: "windows" }], total: 1, fetchedAt: "now" })),
-    }));
-    vi.doMock("../modules/mtls/certificates.service", () => ({
-      listCertificates: vi.fn(async () => [{ id: "cert-1", serialNumber: "SN-1", serialHex: "01", status: "revoked", notBefore: "then", notAfter: "later", supersededAt: null, revokedAt: "now", revokedReason: "lost device", issuedAt: "then" }]),
-    }));
-    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ listBootstrapTokens: vi.fn(async () => []) }));
-
-    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
-    const result = await listEnrollmentCandidates("acme");
-    expect(result.items[0].mtlsStatus).toBe("revoked");
-  });
-
-  it("filters out Applivery devices with no serial number reported yet", async () => {
-    vi.doMock("../modules/settings/automationCredential.service", () => ({ getAutomationBearer: vi.fn(async () => "Bearer xyz") }));
-    vi.doMock("../modules/devices/devices.service", () => ({
-      getDevicesFull: vi.fn(async () => ({
-        items: [
-          { id: "dev-1", serialNumber: "", displayName: "No serial yet", platform: "windows" },
-          { id: "dev-2", serialNumber: "SN-2", displayName: "Has a serial", platform: "windows" },
-        ],
-        total: 2,
-        fetchedAt: "now",
-      })),
-    }));
-    vi.doMock("../modules/mtls/certificates.service", () => ({ listCertificates: vi.fn(async () => []) }));
-    vi.doMock("../modules/mtls/bootstrapTokens.service", () => ({ listBootstrapTokens: vi.fn(async () => []) }));
-
-    const { listEnrollmentCandidates } = await import("../modules/mtls/enrollmentCandidates.service");
-    const result = await listEnrollmentCandidates("acme");
-    expect(result.items.map((i) => i.serialNumber)).toEqual(["SN-2"]);
-  });
-});

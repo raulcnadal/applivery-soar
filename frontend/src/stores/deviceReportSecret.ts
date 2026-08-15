@@ -41,26 +41,5 @@ export const useDeviceReportSecretStore = defineStore("deviceReportSecret", () =
     await fetchStatus();
   }
 
-  async function downloadScript(kind: "apps" | "security", platform: string, orgSlug: string) {
-    const { api } = await import("../api/http");
-    const path = kind === "apps" ? `/settings/device-report-scripts/${platform}` : `/settings/device-report-scripts-security/${platform}`;
-    const res = await api.get(path, { responseType: "text" });
-    const origin = window.location.origin;
-    const secret = status.value?.secret ?? "";
-    const webhookUrl = kind === "apps" ? `${origin}/api/device-data/report-apps` : `${origin}/api/device-data/report`;
-    const content = String(res.data)
-      .replaceAll("__WEBHOOK_URL__", webhookUrl)
-      .replaceAll("__WORKSPACE_SLUG__", orgSlug)
-      .replaceAll("__REPORT_SECRET__", secret);
-    const filename = `${kind}-${platform}.${platform === "windows" ? "ps1" : "sh"}`;
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return { status, isLoading, error, fetchStatus, rotate, clear, downloadScript };
+  return { status, isLoading, error, fetchStatus, rotate, clear };
 });

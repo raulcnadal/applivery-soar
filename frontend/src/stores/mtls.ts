@@ -4,11 +4,17 @@ import { ref } from "vue";
 /**
  * Settings > mTLS Agent Authentication — admin-facing store for the
  * backend's mtls.controller.ts routes (backend/docs/mtls-agent-auth-roadmap.md).
- * Covers CA lifecycle, bootstrap-token minting, issued-certificate visibility,
- * and the Phase C enforcement cutover flag. Same dynamic-import-per-action
- * shape as every other settings store (see deviceReportSecret.ts) — the
- * dashboard token + X-Workspace-Slug header are stamped on automatically by
- * api/http.ts's interceptor.
+ * Covers CA lifecycle, the single Global Bootstrap Token, issued-certificate
+ * visibility, the reverse-proxy config reference, and the Phase C
+ * enforcement cutover flag. Same dynamic-import-per-action shape as every
+ * other settings store (see deviceReportSecret.ts) — the dashboard token +
+ * X-Workspace-Slug header are stamped on automatically by api/http.ts's
+ * interceptor.
+ *
+ * Superseded the original per-device Bootstrap Tokens (Phase A/B/D) and the
+ * Phase E "self-service enrollment" shared-secret + mode addendum — both
+ * retired in favor of this single always-on mechanism (see
+ * globalBootstrapToken.service.ts's module doc on the backend).
  */
 
 export interface CaStatus {
@@ -21,23 +27,6 @@ export interface CaStatus {
   uploadedBy?: string | null;
   certPem?: string;
   updatedAt?: string;
-}
-
-export interface BootstrapTokenStatus {
-  id: string;
-  serialNumber: string;
-  status: "pending" | "used" | "expired";
-  expiresAt: string;
-  usedAt: string | null;
-  createdBy: string | null;
-  createdAt: string;
-}
-
-export interface MintedBootstrapToken {
-  id: string;
-  serialNumber: string;
-  token: string;
-  expiresAt: string;
 }
 
 export interface CertificateStatus {
@@ -53,32 +42,18 @@ export interface CertificateStatus {
   issuedAt: string;
 }
 
-export interface EnrollmentCandidate {
-  serialNumber: string;
-  displayName: string;
-  platform: string;
-  mtlsStatus: "none" | "pending" | "active" | "expiring-soon" | "expired" | "revoked" | "superseded";
-}
-
-export interface EnrollmentSecretStatus {
+export interface GlobalBootstrapTokenStatus {
   configured: boolean;
   secret: string | null;
   rotatedBy?: string | null;
   rotatedAt?: string | null;
 }
 
-export type SelfServiceMode = "disabled" | "silent" | "approval";
-
-export interface EnrollmentRequestSummary {
-  id: string;
-  serialNumber: string;
-  platform: string | null;
-  displayName: string | null;
-  status: "pending" | "approved" | "rejected";
-  requestedAt: string;
-  decidedBy: string | null;
-  decidedAt: string | null;
-  rejectionReason: string | null;
+export interface ProxyConfig {
+  headerCertVerified: string;
+  headerCertCn: string;
+  headerProxySecret: string;
+  proxySecretConfigured: boolean;
 }
 
 export const useMtlsStore = defineStore("mtls", () => {
@@ -87,44 +62,24 @@ export const useMtlsStore = defineStore("mtls", () => {
   const caError = ref<string | null>(null);
   const caBusy = ref(false);
 
-  const bootstrapTokens = ref<BootstrapTokenStatus[]>([]);
-  const tokensLoading = ref(false);
-  const tokensError = ref<string | null>(null);
-  const tokenBusy = ref(false);
-  // Plaintext tokens are only ever visible at mint time — held here just
-  // long enough for the panel to show a copy-once banner, never persisted.
-  const lastMintedTokens = ref<MintedBootstrapToken[]>([]);
-
   const certificates = ref<CertificateStatus[]>([]);
   const certsLoading = ref(false);
   const certsError = ref<string | null>(null);
   const certBusy = ref(false);
-
-  const enrollmentCandidates = ref<EnrollmentCandidate[]>([]);
-  const enrollmentCandidatesAvailable = ref<boolean | null>(null); // null = not fetched yet
-  const enrollmentCandidatesReason = ref<string | null>(null);
-  const enrollmentCandidatesLoading = ref(false);
-  const enrollmentCandidatesError = ref<string | null>(null);
 
   const enforcementEnabled = ref<boolean | null>(null);
   const enforcementLoading = ref(false);
   const enforcementError = ref<string | null>(null);
   const enforcementBusy = ref(false);
 
-  const enrollmentSecretStatus = ref<EnrollmentSecretStatus | null>(null);
-  const enrollmentSecretLoading = ref(false);
-  const enrollmentSecretError = ref<string | null>(null);
-  const enrollmentSecretBusy = ref(false);
+  const bootstrapTokenStatus = ref<GlobalBootstrapTokenStatus | null>(null);
+  const bootstrapTokenLoading = ref(false);
+  const bootstrapTokenError = ref<string | null>(null);
+  const bootstrapTokenBusy = ref(false);
 
-  const selfServiceMode = ref<SelfServiceMode | null>(null);
-  const selfServiceModeLoading = ref(false);
-  const selfServiceModeError = ref<string | null>(null);
-  const selfServiceModeBusy = ref(false);
-
-  const enrollmentRequests = ref<EnrollmentRequestSummary[]>([]);
-  const enrollmentRequestsLoading = ref(false);
-  const enrollmentRequestsError = ref<string | null>(null);
-  const enrollmentRequestBusy = ref(false);
+  const proxyConfig = ref<ProxyConfig | null>(null);
+  const proxyConfigLoading = ref(false);
+  const proxyConfigError = ref<string | null>(null);
 
   function errMsg(err: any, fallback: string): string {
     return err?.response?.data?.detail || fallback;
@@ -189,84 +144,47 @@ export const useMtlsStore = defineStore("mtls", () => {
     }
   }
 
-  async function fetchBootstrapTokens() {
-    tokensLoading.value = true;
-    tokensError.value = null;
+  async function fetchBootstrapTokenStatus() {
+    bootstrapTokenLoading.value = true;
+    bootstrapTokenError.value = null;
     try {
       const { api } = await import("../api/http");
-      const res = await api.get("/mtls/bootstrap-tokens");
-      bootstrapTokens.value = res.data.items;
+      const res = await api.get("/mtls/bootstrap-token");
+      bootstrapTokenStatus.value = res.data;
     } catch (err: any) {
-      tokensError.value = errMsg(err, "Failed to load bootstrap tokens.");
+      bootstrapTokenError.value = errMsg(err, "Failed to load the global bootstrap token status.");
     } finally {
-      tokensLoading.value = false;
+      bootstrapTokenLoading.value = false;
     }
   }
 
-  async function mintBootstrapToken(serialNumber: string, expiresInDays: number) {
-    tokenBusy.value = true;
-    tokensError.value = null;
+  async function rotateBootstrapToken() {
+    bootstrapTokenBusy.value = true;
+    bootstrapTokenError.value = null;
     try {
       const { api } = await import("../api/http");
-      const res = await api.post("/mtls/bootstrap-tokens", { serialNumber, expiresInDays });
-      lastMintedTokens.value = [res.data];
-      await fetchBootstrapTokens();
+      const res = await api.post("/mtls/bootstrap-token");
+      bootstrapTokenStatus.value = res.data;
     } catch (err: any) {
-      tokensError.value = errMsg(err, "Failed to mint bootstrap token.");
+      bootstrapTokenError.value = errMsg(err, "Failed to generate/rotate the global bootstrap token.");
       throw err;
     } finally {
-      tokenBusy.value = false;
+      bootstrapTokenBusy.value = false;
     }
   }
 
-  async function mintBootstrapTokensBulk(serialNumbers: string[], expiresInDays: number) {
-    tokenBusy.value = true;
-    tokensError.value = null;
+  async function clearBootstrapToken() {
+    bootstrapTokenBusy.value = true;
+    bootstrapTokenError.value = null;
     try {
       const { api } = await import("../api/http");
-      const res = await api.post("/mtls/bootstrap-tokens/bulk", { serialNumbers, expiresInDays });
-      lastMintedTokens.value = res.data.items;
-      await fetchBootstrapTokens();
+      await api.delete("/mtls/bootstrap-token");
+      await fetchBootstrapTokenStatus();
     } catch (err: any) {
-      tokensError.value = errMsg(err, "Failed to mint bootstrap tokens.");
+      bootstrapTokenError.value = errMsg(err, "Failed to remove the global bootstrap token.");
       throw err;
     } finally {
-      tokenBusy.value = false;
-    }
-  }
-
-  function dismissMintedTokens() {
-    lastMintedTokens.value = [];
-  }
-
-  async function revokeBootstrapToken(id: string) {
-    tokenBusy.value = true;
-    tokensError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      await api.delete(`/mtls/bootstrap-tokens/${id}`);
-      await fetchBootstrapTokens();
-    } catch (err: any) {
-      tokensError.value = errMsg(err, "Failed to revoke bootstrap token.");
-      throw err;
-    } finally {
-      tokenBusy.value = false;
-    }
-  }
-
-  async function fetchEnrollmentCandidates() {
-    enrollmentCandidatesLoading.value = true;
-    enrollmentCandidatesError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      const res = await api.get("/mtls/enrollment-candidates");
-      enrollmentCandidatesAvailable.value = res.data.available;
-      enrollmentCandidatesReason.value = res.data.reason ?? null;
-      enrollmentCandidates.value = res.data.items;
-    } catch (err: any) {
-      enrollmentCandidatesError.value = errMsg(err, "Failed to load the device fleet from Applivery.");
-    } finally {
-      enrollmentCandidatesLoading.value = false;
+      bootstrapTokenBusy.value = false;
     }
   }
 
@@ -328,141 +246,29 @@ export const useMtlsStore = defineStore("mtls", () => {
     }
   }
 
-  async function fetchEnrollmentSecretStatus() {
-    enrollmentSecretLoading.value = true;
-    enrollmentSecretError.value = null;
+  async function fetchProxyConfig() {
+    proxyConfigLoading.value = true;
+    proxyConfigError.value = null;
     try {
       const { api } = await import("../api/http");
-      const res = await api.get("/mtls/enrollment-secret");
-      enrollmentSecretStatus.value = res.data;
+      const res = await api.get("/mtls/proxy-config");
+      proxyConfig.value = res.data;
     } catch (err: any) {
-      enrollmentSecretError.value = errMsg(err, "Failed to load self-service enrollment secret status.");
+      proxyConfigError.value = errMsg(err, "Failed to load reverse-proxy configuration status.");
     } finally {
-      enrollmentSecretLoading.value = false;
-    }
-  }
-
-  async function rotateEnrollmentSecret() {
-    enrollmentSecretBusy.value = true;
-    enrollmentSecretError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      const res = await api.post("/mtls/enrollment-secret");
-      enrollmentSecretStatus.value = res.data;
-    } catch (err: any) {
-      enrollmentSecretError.value = errMsg(err, "Failed to generate/rotate the enrollment secret.");
-      throw err;
-    } finally {
-      enrollmentSecretBusy.value = false;
-    }
-  }
-
-  async function clearEnrollmentSecret() {
-    enrollmentSecretBusy.value = true;
-    enrollmentSecretError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      await api.delete("/mtls/enrollment-secret");
-      await fetchEnrollmentSecretStatus();
-      await fetchSelfServiceMode(); // clearing the secret force-resets mode to "disabled" server-side
-    } catch (err: any) {
-      enrollmentSecretError.value = errMsg(err, "Failed to remove the enrollment secret.");
-      throw err;
-    } finally {
-      enrollmentSecretBusy.value = false;
-    }
-  }
-
-  async function fetchSelfServiceMode() {
-    selfServiceModeLoading.value = true;
-    selfServiceModeError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      const res = await api.get("/mtls/self-service-mode");
-      selfServiceMode.value = res.data.mode;
-    } catch (err: any) {
-      selfServiceModeError.value = errMsg(err, "Failed to load self-service enrollment mode.");
-    } finally {
-      selfServiceModeLoading.value = false;
-    }
-  }
-
-  async function setSelfServiceMode(mode: SelfServiceMode) {
-    selfServiceModeBusy.value = true;
-    selfServiceModeError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      const res = await api.put("/mtls/self-service-mode", { mode });
-      selfServiceMode.value = res.data.mode;
-    } catch (err: any) {
-      selfServiceModeError.value = errMsg(err, "Failed to update self-service enrollment mode.");
-      throw err;
-    } finally {
-      selfServiceModeBusy.value = false;
-    }
-  }
-
-  async function fetchEnrollmentRequests(status?: string) {
-    enrollmentRequestsLoading.value = true;
-    enrollmentRequestsError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      const res = await api.get("/mtls/enrollment-requests", { params: status ? { status } : {} });
-      enrollmentRequests.value = res.data.items;
-    } catch (err: any) {
-      enrollmentRequestsError.value = errMsg(err, "Failed to load enrollment requests.");
-    } finally {
-      enrollmentRequestsLoading.value = false;
-    }
-  }
-
-  async function approveEnrollmentRequest(id: string) {
-    enrollmentRequestBusy.value = true;
-    enrollmentRequestsError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      await api.post(`/mtls/enrollment-requests/${id}/approve`);
-      await fetchEnrollmentRequests();
-      await fetchCertificates();
-    } catch (err: any) {
-      enrollmentRequestsError.value = errMsg(err, "Failed to approve enrollment request.");
-      throw err;
-    } finally {
-      enrollmentRequestBusy.value = false;
-    }
-  }
-
-  async function rejectEnrollmentRequest(id: string, reason: string) {
-    enrollmentRequestBusy.value = true;
-    enrollmentRequestsError.value = null;
-    try {
-      const { api } = await import("../api/http");
-      await api.post(`/mtls/enrollment-requests/${id}/reject`, { reason });
-      await fetchEnrollmentRequests();
-    } catch (err: any) {
-      enrollmentRequestsError.value = errMsg(err, "Failed to reject enrollment request.");
-      throw err;
-    } finally {
-      enrollmentRequestBusy.value = false;
+      proxyConfigLoading.value = false;
     }
   }
 
   return {
     caStatus, caLoading, caError, caBusy,
     fetchCaStatus, generateCa, uploadCa, setLeafValidityDays,
-    bootstrapTokens, tokensLoading, tokensError, tokenBusy, lastMintedTokens,
-    fetchBootstrapTokens, mintBootstrapToken, mintBootstrapTokensBulk, dismissMintedTokens, revokeBootstrapToken,
-    enrollmentCandidates, enrollmentCandidatesAvailable, enrollmentCandidatesReason, enrollmentCandidatesLoading, enrollmentCandidatesError,
-    fetchEnrollmentCandidates,
     certificates, certsLoading, certsError, certBusy,
     fetchCertificates, revokeCertificate,
     enforcementEnabled, enforcementLoading, enforcementError, enforcementBusy,
     fetchEnforcement, setEnforcement,
-    enrollmentSecretStatus, enrollmentSecretLoading, enrollmentSecretError, enrollmentSecretBusy,
-    fetchEnrollmentSecretStatus, rotateEnrollmentSecret, clearEnrollmentSecret,
-    selfServiceMode, selfServiceModeLoading, selfServiceModeError, selfServiceModeBusy,
-    fetchSelfServiceMode, setSelfServiceMode,
-    enrollmentRequests, enrollmentRequestsLoading, enrollmentRequestsError, enrollmentRequestBusy,
-    fetchEnrollmentRequests, approveEnrollmentRequest, rejectEnrollmentRequest,
+    bootstrapTokenStatus, bootstrapTokenLoading, bootstrapTokenError, bootstrapTokenBusy,
+    fetchBootstrapTokenStatus, rotateBootstrapToken, clearBootstrapToken,
+    proxyConfig, proxyConfigLoading, proxyConfigError, fetchProxyConfig,
   };
 });

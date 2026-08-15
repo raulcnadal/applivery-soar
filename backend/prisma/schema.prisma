@@ -131,14 +131,6 @@ model WorkspaceState {
   // yet (that would lock out the entire fleet with no way back in except
   // flipping this back off).
   mtlsEnforcementEnabled            Boolean   @default(false)
-  // Self-service enrollment (Phase E addendum) — "disabled" (default):
-  // /api/device-mtls/enroll rejects everything, only the per-device
-  // DeviceBootstrapToken path works. "approval": a request lands in
-  // DeviceEnrollmentRequest and waits for an admin to approve/reject it.
-  // "silent": issued immediately once the shared EnrollmentSecret and a
-  // currently-enrolled Applivery serial number both check out, no admin
-  // click. See mtlsEnrollment.service.ts's module doc.
-  mtlsSelfServiceMode                String    @default("disabled")
   updatedAt                         DateTime  @updatedAt
 }
 
@@ -1134,20 +1126,6 @@ model CertificateAuthority {
   updatedAt        DateTime @updatedAt
 }
 
-model DeviceBootstrapToken {
-  id            String    @id @default(uuid())
-  workspaceSlug String
-  serialNumber  String // the CSR's CN is always forced to this value on registration, never trusted from the CSR itself
-  tokenHash     String // SHA-256 of the plaintext token; the plaintext is shown to the admin exactly once and never stored
-  expiresAt     DateTime
-  usedAt        DateTime? // one-shot: set (in the same transaction as consumption) so a replay can never double-issue
-  createdBy     String?
-  createdAt     DateTime  @default(now())
-
-  @@unique([workspaceSlug, tokenHash])
-  @@index([workspaceSlug, serialNumber])
-}
-
 model DeviceCertificate {
   id            String    @id @default(uuid())
   workspaceSlug String
@@ -1165,46 +1143,26 @@ model DeviceCertificate {
   @@index([workspaceSlug, serialNumber])
 }
 
-model EnrollmentSecret {
+/**
+ * The single, workspace-wide mTLS enrollment credential (superseded both
+ * DeviceBootstrapToken's per-device one-time tokens and the Phase E
+ * "EnrollmentSecret" self-service addendum this table used to be — same
+ * columns, renamed table, existing data preserved by the migration). One
+ * value, deployed once via a single Managed Configuration push to the whole
+ * fleet (see registry_windows.go's BootstrapToken field / README). A device
+ * proves it's allowed to enroll with this token PLUS a live check that its
+ * claimed serial number is currently a known, enrolled device in this
+ * workspace's Applivery UEM fleet (deviceMtls.service.ts's
+ * assertKnownApplivertyDevice) — always issued immediately on success, no
+ * admin approval step (classic bootstrap-token semantics: unattended by
+ * design). A serial number that already has an active certificate can never
+ * be silently re-claimed (assertNotAlreadyActive) — the worst a leaked token
+ * enables is claiming a not-yet-enrolled device before its real owner does.
+ * Encrypted at rest (secretCipher), same treatment as DeviceReportSecret.
+ */
+model GlobalBootstrapToken {
   workspaceSlug String   @id
-  // Encrypted at rest (secretCipher), same treatment as DeviceReportSecret.
-  // Deliberately NOT per-device or one-time like DeviceBootstrapToken —
-  // this is meant to be deployed once via a single Managed Configuration
-  // push to the whole fleet. Possessing it is necessary but not sufficient
-  // to get a certificate: mtlsEnrollment.service.ts also requires the
-  // claimed serial number to be a currently-enrolled Applivery UEM device,
-  // and (unless mtlsSelfServiceMode is "silent") an admin's explicit
-  // approval. See mtls-agent-auth-roadmap.md's self-service enrollment
-  // addendum.
   secret        String
   rotatedBy     String?
   updatedAt     DateTime @updatedAt
-}
-
-/**
- * Self-service enrollment queue (Phase E addendum) — a device presenting
- * only the shared EnrollmentSecret (not a DeviceBootstrapToken) lands here
- * instead of getting a certificate immediately, unless the workspace's
- * mtlsSelfServiceMode is "silent". See mtlsEnrollment.service.ts.
- */
-model DeviceEnrollmentRequest {
-  id              String    @id @default(uuid())
-  workspaceSlug   String
-  serialNumber    String // the CSR's CN is always forced to this value on approval/issuance, never trusted from the CSR itself — same invariant as DeviceBootstrapToken's flow
-  platform        String?
-  displayName     String? // best-effort label from Applivery's live device list, purely for the admin approval queue's readability
-  csrPem          String    @db.Text
-  status          String    @default("pending") // "pending" | "approved" | "rejected"
-  requestedAt     DateTime  @default(now())
-  decidedBy       String?
-  decidedAt       DateTime?
-  rejectionReason String?
-
-  // At most one PENDING request per device at a time — a retrying/polling
-  // agent reuses the same row (mtlsEnrollment.service.ts upserts on this
-  // key) instead of piling up duplicates. A request created AFTER a
-  // decision (re-enrollment following a rejection, or after an admin
-  // revokes a previously-issued cert) is a fresh row with a fresh status.
-  @@unique([workspaceSlug, serialNumber, status])
-  @@index([workspaceSlug, status])
 }

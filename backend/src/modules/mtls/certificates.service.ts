@@ -99,22 +99,6 @@ export async function findActiveCertificate(workspaceSlug: string, serialNumber:
   return row ? { id: row.id } : null;
 }
 
-/**
- * Like findActiveCertificate, but also returns the cert material itself —
- * used by mtlsEnrollment.service.ts's poll endpoint (Phase E) to hand a
- * device its own just-approved certificate. Deliberately a separate
- * function from findActiveCertificate (used by assertMtlsIdentity on every
- * mTLS-gated request) rather than widening that one's return shape, to keep
- * the security-critical identity-check path's surface area minimal.
- */
-export async function getActiveCertificateMaterial(workspaceSlug: string, serialNumber: string): Promise<{ certPem: string; notAfter: string } | null> {
-  const row = await prisma.deviceCertificate.findFirst({
-    where: { workspaceSlug, serialNumber, revokedAt: null, supersededAt: null, notAfter: { gt: new Date() } },
-    orderBy: { issuedAt: "desc" },
-  });
-  return row ? { certPem: row.certPem, notAfter: row.notAfter.toISOString() } : null;
-}
-
 export async function revokeCertificate(workspaceSlug: string, id: string, actor: string, reason: string): Promise<void> {
   const row = await prisma.deviceCertificate.findUnique({ where: { id } });
   if (!row || row.workspaceSlug !== workspaceSlug) {

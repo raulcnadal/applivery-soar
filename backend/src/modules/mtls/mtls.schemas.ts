@@ -15,36 +15,12 @@ export const caLeafValidityPayloadSchema = z.object({
   leafValidityDays: z.number().int().min(MTLS_LEAF_VALIDITY_DAYS_FLOOR),
 });
 
-export const bootstrapTokenPayloadSchema = z.object({
-  serialNumber: z.string().min(1),
-  expiresInDays: z.number().int().min(1).max(30).optional().default(7),
-});
-
-export const bootstrapTokenBulkPayloadSchema = z.object({
-  serialNumbers: z.array(z.string().min(1)).min(1).max(500),
-  expiresInDays: z.number().int().min(1).max(30).optional().default(7),
-});
-
 export const certificateRevokePayloadSchema = z.object({
   reason: z.string().min(1),
 });
 
 export const mtlsEnforcementPayloadSchema = z.object({
   enabled: z.boolean(),
-});
-
-export const selfServiceModePayloadSchema = z.object({
-  mode: z.enum(["disabled", "silent", "approval"]),
-});
-
-export const enrollmentRequestRejectPayloadSchema = z.object({
-  reason: z.string().min(1),
-});
-
-export const deviceMtlsEnrollPayloadSchema = z.object({
-  csrPem: z.string().min(1),
-  serialNumber: z.string().min(1),
-  platform: z.string().optional(),
 });
 
 export const deviceMtlsRegisterPayloadSchema = z.object({

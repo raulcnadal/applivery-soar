@@ -2,36 +2,27 @@ import { Router } from "express";
 import { verifyDashboardToken } from "../../middleware/auth.middleware";
 import { requirePermission } from "../../middleware/rbac.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
-import {
-  caGeneratePayloadSchema,
-  caLeafValidityPayloadSchema,
-  caUploadPayloadSchema,
-  bootstrapTokenBulkPayloadSchema,
-  bootstrapTokenPayloadSchema,
-  certificateRevokePayloadSchema,
-  mtlsEnforcementPayloadSchema,
-  selfServiceModePayloadSchema,
-  enrollmentRequestRejectPayloadSchema,
-} from "./mtls.schemas";
+import { env } from "../../config/env";
+import { caGeneratePayloadSchema, caLeafValidityPayloadSchema, caUploadPayloadSchema, certificateRevokePayloadSchema, mtlsEnforcementPayloadSchema } from "./mtls.schemas";
 import { generateCa, getCaStatus, setLeafValidityDays, uploadCa } from "./ca.service";
-import { listBootstrapTokens, mintBootstrapToken, mintBootstrapTokensBulk, revokeBootstrapToken } from "./bootstrapTokens.service";
 import { listCertificates, revokeCertificate } from "./certificates.service";
 import { getMtlsEnforcementEnabled, setMtlsEnforcementEnabled } from "./mtlsEnforcement.service";
-import { listEnrollmentCandidates } from "./enrollmentCandidates.service";
-import { clearEnrollmentSecret, getEnrollmentSecretStatus, getSelfServiceMode, rotateEnrollmentSecret, setSelfServiceMode } from "./enrollmentSecret.service";
-import { approveEnrollmentRequest, listEnrollmentRequests, rejectEnrollmentRequest } from "./mtlsEnrollment.service";
+import { clearGlobalBootstrapToken, getGlobalBootstrapTokenStatus, rotateGlobalBootstrapToken } from "./globalBootstrapToken.service";
 
 /**
- * Admin-facing mTLS management — Settings > (new) mTLS panel. Dashboard-
- * token + RBAC gated, same shape as every other Settings sub-resource
- * (settings.controller.ts). The mutating routes additionally require the
- * `canManageMtlsCA` risky-action flag (rbac.middleware.ts) on top of
- * settings:manage — replacing the workspace's trust root, or minting/
- * revoking device credentials, is exactly the class of consequential action
- * that flag category exists for (mirrors canExportOrImportConfig).
+ * Admin-facing mTLS management — Settings > mTLS Agent Authentication.
+ * Dashboard-token + RBAC gated, same shape as every other Settings
+ * sub-resource (settings.controller.ts). The mutating routes additionally
+ * require the `canManageMtlsCA` risky-action flag (rbac.middleware.ts) on
+ * top of settings:manage — replacing the workspace's trust root, or
+ * rotating/clearing the fleet's bootstrap token, is exactly the class of
+ * consequential action that flag category exists for (mirrors
+ * canExportOrImportConfig).
  *
- * See backend/docs/mtls-agent-auth-roadmap.md §4.2 for the full route list
- * and rationale.
+ * See backend/docs/mtls-agent-auth-roadmap.md for the full route list and
+ * rationale, including the Global Bootstrap Token addendum that replaced
+ * the original per-device Bootstrap Tokens + Phase E self-service-mode
+ * design with this single always-on mechanism.
  */
 
 export const mtlsRouter = Router();
@@ -67,31 +58,18 @@ mtlsRouter.patch("/api/mtls/ca/leaf-validity", ...manageMtls, asyncHandler(async
   res.json(await setLeafValidityDays(workspaceOf(req), actorOf(req), payload.leafValidityDays));
 }));
 
-// ── Bootstrap tokens ──
+// ── Global Bootstrap Token — the single, workspace-wide enrollment credential ──
 
-mtlsRouter.get("/api/mtls/bootstrap-tokens", ...readMtls, asyncHandler(async (req, res) => {
-  res.json({ items: await listBootstrapTokens(workspaceOf(req)) });
+mtlsRouter.get("/api/mtls/bootstrap-token", ...readMtls, asyncHandler(async (req, res) => {
+  res.json(await getGlobalBootstrapTokenStatus(workspaceOf(req)));
 }));
 
-mtlsRouter.post("/api/mtls/bootstrap-tokens", ...manageMtls, asyncHandler(async (req, res) => {
-  const payload = bootstrapTokenPayloadSchema.parse(req.body);
-  res.json(await mintBootstrapToken(workspaceOf(req), actorOf(req), payload.serialNumber, payload.expiresInDays));
+mtlsRouter.post("/api/mtls/bootstrap-token", ...manageMtls, asyncHandler(async (req, res) => {
+  res.json(await rotateGlobalBootstrapToken(workspaceOf(req), actorOf(req)));
 }));
 
-mtlsRouter.post("/api/mtls/bootstrap-tokens/bulk", ...manageMtls, asyncHandler(async (req, res) => {
-  const payload = bootstrapTokenBulkPayloadSchema.parse(req.body);
-  res.json({ items: await mintBootstrapTokensBulk(workspaceOf(req), actorOf(req), payload.serialNumbers, payload.expiresInDays) });
-}));
-
-// "Pick devices to mint tokens for" — reads Applivery UEM's live fleet
-// instead of requiring the admin to type serial numbers by hand. See
-// enrollmentCandidates.service.ts's module doc.
-mtlsRouter.get("/api/mtls/enrollment-candidates", ...readMtls, asyncHandler(async (req, res) => {
-  res.json(await listEnrollmentCandidates(workspaceOf(req)));
-}));
-
-mtlsRouter.delete("/api/mtls/bootstrap-tokens/:id", ...manageMtls, asyncHandler(async (req, res) => {
-  await revokeBootstrapToken(workspaceOf(req), req.params.id, actorOf(req));
+mtlsRouter.delete("/api/mtls/bootstrap-token", ...manageMtls, asyncHandler(async (req, res) => {
+  await clearGlobalBootstrapToken(workspaceOf(req), actorOf(req));
   res.json({ status: "ok" });
 }));
 
@@ -118,41 +96,19 @@ mtlsRouter.put("/api/mtls/enforcement", ...manageMtls, asyncHandler(async (req, 
   res.json(await setMtlsEnforcementEnabled(workspaceOf(req), actorOf(req), payload.enabled));
 }));
 
-// ── Self-service enrollment (Phase E addendum) — shared secret + mode + approval queue ──
+// ── Reverse-proxy config reference (roadmap §5.5) — read-only, env-derived.
+// Never returns the internal proxy secret's actual value (the admin already
+// set it themselves as a deployment-time env var; echoing it back over the
+// admin API would just be unnecessary exposure of a bearer secret), only
+// whether it's configured at all — that boolean is the operationally
+// important thing to surface, since verifyMtlsIdentity fails closed (503)
+// on every mTLS-gated request until it's set.
 
-mtlsRouter.get("/api/mtls/enrollment-secret", ...readMtls, asyncHandler(async (req, res) => {
-  res.json(await getEnrollmentSecretStatus(workspaceOf(req)));
-}));
-
-mtlsRouter.post("/api/mtls/enrollment-secret", ...manageMtls, asyncHandler(async (req, res) => {
-  res.json(await rotateEnrollmentSecret(workspaceOf(req), actorOf(req)));
-}));
-
-mtlsRouter.delete("/api/mtls/enrollment-secret", ...manageMtls, asyncHandler(async (req, res) => {
-  await clearEnrollmentSecret(workspaceOf(req), actorOf(req));
-  res.json({ status: "ok" });
-}));
-
-mtlsRouter.get("/api/mtls/self-service-mode", ...readMtls, asyncHandler(async (req, res) => {
-  res.json({ mode: await getSelfServiceMode(workspaceOf(req)) });
-}));
-
-mtlsRouter.put("/api/mtls/self-service-mode", ...manageMtls, asyncHandler(async (req, res) => {
-  const payload = selfServiceModePayloadSchema.parse(req.body);
-  res.json(await setSelfServiceMode(workspaceOf(req), actorOf(req), payload.mode));
-}));
-
-mtlsRouter.get("/api/mtls/enrollment-requests", ...readMtls, asyncHandler(async (req, res) => {
-  const status = typeof req.query.status === "string" ? req.query.status : undefined;
-  res.json({ items: await listEnrollmentRequests(workspaceOf(req), status) });
-}));
-
-mtlsRouter.post("/api/mtls/enrollment-requests/:id/approve", ...manageMtls, asyncHandler(async (req, res) => {
-  res.json(await approveEnrollmentRequest(workspaceOf(req), req.params.id, actorOf(req)));
-}));
-
-mtlsRouter.post("/api/mtls/enrollment-requests/:id/reject", ...manageMtls, asyncHandler(async (req, res) => {
-  const payload = enrollmentRequestRejectPayloadSchema.parse(req.body);
-  await rejectEnrollmentRequest(workspaceOf(req), req.params.id, actorOf(req), payload.reason);
-  res.json({ status: "ok" });
+mtlsRouter.get("/api/mtls/proxy-config", ...readMtls, asyncHandler(async (_req, res) => {
+  res.json({
+    headerCertVerified: env.mtlsHeaderCertVerified,
+    headerCertCn: env.mtlsHeaderCertCn,
+    headerProxySecret: env.mtlsHeaderProxySecret,
+    proxySecretConfigured: Boolean(env.mtlsInternalProxySecret),
+  });
 }));

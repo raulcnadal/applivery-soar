@@ -54,51 +54,45 @@ Background jobs (the compliance evaluator, snapshot capture, [scheduled report s
 
 No permission gate — any signed-in admin can set the automation credential to be their own session.
 
-## Agent Deployment
-
-The single Managed Configuration generator for the whole fleet — combines the [Device Data Webhook](#device-data-webhook) secret and reporting
-toggles with an optional [mTLS](#mtls-agent-authentication) self-service enrollment secret into one downloadable/copyable bundle, instead of
-assembling both by hand.
-
-- **Prerequisites** — status of the device report secret (generate/rotate inline), the mTLS CA, and the self-service enrollment secret + mode
-  (read-only here; managed from their own tabs, linked inline).
-- **What this agent reports** — checkboxes for **App Inventory Reporting**, **Security Attestation Reporting**, and **mTLS Certificate Enrollment
-  (Windows only — the macOS agent has no mTLS support yet)**, plus the report interval.
-- **Download** — Windows Script (`.ps1`) / macOS Script (`.sh`) (recommended: paste into an Applivery Script resource and assign to a Policy for
-  zero-touch fleet push), or a manually-imported Windows `.reg` / macOS `.json`.
-
-Per-device bootstrap tokens are intentionally not part of this bundle (they can't be pushed via a single fleet-wide profile) — mint those
-individually from [mTLS Agent Authentication](#mtls-agent-authentication) instead.
-
 ## Device Data Webhook
 
-Lets a scheduled script running **on managed devices** push extra attributes (disk encryption, firewall status, patch level, etc.) that aren't available from Applivery's own data. Devices are matched by serial number. Once reported, these become usable as **Self-Reported Attribute** conditions in [Compliance Policies](compliance.md#conditions--the-full-field-catalog).
+The single place to get the native Windows/macOS agent onto a device — agent binary download/publish, what it reports, and one combined Managed
+Configuration bundle, instead of assembling everything by hand.
 
-- Shows the webhook URL (`POST {your-url}/api/device-data/report`) with the exact headers and an example JSON body, once a secret exists.
-- **Generate webhook secret** / **Rotate secret** (confirm-gated — rotating immediately breaks any script still using the old secret) / **Remove** (confirm-gated).
-- **App Inventory Reporting** sub-section — downloads ready-to-run macOS (`.sh`) / Windows (`.ps1`) scripts, pre-filled with your URL/workspace/secret, that push installed-app inventory (bundle IDs/versions, or winget package IDs/versions) — feeds [App List](compliance.md#app-lists-sub-view) conditions and [Vulnerability Service](#vulnerability-service) per-app CVE matching.
-- **Security Attestation Reporting** sub-section — downloads scripts reporting hardware/OS security posture: Secure Boot, VBS, Credential Guard, HVCI, BitLocker, TPM (Windows); FileVault, firewall, XProtect, Secure Token, screen lock (macOS). No Android/iOS equivalent exists — there's no way to run an unattended privileged script on those platforms.
+- **Applivery SOAR Agent** — download or publish the native agent binary for each platform/arch (no token required; an "Advanced" GitHub-token
+  path exists as an alternative source for the same binaries).
+- **Device Report Secret** — **Generate** / **Rotate** (confirm-gated — rotating immediately breaks any device still using the old secret) /
+  **Remove**. The baseline credential every device needs, included in the Managed Configuration bundle below.
+- **What This Agent Reports** — checkboxes for **App Inventory Reporting** (feeds [App List](compliance.md#app-lists-sub-view) conditions and
+  [Vulnerability Service](#vulnerability-service) per-app CVE matching) and **Security Attestation Reporting** (BitLocker/FileVault + firewall —
+  feeds Self-Reported Attribute compliance conditions), plus the report interval. If a [Global Bootstrap Token](#mtls-agent-authentication) is
+  configured, it's included in the Windows bundle automatically — no separate opt-in, since a device with an already-active certificate can never
+  be silently re-registered by it.
+- **Download Managed Configuration** — Windows Script (`.ps1`) / macOS Script (`.sh`) (recommended: paste into an Applivery Script resource and
+  assign to a Policy for zero-touch fleet push), or a manually-imported Windows `.reg` / macOS `.json`.
 
-Both script sections stay disabled until the webhook secret above exists. No permission gate.
+Stays disabled until the device report secret exists. No permission gate on this page itself (publishing to Applivery requires
+`canEditIntegrationSecrets`).
 
 ## mTLS Agent Authentication
 
 Replaces the shared `X-Device-Report-Secret` with per-device client certificates — each device gets its own keypair and a short-lived cert that
 renews itself automatically. Fully additive/opt-in until enforcement is turned on. Every mutating control requires the `canManageMtlsCA`
-permission.
+permission. Windows only today — the macOS Agent has no mTLS support yet.
 
 - **Certificate Authority** — generate one (choice of key algorithm, leaf validity) or upload an external CA cert + key.
-- **Bootstrap Tokens** — one-time, per-device tokens a device uses exactly once to enroll for its own certificate, bound to its serial number.
-  Recipients can be picked from Applivery's live device fleet instead of typing serial numbers manually.
-- **Self-Service Enrollment** — a shared, fleet-wide secret (not one-time) for zero-touch deployment via a single Managed Configuration push: a
-  device proves it belongs by presenting the secret plus a serial number Applivery currently recognizes as enrolled. Two modes: **Approval
-  required** (default — requests queue below for an admin to Approve/Reject) or **Silent** (issues immediately, no admin step). A serial number
-  that already has an active certificate can never be silently re-claimed by this path, even in Silent mode.
+- **Global Bootstrap Token** — one value, the SAME on every device in the fleet (not per-device, not one-time). A device proves it's allowed to
+  register with this token PLUS a live check that its own serial number is currently a known, enrolled device in this workspace's Applivery UEM
+  fleet — only devices Applivery already knows about can ever register. Issued immediately on success, no admin approval step. A device that
+  already has an active certificate can never be silently re-registered by it. Deployed automatically as part of
+  [Device Data Webhook](#device-data-webhook)'s combined download once generated here.
+- **Reverse Proxy Configuration** — the exact nginx/NPM config reference (with your workspace's actual header names) plus a live status check for
+  whether the internal proxy secret is configured on this backend. Required before enforcement below will work — without it, every mTLS-gated
+  request fails closed (503).
 - **Certificates** — issued fleet, with per-device status (active/expiring-soon/expired/revoked/superseded) and a **Revoke** action.
 - **Enforcement** — the cutover switch: once enabled, every device-caller route requires a valid client certificate and the legacy secret stops
-  being accepted for that workspace. Roll out the fleet first, then flip this — see `backend/docs/mtls-agent-auth-roadmap.md` for the full runbook.
-
-For a single combined download instead of assembling the report secret and enrollment secret separately, use [Agent Deployment](#agent-deployment).
+  being accepted for that workspace. Cuts off any macOS device on the workspace entirely (no mTLS support), not just unregistered Windows ones.
+  Roll out the fleet first, then flip this — see `backend/docs/mtls-agent-auth-roadmap.md` for the full runbook.
 
 ## Log Export
 

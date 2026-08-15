@@ -1,41 +1,39 @@
 <script setup lang="ts">
-// Device Data Webhook tab. Port of App.jsx:6108-6238 (Device Data Webhook +
-// App Inventory Reporting + Security Attestation Reporting cards) / main.py:
-// 7799-7897. The actual receiver endpoints (POST /api/device-data/report,
-// /report-apps) are backend's deviceData.controller.ts (Phase 8) — this
-// panel covers the secret lifecycle + script downloads.
+// Device Data Webhook tab — now the single place to get a fully-configured
+// native agent onto a device: download/publish the agent binary, pick what
+// it reports, and download one combined Managed Configuration bundle
+// (Windows .reg/.ps1, macOS .json/.sh) that includes the device-report
+// secret plus — automatically, once generated in mTLS Agent Authentication
+// — the workspace's Global Bootstrap Token. Deliberately does NOT surface
+// the raw webhook URL/headers/example-JSON (that's for an arbitrary
+// third-party script hitting the endpoint directly, not this agent) or the
+// old standalone App Inventory/Security Attestation cron-script downloads
+// (separate scheduled-script mechanisms that run outside the agent and
+// outside Managed Configuration entirely) — everything on this page is
+// either the agent binary itself or a value that lands in its Managed
+// Configuration.
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
+import { copyToClipboard } from "../../lib/clipboard";
 import { computed, onMounted, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
 import { useDeviceReportSecretStore } from "../../stores/deviceReportSecret";
+import { useMtlsStore } from "../../stores/mtls";
 import { AGENT_VARIANTS, useAgentDownloadsStore, variantKey, type AgentAsset, type AgentVariant } from "../../stores/agentDownloads";
 
 const emit = defineEmits<{ goToTab: [id: string] }>();
 
 const store = useDeviceReportSecretStore();
+const mtls = useMtlsStore();
 const auth = useAuthStore();
 const agentStore = useAgentDownloadsStore();
 const busy = ref(false);
-const downloading = ref<string | null>(null);
-const downloadingSecurity = ref<string | null>(null);
 
 const canEdit = () => auth.hasRiskyAction("canEditIntegrationSecrets");
 const githubTokenInput = ref("");
 const tokenBusy = ref(false);
 const tokenSaved = ref(false);
 const downloadingAsset = ref<number | null>(null);
-
-const webhookUrl = computed(() => `${window.location.origin}/api/device-data/report`);
-const exampleJsonBody = `{
-  "platform": "windows",
-  "serialNumber": "PF3ABCDE",
-  "attributes": {
-    "BitLockerStatus": true,
-    "FirewallEnabled": true,
-    "OsBuild": "22631.3527"
-  }
-}`;
 
 async function rotate() {
   busy.value = true;
@@ -45,33 +43,11 @@ async function clear() {
   busy.value = true;
   try { await store.clear(); } finally { busy.value = false; }
 }
-async function download(kind: "apps" | "security", platform: string) {
-  if (kind === "apps") downloading.value = platform;
-  else downloadingSecurity.value = platform;
-  try {
-    await store.downloadScript(kind, platform, auth.orgSlug ?? "global");
-  } finally {
-    if (kind === "apps") downloading.value = null;
-    else downloadingSecurity.value = null;
-  }
-}
-function copyUrl() {
-  navigator.clipboard.writeText(webhookUrl.value);
-}
-function copyHeaders() {
-  const secret = store.status?.secret ?? "";
-  navigator.clipboard.writeText(`X-Workspace-Slug: ${auth.orgSlug}\nX-Device-Report-Secret: ${secret}`);
-}
 
-// Report interval — how often the Windows/macOS native agent wakes up to
-// report attributes + (if enabled) app inventory. Both agents already read
-// this from Managed Configuration each cycle (registry_windows.go /
-// config.go); the only thing that ever hardcoded 3600s was this snippet
-// generator. Floor of 1 minute mirrors both agents' own client-side clamp
-// (any value under 30s silently falls back to their built-in 3600s
-// default — see each repo's README "values under 30 fall back to the
-// default" row) with a little headroom so a typo like "20" (seconds
-// mistaken for minutes) doesn't silently no-op.
+// ── What this agent reports ──
+const includeAppInventory = ref(true);
+const includeSecurityAttestation = ref(true);
+
 const REPORT_INTERVAL_MIN_MINUTES = 1;
 const REPORT_INTERVAL_MAX_MINUTES = 1440;
 const REPORT_INTERVAL_WARN_BELOW_MINUTES = 5;
@@ -82,79 +58,82 @@ const reportIntervalSeconds = computed(() => {
 });
 const reportIntervalWarning = computed(() => reportIntervalMinutes.value > 0 && reportIntervalMinutes.value < REPORT_INTERVAL_WARN_BELOW_MINUTES);
 
-// IntervalSec changes only take effect after the agent service restarts —
-// it's read once at process start to size the reporting ticker (see
-// runAgentLoop's doc comment in telemetry_windows.go/telemetry_macos.go),
-// unlike every other Managed Configuration key which is re-read every
-// cycle. Surfaced in the UI copy below so lowering this doesn't look like
-// it silently did nothing.
-function secondsToRegDword(seconds: number): string {
-  return `dword:${Math.max(0, Math.round(seconds)).toString(16).padStart(8, "0")}`;
+// ── mTLS bootstrap token (Windows only — see note in template) ──
+// Automatically included in the Windows snippet the moment it's configured
+// in mTLS Agent Authentication — no separate opt-in checkbox here, since a
+// device that already has an active certificate can never be silently
+// re-registered, so including it is never harmful even for an
+// already-enrolled device.
+const bootstrapTokenAvailable = computed(() => Boolean(mtls.bootstrapTokenStatus?.configured));
+
+function boolToRegDword(value: boolean): string {
+  return `dword:${value ? "00000001" : "00000000"}`;
 }
 
-// Managed Configuration snippets for the native agents — generated entirely
-// client-side, same trust model as downloadScript() above: the plaintext
-// secret is already sitting in store.status.secret, nothing new to fetch.
-// The agent binaries themselves carry no workspace-specific data (see each
-// repo's fix for the hardcoded-secret issue) — only these snippets do.
 const windowsRegSnippet = computed(() => {
-  const secret = store.status?.secret ?? "";
-  return `Windows Registry Editor Version 5.00
-
-[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Applivery\\SOAR]
-"BaseURL"="${window.location.origin}"
-"WorkspaceSlug"="${auth.orgSlug}"
-"ReportSecret"="${secret}"
-"ReportBitLocker"=dword:00000001
-"ReportFirewall"=dword:00000001
-"ReportApps"=dword:00000001
-"IntervalSec"=${secondsToRegDword(reportIntervalSeconds.value)}
-`;
+  const reportSecret = store.status?.secret ?? "";
+  const lines = [
+    `Windows Registry Editor Version 5.00`,
+    ``,
+    `[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Applivery\\SOAR]`,
+    `"BaseURL"="${window.location.origin}"`,
+    `"WorkspaceSlug"="${auth.orgSlug}"`,
+    `"ReportSecret"="${reportSecret}"`,
+    `"ReportBitLocker"=${boolToRegDword(includeSecurityAttestation.value)}`,
+    `"ReportFirewall"=${boolToRegDword(includeSecurityAttestation.value)}`,
+    `"ReportApps"=${boolToRegDword(includeAppInventory.value)}`,
+    `"IntervalSec"=dword:${reportIntervalSeconds.value.toString(16).padStart(8, "0")}`,
+  ];
+  if (bootstrapTokenAvailable.value) {
+    lines.push(`"BootstrapToken"="${mtls.bootstrapTokenStatus?.secret ?? ""}"`);
+  }
+  return lines.join("\n") + "\n";
 });
-const macosConfigSnippet = computed(() => {
-  const secret = store.status?.secret ?? "";
-  return JSON.stringify(
+const macosConfigSnippet = computed(() =>
+  JSON.stringify(
     {
       base_url: window.location.origin,
       workspace_slug: auth.orgSlug,
-      report_secret: secret,
+      report_secret: store.status?.secret ?? "",
       interval_sec: reportIntervalSeconds.value,
-      report_bitlocker: true,
-      report_firewall: true,
-      report_apps: true,
+      report_bitlocker: includeSecurityAttestation.value,
+      report_firewall: includeSecurityAttestation.value,
+      report_apps: includeAppInventory.value,
     },
     null,
     2,
-  );
-});
+  ),
+);
 // Applivery-native counterparts to the .reg/.json snippets above — instead
 // of a manually-imported file, these are ready to paste into Applivery
 // Dashboard > Resources > Scripts > Create Script, then assign to the
 // Policy covering the fleet (Scope: Machine, Execution: Once). Deploys to
-// every enrolled device at next sync — no per-device manual step, no UEM
-// custom-OMA-URI/ADMX authoring needed, since the agents already just read
-// a registry key / JSON file rather than a proper managed-preferences
-// domain.
+// every enrolled device at next sync — no per-device manual step.
 const windowsScriptSnippet = computed(() => {
-  const secret = store.status?.secret ?? "";
-  return `# Applivery SOAR Agent — Managed Configuration (PowerShell)
-# Deploy: Applivery Dashboard > Resources > Scripts > Create Script (language: PowerShell),
-# paste this, then assign it to the Policy covering this fleet — Scope: Machine, Execution: Once.
-$ErrorActionPreference = "Stop"
-$regPath = "HKLM:\\SOFTWARE\\Policies\\Applivery\\SOAR"
-New-Item -Path $regPath -Force | Out-Null
-Set-ItemProperty -Path $regPath -Name "BaseURL" -Value "${window.location.origin}" -Type String
-Set-ItemProperty -Path $regPath -Name "WorkspaceSlug" -Value "${auth.orgSlug}" -Type String
-Set-ItemProperty -Path $regPath -Name "ReportSecret" -Value "${secret}" -Type String
-Set-ItemProperty -Path $regPath -Name "ReportBitLocker" -Value 1 -Type DWord
-Set-ItemProperty -Path $regPath -Name "ReportFirewall" -Value 1 -Type DWord
-Set-ItemProperty -Path $regPath -Name "ReportApps" -Value 1 -Type DWord
-Set-ItemProperty -Path $regPath -Name "IntervalSec" -Value ${reportIntervalSeconds.value} -Type DWord
-Write-Host "Applivery SOAR Agent managed configuration applied."
-`;
+  const reportSecret = store.status?.secret ?? "";
+  const lines = [
+    `# Applivery SOAR Agent — Managed Configuration (PowerShell)`,
+    `# Deploy: Applivery Dashboard > Resources > Scripts > Create Script (language: PowerShell),`,
+    `# paste this, then assign it to the Policy covering this fleet — Scope: Machine, Execution: Once.`,
+    `$ErrorActionPreference = "Stop"`,
+    `$regPath = "HKLM:\\SOFTWARE\\Policies\\Applivery\\SOAR"`,
+    `New-Item -Path $regPath -Force | Out-Null`,
+    `Set-ItemProperty -Path $regPath -Name "BaseURL" -Value "${window.location.origin}" -Type String`,
+    `Set-ItemProperty -Path $regPath -Name "WorkspaceSlug" -Value "${auth.orgSlug}" -Type String`,
+    `Set-ItemProperty -Path $regPath -Name "ReportSecret" -Value "${reportSecret}" -Type String`,
+    `Set-ItemProperty -Path $regPath -Name "ReportBitLocker" -Value ${includeSecurityAttestation.value ? 1 : 0} -Type DWord`,
+    `Set-ItemProperty -Path $regPath -Name "ReportFirewall" -Value ${includeSecurityAttestation.value ? 1 : 0} -Type DWord`,
+    `Set-ItemProperty -Path $regPath -Name "ReportApps" -Value ${includeAppInventory.value ? 1 : 0} -Type DWord`,
+    `Set-ItemProperty -Path $regPath -Name "IntervalSec" -Value ${reportIntervalSeconds.value} -Type DWord`,
+  ];
+  if (bootstrapTokenAvailable.value) {
+    lines.push(`Set-ItemProperty -Path $regPath -Name "BootstrapToken" -Value "${mtls.bootstrapTokenStatus?.secret ?? ""}" -Type String`);
+  }
+  lines.push(`Write-Host "Applivery SOAR Agent managed configuration applied."`);
+  return lines.join("\n") + "\n";
 });
-const macosScriptSnippet = computed(() => {
-  return `#!/bin/bash
+const macosScriptSnippet = computed(
+  () => `#!/bin/bash
 # Applivery SOAR Agent — Managed Configuration (shell)
 # Deploy: Applivery Dashboard > Resources > Scripts > Create Script (language: Shell/Bash),
 # paste this, then assign it to the Policy covering this fleet — Scope: Machine, Execution: Once.
@@ -165,8 +144,8 @@ ${macosConfigSnippet.value}
 SOAR_EOF
 chmod 644 /Library/Preferences/es.mi-labs.soar.agent.json
 echo "Applivery SOAR Agent managed configuration applied."
-`;
-});
+`,
+);
 
 type SnippetKind = "windows-reg" | "windows-script" | "macos-json" | "macos-script";
 const SNIPPET_FILENAMES: Record<SnippetKind, string> = {
@@ -190,8 +169,17 @@ function downloadSnippet(kind: SnippetKind) {
   a.click();
   URL.revokeObjectURL(url);
 }
-function copySnippet(kind: SnippetKind) {
-  navigator.clipboard.writeText(snippetContent(kind));
+const copiedKind = ref<SnippetKind | null>(null);
+async function copySnippet(kind: SnippetKind) {
+  const ok = await copyToClipboard(snippetContent(kind));
+  if (ok) {
+    copiedKind.value = kind;
+    setTimeout(() => {
+      if (copiedKind.value === kind) copiedKind.value = null;
+    }, 2000);
+  } else {
+    alert("Couldn't copy automatically — this usually happens when the dashboard is loaded over plain HTTP instead of HTTPS. Select the text above and copy it manually (Ctrl/Cmd+C).");
+  }
 }
 
 async function saveGithubToken() {
@@ -244,6 +232,7 @@ const platformLabels: Record<string, string> = {
 
 onMounted(async () => {
   await store.fetchStatus();
+  await mtls.fetchBootstrapTokenStatus();
   await agentStore.fetchBuildMeta();
   await agentStore.fetchPublishStatus();
   await agentStore.fetchConfig();
@@ -253,19 +242,14 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-6">
-    <Alert type="info">
-      Deploying to a new fleet? <button type="button" class="underline font-semibold" @click="emit('goToTab', 'agent-deployment')">Agent Deployment</button>
-      assembles the secret below plus reporting toggles and (optionally) mTLS identity into one combined Managed Configuration download.
-    </Alert>
     <div>
       <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Applivery SOAR Agent</h3>
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
         <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-          The dedicated native agent (Windows Service / macOS LaunchDaemon) that supersedes the App Inventory and Security
-          Attestation scripts below — one persistent, scheduled process instead of two cron/Task Scheduler jobs. Every build
-          is downloadable below with no token or login required, same as pulling a public Docker image. The workspace secret
-          is never baked into the binary — it's delivered separately via the Managed Configuration snippet, pushed by your
-          UEM/MDM or installed by hand.
+          The dedicated native agent (Windows Service / macOS LaunchDaemon) — one persistent, scheduled process. Every
+          build is downloadable below with no token or login required, same as pulling a public Docker image. No
+          workspace-specific data is ever baked into the binary — it's delivered separately via the Managed
+          Configuration bundle further down, pushed by your UEM/MDM or installed by hand.
         </p>
         <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — publishing to Applivery is disabled.</Alert>
         <Alert v-if="agentStore.buildsError" type="danger">{{ agentStore.buildsError }}</Alert>
@@ -317,113 +301,59 @@ onMounted(async () => {
 
             <p v-if="!agentStore.config" class="text-xs text-gray-500 dark:text-gray-400">Checking status…</p>
             <template v-else>
-          <div class="flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full shrink-0" :class="agentStore.config.configured ? 'bg-emerald-500' : 'bg-amber-500'" />
-            <span class="text-xs font-semibold text-gray-900 dark:text-white">
-              <template v-if="agentStore.config.configured">GitHub token configured ({{ agentStore.config.tokenMasked }})</template>
-              <template v-else>No GitHub token configured yet</template>
-            </span>
-          </div>
-          <p v-if="agentStore.config.configuredBy" class="text-[10px] text-gray-500 dark:text-gray-400">
-            Set by {{ agentStore.config.configuredBy }} on {{ new Date(agentStore.config.configuredAt!).toLocaleString() }}
-          </p>
-
-          <div class="flex items-center gap-2">
-            <Input
-              v-model="githubTokenInput"
-              type="password"
-              :placeholder="agentStore.config.configured ? 'New token — leave blank to keep current' : 'GitHub personal access token (repo read scope)'"
-              :disabled="!canEdit()"
-              class="flex-1"
-            />
-            <Button size="sm" :loading="tokenBusy" :disabled="!canEdit() || !githubTokenInput.trim()" @click="saveGithubToken">
-              {{ agentStore.config.configured ? "Rotate" : "Save" }}
-            </Button>
-            <Button v-if="agentStore.config.configured" size="sm" variant="ghost" :loading="tokenBusy" :disabled="!canEdit()" @click="clearGithubToken">Remove</Button>
-          </div>
-
-          <template v-if="agentStore.config.configured">
-            <div class="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-2">
-              <div class="flex items-center justify-between">
-                <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">Downloads (latest release)</p>
-                <Button size="sm" variant="ghost" :loading="agentStore.isLoadingAssets" @click="agentStore.fetchAssets()">Refresh</Button>
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full shrink-0" :class="agentStore.config.configured ? 'bg-emerald-500' : 'bg-amber-500'" />
+                <span class="text-xs font-semibold text-gray-900 dark:text-white">
+                  <template v-if="agentStore.config.configured">GitHub token configured ({{ agentStore.config.tokenMasked }})</template>
+                  <template v-else>No GitHub token configured yet</template>
+                </span>
               </div>
-              <Alert v-if="agentStore.assetsError" type="danger">{{ agentStore.assetsError }}</Alert>
-              <p v-if="!agentStore.isLoadingAssets && agentStore.assets.length === 0" class="text-xs text-gray-500 dark:text-gray-400">
-                No release assets yet — the agent repos publish one automatically on push to main.
+              <p v-if="agentStore.config.configuredBy" class="text-[10px] text-gray-500 dark:text-gray-400">
+                Set by {{ agentStore.config.configuredBy }} on {{ new Date(agentStore.config.configuredAt!).toLocaleString() }}
               </p>
-              <div v-for="asset in agentStore.assets" :key="`${asset.platform}-${asset.assetId}`" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                <div class="min-w-0">
-                  <p class="text-xs font-mono truncate text-gray-900 dark:text-white">{{ asset.filename }}</p>
-                  <p class="text-[10px] text-gray-500 dark:text-gray-400">
-                    {{ platformLabels[asset.platform] }} · {{ formatBytes(asset.sizeBytes) }} · {{ new Date(asset.publishedAt).toLocaleDateString() }}
+
+              <div class="flex items-center gap-2">
+                <Input
+                  v-model="githubTokenInput"
+                  type="password"
+                  :placeholder="agentStore.config.configured ? 'New token — leave blank to keep current' : 'GitHub personal access token (repo read scope)'"
+                  :disabled="!canEdit()"
+                  class="flex-1"
+                />
+                <Button size="sm" :loading="tokenBusy" :disabled="!canEdit() || !githubTokenInput.trim()" @click="saveGithubToken">
+                  {{ agentStore.config.configured ? "Rotate" : "Save" }}
+                </Button>
+                <Button v-if="agentStore.config.configured" size="sm" variant="ghost" :loading="tokenBusy" :disabled="!canEdit()" @click="clearGithubToken">Remove</Button>
+              </div>
+
+              <template v-if="agentStore.config.configured">
+                <div class="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-2">
+                  <div class="flex items-center justify-between">
+                    <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">Downloads (latest release)</p>
+                    <Button size="sm" variant="ghost" :loading="agentStore.isLoadingAssets" @click="agentStore.fetchAssets()">Refresh</Button>
+                  </div>
+                  <Alert v-if="agentStore.assetsError" type="danger">{{ agentStore.assetsError }}</Alert>
+                  <p v-if="!agentStore.isLoadingAssets && agentStore.assets.length === 0" class="text-xs text-gray-500 dark:text-gray-400">
+                    No release assets yet — the agent repos publish one automatically on push to main.
                   </p>
+                  <div v-for="asset in agentStore.assets" :key="`${asset.platform}-${asset.assetId}`" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                    <div class="min-w-0">
+                      <p class="text-xs font-mono truncate text-gray-900 dark:text-white">{{ asset.filename }}</p>
+                      <p class="text-[10px] text-gray-500 dark:text-gray-400">
+                        {{ platformLabels[asset.platform] }} · {{ formatBytes(asset.sizeBytes) }} · {{ new Date(asset.publishedAt).toLocaleDateString() }}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      :disabled="downloadingAsset === asset.assetId"
+                      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold shrink-0 transition-colors border hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-500 disabled:opacity-50 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
+                      @click="downloadAgentAsset(asset)"
+                    >
+                      <component :is="ICONS.Download" :size="12" weight="Linear" /> {{ downloadingAsset === asset.assetId ? "Preparing…" : "Download" }}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  :disabled="downloadingAsset === asset.assetId"
-                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold shrink-0 transition-colors border hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-500 disabled:opacity-50 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
-                  @click="downloadAgentAsset(asset)"
-                >
-                  <component :is="ICONS.Download" :size="12" weight="Linear" /> {{ downloadingAsset === asset.assetId ? "Preparing…" : "Download" }}
-                </button>
-              </div>
-            </div>
-
-            <div v-if="store.status?.configured" class="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-2">
-              <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">Managed Configuration</p>
-              <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-                Push this with your webhook URL, workspace, and secret already filled in. Fastest path — the Script
-                variant: paste it into Applivery Dashboard &gt; Resources &gt; Scripts &gt; Create Script, then assign it
-                to the Policy covering this fleet (Scope: Machine, Execution: Once) — it lands on every enrolled device
-                at next sync, no manual per-device import. Windows also accepts a manually-imported
-                <span class="font-mono">.reg</span> file (or the same values pushed via your UEM to
-                <span class="font-mono">HKLM\SOFTWARE\Policies\Applivery\SOAR</span>); macOS also accepts the raw
-                <span class="font-mono">.json</span> deployed to
-                <span class="font-mono">/Library/Preferences/es.mi-labs.soar.agent.json</span> via MDM Custom Settings.
-              </p>
-
-              <div>
-                <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Report interval</label>
-                <div class="flex items-center gap-2">
-                  <Input v-model.number="reportIntervalMinutes" type="number" min="1" max="1440" class="w-28" />
-                  <span class="text-[11px] text-gray-500 dark:text-gray-400">minutes</span>
-                </div>
-                <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
-                  How often the agent wakes up to report attributes and (if enabled) app inventory. Takes effect on the
-                  device's next service restart or reboot after the new Managed Configuration lands — it isn't picked up
-                  mid-cycle like other settings. Values under 30 seconds are ignored by the agent and fall back to its
-                  own built-in 1-hour default.
-                </p>
-                <Alert v-if="reportIntervalWarning" type="warning" class="mt-1.5">
-                  Under {{ REPORT_INTERVAL_WARN_BELOW_MINUTES }} minutes generates significant extra load — one HTTPS
-                  request per device per interval, plus a full app inventory scan if App Inventory Reporting is on. Fine
-                  for a small pilot fleet; for production-sized fleets, pair a short interval with "Force report" /
-                  "Force evaluate" on individual devices instead of lowering the default fleet-wide.
-                </Alert>
-              </div>
-
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div class="flex gap-1.5">
-                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows-script')">Windows Script (.ps1)</Button>
-                  <Button size="sm" variant="ghost" @click="copySnippet('windows-script')">Copy</Button>
-                </div>
-                <div class="flex gap-1.5">
-                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('macos-script')">macOS Script (.sh)</Button>
-                  <Button size="sm" variant="ghost" @click="copySnippet('macos-script')">Copy</Button>
-                </div>
-                <div class="flex gap-1.5">
-                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows-reg')">Windows .reg</Button>
-                  <Button size="sm" variant="ghost" @click="copySnippet('windows-reg')">Copy</Button>
-                </div>
-                <div class="flex gap-1.5">
-                  <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('macos-json')">macOS .json</Button>
-                  <Button size="sm" variant="ghost" @click="copySnippet('macos-json')">Copy</Button>
-                </div>
-              </div>
-            </div>
-            <p v-else class="text-xs text-gray-500 dark:text-gray-400">Generate a webhook secret above first — the Managed Configuration snippet reuses it.</p>
-          </template>
+              </template>
             </template>
           </div>
         </details>
@@ -431,144 +361,119 @@ onMounted(async () => {
     </div>
 
     <div>
-      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Device Data Webhook</h3>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Device Report Secret</h3>
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
         <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-          Lets a scheduled script on a Windows or macOS device push extra attributes (disk encryption, firewall, patch status, anything) that aren't in
-          Applivery's own data. Reports are matched to a device by serial number and become available to Compliance Policies as "Self-Reported Attribute"
-          conditions.
+          The baseline credential every device needs — included in the Managed Configuration bundle below. Stays the
+          fallback/interim auth path even once mTLS is set up (a device without an active certificate yet still needs
+          it to report).
         </p>
         <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
-
         <p v-if="!store.status" class="text-xs text-gray-500 dark:text-gray-400">Checking status…</p>
         <template v-else>
           <div class="flex items-center gap-2">
             <div class="w-2 h-2 rounded-full shrink-0" :class="store.status.configured ? 'bg-emerald-500' : 'bg-amber-500'" />
             <span class="text-xs font-semibold text-gray-900 dark:text-white">
-              <template v-if="store.status.configured">Webhook active for <span class="font-mono">{{ auth.orgSlug }}</span></template>
+              <template v-if="store.status.configured">Secret configured for <span class="font-mono">{{ auth.orgSlug }}</span></template>
               <template v-else>Not configured for this workspace</template>
             </span>
           </div>
-
-          <div v-if="store.status.configured" class="space-y-2">
-            <div>
-              <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Webhook URL</label>
-              <div class="flex items-center gap-1.5 min-w-0">
-                <code class="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] font-mono overflow-x-auto whitespace-nowrap border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white">
-                  POST {{ webhookUrl }}
-                </code>
-                <button
-                  type="button"
-                  class="p-2 rounded-lg border shrink-0 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-500 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400"
-                  @click="copyUrl"
-                >
-                  <component :is="ICONS.Copy" :size="12" weight="Linear" />
-                </button>
-              </div>
-            </div>
-            <div>
-              <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Headers</label>
-              <div class="flex items-start gap-1.5">
-                <code class="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] font-mono leading-relaxed whitespace-pre border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white">X-Workspace-Slug: {{ auth.orgSlug }}
-X-Device-Report-Secret: {{ store.status.secret }}</code>
-                <Button size="sm" variant="ghost" @click="copyHeaders">Copy</Button>
-              </div>
-            </div>
-            <div>
-              <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Example JSON body</label>
-              <code class="block px-2.5 py-2 rounded-lg text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white">{{ exampleJsonBody }}</code>
-            </div>
-            <p class="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-              <template v-if="store.status.rotatedBy">Last generated by {{ store.status.rotatedBy }}. </template>
-              Known key names (e.g. BitLockerStatus / FileVaultEnabled) are normalized to shared names so one policy condition covers both platforms —
-              anything else passes through as-is under "attributes".
-            </p>
-          </div>
-
+          <p v-if="store.status.rotatedBy" class="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">Last generated by {{ store.status.rotatedBy }}.</p>
           <div class="flex justify-end gap-2 pt-1">
             <Button v-if="store.status.configured" variant="ghost" :loading="busy" @click="clear">Remove</Button>
-            <Button variant="secondary" :loading="busy" @click="rotate">{{ store.status.configured ? "Rotate secret" : "Generate webhook secret" }}</Button>
+            <Button variant="secondary" :loading="busy" @click="rotate">{{ store.status.configured ? "Rotate secret" : "Generate secret" }}</Button>
           </div>
         </template>
       </div>
     </div>
 
     <div>
-      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">App Inventory Reporting</h3>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">What This Agent Reports</h3>
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
-        <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-          A stopgap for App List compliance (Missing/Disallowed app conditions) before the dedicated Applivery SOAR agent exists. These scripts read each
-          device's installed apps and versions locally — real bundle IDs + CFBundleShortVersionString on macOS, winget package IDs + Version on Windows
-          when available — and push them to the same secret used above, straight into the app-inventory store. Version data also feeds the Vulnerability
-          Service integration's per-app CVE matching (Settings &gt; Vulnerability Service) — for Windows in particular, this self-report path is the more
-          reliable source of app versions today, since Applivery's own MDM API doesn't document a stable schema for per-device Windows app versions yet. A
-          self-reporting device effectively refreshes itself for free: the background refresher skips it and spends its budget on devices that can't
-          self-report yet.
-        </p>
-        <p v-if="!store.status?.configured" class="text-xs text-gray-500 dark:text-gray-400">Generate a webhook secret above first — these scripts reuse it.</p>
-        <template v-else>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              type="button"
-              :disabled="downloading === 'macos'"
-              class="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors border hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-500 disabled:opacity-50 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
-              @click="download('apps', 'macos')"
-            >
-              <component :is="ICONS.Download" :size="13" weight="Linear" /> {{ downloading === "macos" ? "Preparing…" : "macOS script (.sh)" }}
-            </button>
-            <button
-              type="button"
-              :disabled="downloading === 'windows'"
-              class="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors border hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-500 disabled:opacity-50 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
-              @click="download('apps', 'windows')"
-            >
-              <component :is="ICONS.Download" :size="13" weight="Linear" /> {{ downloading === "windows" ? "Preparing…" : "Windows script (.ps1)" }}
-            </button>
+        <label class="flex items-start gap-2 text-xs text-gray-900 dark:text-white">
+          <input type="checkbox" v-model="includeAppInventory" class="mt-0.5" />
+          <span>
+            <span class="font-semibold">App Inventory Reporting</span>
+            <span class="block text-[10px] text-gray-500 dark:text-gray-400">Installed apps + versions — feeds App List compliance and Vulnerability Service CVE matching.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-2 text-xs text-gray-900 dark:text-white">
+          <input type="checkbox" v-model="includeSecurityAttestation" class="mt-0.5" />
+          <span>
+            <span class="font-semibold">Security Attestation Reporting</span>
+            <span class="block text-[10px] text-gray-500 dark:text-gray-400">BitLocker/FileVault + firewall posture — feeds Self-Reported Attribute compliance conditions.</span>
+          </span>
+        </label>
+
+        <div class="pt-2 border-t border-gray-100 dark:border-gray-800">
+          <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Report interval</label>
+          <div class="flex items-center gap-2">
+            <Input v-model.number="reportIntervalMinutes" type="number" min="1" max="1440" class="w-28" />
+            <span class="text-[11px] text-gray-500 dark:text-gray-400">minutes</span>
           </div>
-          <p class="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-            Downloaded with your webhook URL, workspace, and secret already filled in — nothing to edit. Schedule the macOS script with launchd
-            (LaunchAgent/LaunchDaemon) and the Windows script with Task Scheduler running as SYSTEM; both include a ready-to-use setup snippet in their
-            header comments. Every app-list-scoped device that runs one of these stops drawing from the background refresher's API budget.
+          <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
+            Takes effect on the device's next service restart or reboot after the new Managed Configuration lands —
+            it isn't picked up mid-cycle. Values under 30 seconds are ignored by the agent and fall back to its own
+            built-in 1-hour default.
           </p>
-        </template>
+          <Alert v-if="reportIntervalWarning" type="warning" class="mt-1.5">
+            Under {{ REPORT_INTERVAL_WARN_BELOW_MINUTES }} minutes generates significant extra load fleet-wide. Fine
+            for a small pilot; for production, pair a short interval with per-device "Force report" instead of
+            lowering the default for everyone.
+          </Alert>
+        </div>
+
+        <p v-if="bootstrapTokenAvailable" class="text-[10px] leading-relaxed text-emerald-600 dark:text-emerald-400">
+          A Global Bootstrap Token is configured — it's included automatically in the Windows bundle below, so this
+          device will also register for its own mTLS client certificate. macOS has no mTLS support yet, so the macOS
+          bundle never includes it.
+        </p>
+        <p v-else class="text-[10px] leading-relaxed text-gray-400">
+          No Global Bootstrap Token configured yet — this bundle will only include the device report secret above.
+          Generate one in <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'mtls')">mTLS Agent Authentication</button> to also enroll devices for client certificates.
+        </p>
       </div>
     </div>
 
     <div>
-      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Security Attestation Reporting (Windows &amp; macOS)</h3>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Download Managed Configuration</h3>
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
-        <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-          Reports hardware/OS security posture straight off the device — Secure Boot, Virtualization-Based Security, Credential Guard, memory integrity
-          (HVCI), BitLocker, and TPM readiness on Windows; FileVault, firewall, XProtect, Secure Token, and screen lock on macOS — without depending on
-          Applivery having a confirmed passthrough for reading that level of detail back through its MDM channel. Feeds the "Self-Reported Attribute"
-          condition type in Compliance Policies, so a policy can flag a device Non-Compliant the moment one of these drops and trigger the matching
-          enforcement action automatically. No Android/iOS equivalent — neither platform lets a third party run an unattended script with local admin/root
-          privileges; that would need a dedicated MDM agent app instead.
-        </p>
-        <p v-if="!store.status?.configured" class="text-xs text-gray-500 dark:text-gray-400">Generate a webhook secret above first — these scripts reuse it.</p>
+        <p v-if="!store.status?.configured" class="text-xs text-gray-500 dark:text-gray-400">Generate the device report secret above first — the bundle reuses it.</p>
         <template v-else>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              type="button"
-              :disabled="downloadingSecurity === 'windows'"
-              class="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors border hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-500 disabled:opacity-50 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
-              @click="download('security', 'windows')"
-            >
-              <component :is="ICONS.Download" :size="13" weight="Linear" /> {{ downloadingSecurity === "windows" ? "Preparing…" : "Windows script (.ps1)" }}
-            </button>
-            <button
-              type="button"
-              :disabled="downloadingSecurity === 'macos'"
-              class="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-colors border hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-500 disabled:opacity-50 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
-              @click="download('security', 'macos')"
-            >
-              <component :is="ICONS.Download" :size="13" weight="Linear" /> {{ downloadingSecurity === "macos" ? "Preparing…" : "macOS script (.sh)" }}
-            </button>
+            <div class="flex gap-1.5">
+              <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows-script')">Windows Script (.ps1)</Button>
+              <Button size="sm" variant="ghost" @click="copySnippet('windows-script')">
+                <component v-if="copiedKind === 'windows-script'" :is="ICONS.CheckCircle" :size="12" weight="Linear" style="color: #10b981" />
+                <template v-else>Copy</template>
+              </Button>
+            </div>
+            <div class="flex gap-1.5">
+              <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('macos-script')">macOS Script (.sh)</Button>
+              <Button size="sm" variant="ghost" @click="copySnippet('macos-script')">
+                <component v-if="copiedKind === 'macos-script'" :is="ICONS.CheckCircle" :size="12" weight="Linear" style="color: #10b981" />
+                <template v-else>Copy</template>
+              </Button>
+            </div>
+            <div class="flex gap-1.5">
+              <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('windows-reg')">Windows .reg</Button>
+              <Button size="sm" variant="ghost" @click="copySnippet('windows-reg')">
+                <component v-if="copiedKind === 'windows-reg'" :is="ICONS.CheckCircle" :size="12" weight="Linear" style="color: #10b981" />
+                <template v-else>Copy</template>
+              </Button>
+            </div>
+            <div class="flex gap-1.5">
+              <Button size="sm" variant="ghost" class="flex-1" @click="downloadSnippet('macos-json')">macOS .json</Button>
+              <Button size="sm" variant="ghost" @click="copySnippet('macos-json')">
+                <component v-if="copiedKind === 'macos-json'" :is="ICONS.CheckCircle" :size="12" weight="Linear" style="color: #10b981" />
+                <template v-else>Copy</template>
+              </Button>
+            </div>
           </div>
-          <p class="text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-            Windows: run as SYSTEM (Task Scheduler) — several queries need elevated context to return complete data. macOS: run as a LaunchDaemon (root) —
-            Secure Token/screen lock are per-user settings the script reads via the current console user, so a machine with no one logged in reports those
-            as unknown rather than guessed. Setup snippets included in each script's header comments.
+          <p class="text-[10px] leading-relaxed text-gray-400">
+            Script variants (recommended): paste into Applivery Dashboard &gt; Resources &gt; Scripts &gt; Create Script, assign to the Policy
+            covering this fleet (Scope: Machine, Execution: Once) — lands on every enrolled device at next sync, no manual per-device step. The
+            .reg / .json variants are for manual import or a UEM Custom Settings/OMA-URI push instead.
           </p>
         </template>
       </div>

@@ -22,7 +22,6 @@ import AccountPanel from "./AccountPanel.vue";
 import BackupRestorePanel from "./BackupRestorePanel.vue";
 import AuditLogRetentionPanel from "./AuditLogRetentionPanel.vue";
 import WorkspaceAutomationPanel from "./WorkspaceAutomationPanel.vue";
-import AgentDeploymentPanel from "./AgentDeploymentPanel.vue";
 import DeviceDataWebhookPanel from "./DeviceDataWebhookPanel.vue";
 import CustomDeviceChecksPanel from "./CustomDeviceChecksPanel.vue";
 import EventWatchesPanel from "./EventWatchesPanel.vue";
@@ -60,7 +59,6 @@ const SETTINGS_TABS: SettingsTab[] = [
   { id: "backup", label: "Backup & Restore", icon: ICONS.Download },
   { id: "auditlog", label: "Audit Log", icon: ICONS.DocumentText },
   { id: "workspace-automation", label: "Workspace Automation", icon: ICONS.Refresh },
-  { id: "agent-deployment", label: "Agent Deployment", icon: ICONS.CloudDownload },
   { id: "device-webhook", label: "Device Data Webhook", icon: ICONS.PlugCircle },
   { id: "custom-checks", label: "Custom Device Checks", icon: ICONS.Checklist },
   { id: "event-watches", label: "Event-Driven Detection", icon: ICONS.Radar },
@@ -93,17 +91,17 @@ const CONTENT_HEADING: Record<string, string> = {
   auditlog: "Audit Log Retention",
   logexport: "Log Export Destinations",
 };
-// "backup" and "device-webhook" render more than one heading+card in the
-// original (Backup & Restore + Full Workspace Configuration; Device Data
-// Webhook + App Inventory Reporting + Security Attestation Reporting) — their
-// panel components own every heading themselves, so the generic branch below
+// "backup" and "device-webhook" render more than one heading+card (Backup &
+// Restore + Full Workspace Configuration; Applivery SOAR Agent + Device
+// Report Secret + What This Agent Reports + Download Managed Configuration)
+// — their panel components own every heading themselves, so the generic branch below
 // must not also prepend one or it'd duplicate the first heading. The other
 // four (integrations/threat-intel/case-autorun/triggers) are the sub-panels
 // converted from Modal-based dialogs to the original's inline-form-above-
 // card-list pattern (docs/settings.md) — each is now a single self-contained
 // component that renders its own heading + intro paragraph + "New X" button,
 // same reasoning as backup/device-webhook above.
-const SELF_HEADED_TABS = new Set(["backup", "agent-deployment", "device-webhook", "custom-checks", "integrations", "threat-intel", "case-autorun", "triggers", "mtls"]);
+const SELF_HEADED_TABS = new Set(["backup", "device-webhook", "custom-checks", "integrations", "threat-intel", "case-autorun", "triggers", "mtls"]);
 
 const activeTab = ref("general");
 // Port of SETTINGS_TAB_ANCHORS (App.jsx:288-309) — maps this modal's tab
@@ -111,7 +109,6 @@ const activeTab = ref("general");
 const SETTINGS_TAB_ANCHORS: Record<string, string> = {
   general: "general", smtp: "smtp", account: "account", backup: "backup--restore",
   auditlog: "audit-log", "workspace-automation": "workspace-automation",
-  "agent-deployment": "agent-deployment",
   "device-webhook": "device-data-webhook", mtls: "mtls-agent-authentication", logexport: "log-export",
   triggers: "inbound-webhooks",
   "case-autorun": "case-auto-run-rules", "applivery-events": "applivery-events",
@@ -207,7 +204,6 @@ const activeTabMeta = computed(() => visibleTabs.value.find((t) => t.id === acti
           <BackupRestorePanel v-else-if="activeTab === 'backup'" />
           <AuditLogRetentionPanel v-else-if="activeTab === 'auditlog'" />
           <WorkspaceAutomationPanel v-else-if="activeTab === 'workspace-automation'" />
-          <AgentDeploymentPanel v-else-if="activeTab === 'agent-deployment'" @go-to-tab="selectTab" />
           <DeviceDataWebhookPanel v-else-if="activeTab === 'device-webhook'" @go-to-tab="selectTab" />
           <CustomDeviceChecksPanel v-else-if="activeTab === 'custom-checks'" />
           <EventWatchesPanel v-else-if="activeTab === 'event-watches'" />
