@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { verifyMtlsIdentity } from "../../middleware/mtlsIdentity.middleware";
-import { deviceMtlsRegisterPayloadSchema, deviceMtlsRenewPayloadSchema } from "./mtls.schemas";
+import { deviceMtlsEnrollPayloadSchema, deviceMtlsRegisterPayloadSchema, deviceMtlsRenewPayloadSchema } from "./mtls.schemas";
 import { registerDevice, renewDevice } from "./deviceMtls.service";
+import { pollEnrollmentStatus, requestEnrollment } from "./mtlsEnrollment.service";
 
 /**
  * Agent-facing mTLS endpoints — device callers, no dashboard token, same
@@ -43,5 +44,42 @@ deviceMtlsRouter.post(
     const workspaceSlug = workspaceOf(req);
     const payload = deviceMtlsRenewPayloadSchema.parse(req.body);
     res.json(await renewDevice(workspaceSlug, payload, req.mtlsSerialNumber!));
+  }),
+);
+
+/**
+ * Self-service enrollment (Phase E) — the alternative to bootstrap-token
+ * registration for fleets with no per-device token delivery mechanism. Auth
+ * is the shared X-Enrollment-Secret header, never a dashboard token (same
+ * class of route as /register above) — see mtlsEnrollment.service.ts's
+ * module doc for the full security model this trades off against
+ * /register's per-device guarantee.
+ */
+deviceMtlsRouter.post(
+  "/api/device-mtls/enroll",
+  asyncHandler(async (req, res) => {
+    const workspaceSlug = workspaceOf(req);
+    const payload = deviceMtlsEnrollPayloadSchema.parse(req.body);
+    const secret = req.header("X-Enrollment-Secret");
+    const result = await requestEnrollment(workspaceSlug, payload, secret);
+    res.status(result.status === "pending" ? 202 : 200).json(result);
+  }),
+);
+
+/**
+ * Agent poll after a 202 from /enroll above (approval mode). Re-checks the
+ * enrollment secret on every poll, not just the initial request.
+ */
+deviceMtlsRouter.get(
+  "/api/device-mtls/enroll/status",
+  asyncHandler(async (req, res) => {
+    const workspaceSlug = workspaceOf(req);
+    const serialNumber = typeof req.query.serialNumber === "string" ? req.query.serialNumber.trim() : "";
+    if (!serialNumber) {
+      res.status(400).json({ detail: "serialNumber query param is required" });
+      return;
+    }
+    const secret = req.header("X-Enrollment-Secret");
+    res.json(await pollEnrollmentStatus(workspaceSlug, serialNumber, secret));
   }),
 );

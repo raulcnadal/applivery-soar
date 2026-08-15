@@ -10,12 +10,16 @@ import {
   bootstrapTokenPayloadSchema,
   certificateRevokePayloadSchema,
   mtlsEnforcementPayloadSchema,
+  selfServiceModePayloadSchema,
+  enrollmentRequestRejectPayloadSchema,
 } from "./mtls.schemas";
 import { generateCa, getCaStatus, setLeafValidityDays, uploadCa } from "./ca.service";
 import { listBootstrapTokens, mintBootstrapToken, mintBootstrapTokensBulk, revokeBootstrapToken } from "./bootstrapTokens.service";
 import { listCertificates, revokeCertificate } from "./certificates.service";
 import { getMtlsEnforcementEnabled, setMtlsEnforcementEnabled } from "./mtlsEnforcement.service";
 import { listEnrollmentCandidates } from "./enrollmentCandidates.service";
+import { clearEnrollmentSecret, getEnrollmentSecretStatus, getSelfServiceMode, rotateEnrollmentSecret, setSelfServiceMode } from "./enrollmentSecret.service";
+import { approveEnrollmentRequest, listEnrollmentRequests, rejectEnrollmentRequest } from "./mtlsEnrollment.service";
 
 /**
  * Admin-facing mTLS management — Settings > (new) mTLS panel. Dashboard-
@@ -112,4 +116,43 @@ mtlsRouter.get("/api/mtls/enforcement", ...readMtls, asyncHandler(async (req, re
 mtlsRouter.put("/api/mtls/enforcement", ...manageMtls, asyncHandler(async (req, res) => {
   const payload = mtlsEnforcementPayloadSchema.parse(req.body);
   res.json(await setMtlsEnforcementEnabled(workspaceOf(req), actorOf(req), payload.enabled));
+}));
+
+// ── Self-service enrollment (Phase E addendum) — shared secret + mode + approval queue ──
+
+mtlsRouter.get("/api/mtls/enrollment-secret", ...readMtls, asyncHandler(async (req, res) => {
+  res.json(await getEnrollmentSecretStatus(workspaceOf(req)));
+}));
+
+mtlsRouter.post("/api/mtls/enrollment-secret", ...manageMtls, asyncHandler(async (req, res) => {
+  res.json(await rotateEnrollmentSecret(workspaceOf(req), actorOf(req)));
+}));
+
+mtlsRouter.delete("/api/mtls/enrollment-secret", ...manageMtls, asyncHandler(async (req, res) => {
+  await clearEnrollmentSecret(workspaceOf(req), actorOf(req));
+  res.json({ status: "ok" });
+}));
+
+mtlsRouter.get("/api/mtls/self-service-mode", ...readMtls, asyncHandler(async (req, res) => {
+  res.json({ mode: await getSelfServiceMode(workspaceOf(req)) });
+}));
+
+mtlsRouter.put("/api/mtls/self-service-mode", ...manageMtls, asyncHandler(async (req, res) => {
+  const payload = selfServiceModePayloadSchema.parse(req.body);
+  res.json(await setSelfServiceMode(workspaceOf(req), actorOf(req), payload.mode));
+}));
+
+mtlsRouter.get("/api/mtls/enrollment-requests", ...readMtls, asyncHandler(async (req, res) => {
+  const status = typeof req.query.status === "string" ? req.query.status : undefined;
+  res.json({ items: await listEnrollmentRequests(workspaceOf(req), status) });
+}));
+
+mtlsRouter.post("/api/mtls/enrollment-requests/:id/approve", ...manageMtls, asyncHandler(async (req, res) => {
+  res.json(await approveEnrollmentRequest(workspaceOf(req), req.params.id, actorOf(req)));
+}));
+
+mtlsRouter.post("/api/mtls/enrollment-requests/:id/reject", ...manageMtls, asyncHandler(async (req, res) => {
+  const payload = enrollmentRequestRejectPayloadSchema.parse(req.body);
+  await rejectEnrollmentRequest(workspaceOf(req), req.params.id, actorOf(req), payload.reason);
+  res.json({ status: "ok" });
 }));

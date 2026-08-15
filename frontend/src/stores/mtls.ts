@@ -60,6 +60,27 @@ export interface EnrollmentCandidate {
   mtlsStatus: "none" | "pending" | "active" | "expiring-soon" | "expired" | "revoked" | "superseded";
 }
 
+export interface EnrollmentSecretStatus {
+  configured: boolean;
+  secret: string | null;
+  rotatedBy?: string | null;
+  rotatedAt?: string | null;
+}
+
+export type SelfServiceMode = "disabled" | "silent" | "approval";
+
+export interface EnrollmentRequestSummary {
+  id: string;
+  serialNumber: string;
+  platform: string | null;
+  displayName: string | null;
+  status: "pending" | "approved" | "rejected";
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  rejectionReason: string | null;
+}
+
 export const useMtlsStore = defineStore("mtls", () => {
   const caStatus = ref<CaStatus | null>(null);
   const caLoading = ref(false);
@@ -89,6 +110,21 @@ export const useMtlsStore = defineStore("mtls", () => {
   const enforcementLoading = ref(false);
   const enforcementError = ref<string | null>(null);
   const enforcementBusy = ref(false);
+
+  const enrollmentSecretStatus = ref<EnrollmentSecretStatus | null>(null);
+  const enrollmentSecretLoading = ref(false);
+  const enrollmentSecretError = ref<string | null>(null);
+  const enrollmentSecretBusy = ref(false);
+
+  const selfServiceMode = ref<SelfServiceMode | null>(null);
+  const selfServiceModeLoading = ref(false);
+  const selfServiceModeError = ref<string | null>(null);
+  const selfServiceModeBusy = ref(false);
+
+  const enrollmentRequests = ref<EnrollmentRequestSummary[]>([]);
+  const enrollmentRequestsLoading = ref(false);
+  const enrollmentRequestsError = ref<string | null>(null);
+  const enrollmentRequestBusy = ref(false);
 
   function errMsg(err: any, fallback: string): string {
     return err?.response?.data?.detail || fallback;
@@ -292,6 +328,125 @@ export const useMtlsStore = defineStore("mtls", () => {
     }
   }
 
+  async function fetchEnrollmentSecretStatus() {
+    enrollmentSecretLoading.value = true;
+    enrollmentSecretError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/mtls/enrollment-secret");
+      enrollmentSecretStatus.value = res.data;
+    } catch (err: any) {
+      enrollmentSecretError.value = errMsg(err, "Failed to load self-service enrollment secret status.");
+    } finally {
+      enrollmentSecretLoading.value = false;
+    }
+  }
+
+  async function rotateEnrollmentSecret() {
+    enrollmentSecretBusy.value = true;
+    enrollmentSecretError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.post("/mtls/enrollment-secret");
+      enrollmentSecretStatus.value = res.data;
+    } catch (err: any) {
+      enrollmentSecretError.value = errMsg(err, "Failed to generate/rotate the enrollment secret.");
+      throw err;
+    } finally {
+      enrollmentSecretBusy.value = false;
+    }
+  }
+
+  async function clearEnrollmentSecret() {
+    enrollmentSecretBusy.value = true;
+    enrollmentSecretError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      await api.delete("/mtls/enrollment-secret");
+      await fetchEnrollmentSecretStatus();
+      await fetchSelfServiceMode(); // clearing the secret force-resets mode to "disabled" server-side
+    } catch (err: any) {
+      enrollmentSecretError.value = errMsg(err, "Failed to remove the enrollment secret.");
+      throw err;
+    } finally {
+      enrollmentSecretBusy.value = false;
+    }
+  }
+
+  async function fetchSelfServiceMode() {
+    selfServiceModeLoading.value = true;
+    selfServiceModeError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/mtls/self-service-mode");
+      selfServiceMode.value = res.data.mode;
+    } catch (err: any) {
+      selfServiceModeError.value = errMsg(err, "Failed to load self-service enrollment mode.");
+    } finally {
+      selfServiceModeLoading.value = false;
+    }
+  }
+
+  async function setSelfServiceMode(mode: SelfServiceMode) {
+    selfServiceModeBusy.value = true;
+    selfServiceModeError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.put("/mtls/self-service-mode", { mode });
+      selfServiceMode.value = res.data.mode;
+    } catch (err: any) {
+      selfServiceModeError.value = errMsg(err, "Failed to update self-service enrollment mode.");
+      throw err;
+    } finally {
+      selfServiceModeBusy.value = false;
+    }
+  }
+
+  async function fetchEnrollmentRequests(status?: string) {
+    enrollmentRequestsLoading.value = true;
+    enrollmentRequestsError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/mtls/enrollment-requests", { params: status ? { status } : {} });
+      enrollmentRequests.value = res.data.items;
+    } catch (err: any) {
+      enrollmentRequestsError.value = errMsg(err, "Failed to load enrollment requests.");
+    } finally {
+      enrollmentRequestsLoading.value = false;
+    }
+  }
+
+  async function approveEnrollmentRequest(id: string) {
+    enrollmentRequestBusy.value = true;
+    enrollmentRequestsError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      await api.post(`/mtls/enrollment-requests/${id}/approve`);
+      await fetchEnrollmentRequests();
+      await fetchCertificates();
+    } catch (err: any) {
+      enrollmentRequestsError.value = errMsg(err, "Failed to approve enrollment request.");
+      throw err;
+    } finally {
+      enrollmentRequestBusy.value = false;
+    }
+  }
+
+  async function rejectEnrollmentRequest(id: string, reason: string) {
+    enrollmentRequestBusy.value = true;
+    enrollmentRequestsError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      await api.post(`/mtls/enrollment-requests/${id}/reject`, { reason });
+      await fetchEnrollmentRequests();
+    } catch (err: any) {
+      enrollmentRequestsError.value = errMsg(err, "Failed to reject enrollment request.");
+      throw err;
+    } finally {
+      enrollmentRequestBusy.value = false;
+    }
+  }
+
   return {
     caStatus, caLoading, caError, caBusy,
     fetchCaStatus, generateCa, uploadCa, setLeafValidityDays,
@@ -303,5 +458,11 @@ export const useMtlsStore = defineStore("mtls", () => {
     fetchCertificates, revokeCertificate,
     enforcementEnabled, enforcementLoading, enforcementError, enforcementBusy,
     fetchEnforcement, setEnforcement,
+    enrollmentSecretStatus, enrollmentSecretLoading, enrollmentSecretError, enrollmentSecretBusy,
+    fetchEnrollmentSecretStatus, rotateEnrollmentSecret, clearEnrollmentSecret,
+    selfServiceMode, selfServiceModeLoading, selfServiceModeError, selfServiceModeBusy,
+    fetchSelfServiceMode, setSelfServiceMode,
+    enrollmentRequests, enrollmentRequestsLoading, enrollmentRequestsError, enrollmentRequestBusy,
+    fetchEnrollmentRequests, approveEnrollmentRequest, rejectEnrollmentRequest,
   };
 });

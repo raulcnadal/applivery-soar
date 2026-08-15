@@ -21,7 +21,8 @@ export interface IssuedCertificateResponse {
   notAfter: string;
 }
 
-async function issueLeaf(workspaceSlug: string, serialNumber: string, csrPem: string): Promise<IssuedCertificateResponse> {
+/** Exported for mtlsEnrollment.service.ts (Phase E) — self-service enrollment's silent and approval-issuance paths both need the exact same signing/recording logic as the bootstrap-token path, just reached via a different identity check upstream. */
+export async function issueLeaf(workspaceSlug: string, serialNumber: string, csrPem: string): Promise<IssuedCertificateResponse> {
   const ca = await getCaForSigning(workspaceSlug);
   if (!ca) {
     throw new HttpError(503, `No mTLS Certificate Authority is configured for workspace '${workspaceSlug}'. An admin must generate or upload one from Settings before devices can register.`);

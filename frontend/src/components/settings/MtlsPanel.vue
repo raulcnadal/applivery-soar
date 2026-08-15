@@ -14,7 +14,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useAuthStore } from "../../stores/auth";
-import { useMtlsStore } from "../../stores/mtls";
+import { useMtlsStore, type SelfServiceMode } from "../../stores/mtls";
 
 const store = useMtlsStore();
 const auth = useAuthStore();
@@ -159,8 +159,52 @@ const FLEET_STATUS_LABEL: Record<string, string> = {
   superseded: "cert superseded",
 };
 
-function copyToken(token: string) {
-  navigator.clipboard.writeText(token);
+// navigator.clipboard.writeText is only available in a "secure context"
+// (https:, or http://localhost) — it silently returns undefined/throws
+// everywhere else, e.g. a dashboard reached over plain http://<lan-ip>:8080
+// (this app's own docker-compose.yml exposes soar-frontend that way with no
+// TLS by default), which is exactly why the button did nothing. Falls back
+// to the older execCommand("copy") path (no secure-context requirement,
+// still supported everywhere despite being deprecated) and surfaces a clear
+// message if even that fails, instead of failing silently.
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (window.isSecureContext && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to the legacy path below
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+const copiedTokenId = ref<string | null>(null);
+async function copyToken(token: string, id: string) {
+  const ok = await copyToClipboard(token);
+  if (ok) {
+    copiedTokenId.value = id;
+    setTimeout(() => {
+      if (copiedTokenId.value === id) copiedTokenId.value = null;
+    }, 2000);
+  } else {
+    alert(
+      "Couldn't copy automatically — this usually happens when the dashboard is loaded over plain HTTP instead of HTTPS, which browsers block clipboard access on. Select the token text above and copy it manually (Ctrl/Cmd+C).",
+    );
+  }
 }
 
 async function doRevokeToken(id: string, serialNumber: string) {
@@ -173,6 +217,96 @@ const TOKEN_STATUS_COLOR: Record<string, string> = {
   used: "bg-emerald-500",
   expired: "bg-gray-400",
 };
+
+// ── Self-service enrollment (Phase E addendum) ──
+// The alternative to per-device bootstrap tokens for fleets with no way to
+// deliver a unique secret to each device individually: one shared secret
+// deployed via a single Managed Configuration push to the whole fleet, plus
+// a live check against Applivery's own device list. See
+// mtlsEnrollment.service.ts's module doc for the full trust-model trade-off
+// — this UI surfaces the same caveats rather than hiding them.
+
+const showEnrollmentSnippet = ref(false);
+const MODE_LABEL: Record<SelfServiceMode, string> = { disabled: "Disabled", approval: "Approval required", silent: "Silent (zero-touch)" };
+const MODE_DESCRIPTION: Record<SelfServiceMode, string> = {
+  disabled: "The one-time-token flow above is the only way for a device to enroll. Nothing changes for a workspace that hasn't opted into this.",
+  approval: "A device presenting the shared secret + a serial number Applivery currently recognizes lands in the queue below — nothing is issued until you approve it.",
+  silent: "A device presenting the shared secret + a currently-enrolled Applivery serial number gets a certificate immediately, no approval click. True zero-touch — see the warning below before enabling.",
+};
+
+async function doRotateEnrollmentSecret() {
+  const replacing = Boolean(store.enrollmentSecretStatus?.configured);
+  if (replacing && !confirm("Rotate the enrollment secret? Any device that hasn't picked up the new value from Managed Configuration yet will fail to enroll until it does.")) return;
+  await store.rotateEnrollmentSecret();
+}
+async function doClearEnrollmentSecret() {
+  if (!confirm("Remove the enrollment secret? Self-service enrollment mode resets to Disabled and no device can self-service enroll until a new secret is generated.")) return;
+  await store.clearEnrollmentSecret();
+}
+function copyEnrollmentSecret() {
+  if (store.enrollmentSecretStatus?.secret) copyToClipboard(store.enrollmentSecretStatus.secret);
+}
+
+async function doSetSelfServiceMode(mode: SelfServiceMode) {
+  if (mode === store.selfServiceMode) return;
+  if (mode === "silent") {
+    if (
+      !confirm(
+        "Enable SILENT self-service enrollment? Any request with the right secret and a serial number Applivery currently recognizes as enrolled gets a certificate immediately, with no admin review. Anyone who obtains the shared secret can claim any not-yet-enrolled device the moment they know its serial number. An already-enrolled device can never be silently re-claimed, but a not-yet-enrolled one can be claimed by whoever gets there first. Proceed?",
+      )
+    )
+      return;
+  } else if (mode === "approval") {
+    if (store.selfServiceMode === "silent" && !confirm("Switch to approval-required mode? New requests will wait in a queue for your review instead of being issued immediately.")) return;
+  }
+  try {
+    await store.setSelfServiceMode(mode);
+    if (mode === "approval") await store.fetchEnrollmentRequests();
+  } catch {
+    // Surfaced via store.selfServiceModeError in the template.
+  }
+}
+
+const windowsEnrollmentSnippet = computed(() => {
+  const secret = store.enrollmentSecretStatus?.secret ?? "";
+  return `# Applivery SOAR Agent — Self-Service mTLS Enrollment (PowerShell)
+# Deploy: Applivery Dashboard > Resources > Scripts > Create Script (language: PowerShell),
+# paste this, then assign it to the Policy covering this fleet — Scope: Machine, Execution: Once.
+$ErrorActionPreference = "Stop"
+$regPath = "HKLM:\\SOFTWARE\\Policies\\Applivery\\SOAR"
+New-Item -Path $regPath -Force | Out-Null
+Set-ItemProperty -Path $regPath -Name "BaseURL" -Value "${window.location.origin}" -Type String
+Set-ItemProperty -Path $regPath -Name "WorkspaceSlug" -Value "${auth.orgSlug}" -Type String
+Set-ItemProperty -Path $regPath -Name "EnrollmentSecret" -Value "${secret}" -Type String
+Write-Host "Applivery SOAR Agent self-service enrollment configuration applied."
+`;
+});
+function downloadEnrollmentSnippet() {
+  const blob = new Blob([windowsEnrollmentSnippet.value], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "applivery-soar-agent-self-service-enrollment.ps1";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function copyEnrollmentSnippet() {
+  copyToClipboard(windowsEnrollmentSnippet.value);
+}
+
+async function doApproveRequest(id: string, serialNumber: string) {
+  if (!confirm(`Approve enrollment for "${serialNumber}"? A client certificate will be issued immediately.`)) return;
+  try {
+    await store.approveEnrollmentRequest(id);
+  } catch {
+    // Surfaced via store.enrollmentRequestsError in the template.
+  }
+}
+async function doRejectRequest(id: string, serialNumber: string) {
+  const reason = prompt(`Reject enrollment for "${serialNumber}"? Enter a reason:`);
+  if (!reason) return;
+  await store.rejectEnrollmentRequest(id, reason);
+}
 
 // ── Certificates ──
 
@@ -209,6 +343,9 @@ onMounted(async () => {
   await store.fetchCaStatus();
   await store.fetchBootstrapTokens();
   await store.fetchEnrollmentCandidates();
+  await store.fetchEnrollmentSecretStatus();
+  await store.fetchSelfServiceMode();
+  if (store.selfServiceMode === "approval") await store.fetchEnrollmentRequests();
   await store.fetchCertificates();
   await store.fetchEnforcement();
 });
@@ -334,8 +471,9 @@ onMounted(async () => {
             <code class="flex-1 min-w-0 px-2 py-1 rounded text-[10px] font-mono overflow-x-auto whitespace-nowrap bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white">
               {{ t.serialNumber }}: {{ t.token }}
             </code>
-            <button type="button" class="p-1.5 rounded border border-gray-200 dark:border-gray-700 shrink-0" @click="copyToken(t.token)">
-              <component :is="ICONS.Copy" :size="11" weight="Linear" />
+            <button type="button" class="p-1.5 rounded border border-gray-200 dark:border-gray-700 shrink-0" @click="copyToken(t.token, t.id)">
+              <component v-if="copiedTokenId === t.id" :is="ICONS.CheckCircle" :size="11" weight="Linear" style="color: #10b981" />
+              <component v-else :is="ICONS.Copy" :size="11" weight="Linear" />
             </button>
           </div>
         </div>
@@ -457,6 +595,111 @@ onMounted(async () => {
           </div>
         </div>
         <p v-else-if="!store.tokensLoading" class="text-xs text-gray-500 dark:text-gray-400">No bootstrap tokens minted yet.</p>
+      </div>
+    </div>
+
+    <!-- Self-service enrollment -->
+    <div>
+      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Self-Service Enrollment</h3>
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
+        <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          For fleets with no way to deliver a unique bootstrap token to each device individually. Deploy ONE shared
+          secret via a single Managed Configuration push to the whole fleet — a device proves it's allowed to enroll
+          with that secret plus a serial number Applivery currently recognizes as enrolled, instead of a per-device
+          token. This is a weaker guarantee than Bootstrap Tokens above: a serial number isn't a secret, so anyone who
+          ever obtains this shared secret and a currently-enrolled serial number can request a certificate for it. An
+          already-enrolled device can never be silently re-claimed — only a not-yet-enrolled one can be claimed by
+          whoever gets there first — which is what keeps "approval required" (below) meaningfully safer than "silent".
+        </p>
+
+        <Alert v-if="store.enrollmentSecretError" type="danger">{{ store.enrollmentSecretError }}</Alert>
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full shrink-0" :class="store.enrollmentSecretStatus?.configured ? 'bg-emerald-500' : 'bg-amber-500'" />
+          <span class="text-xs font-semibold text-gray-900 dark:text-white">
+            <template v-if="store.enrollmentSecretStatus?.configured">Enrollment secret configured</template>
+            <template v-else>No enrollment secret generated yet</template>
+          </span>
+        </div>
+
+        <div v-if="store.enrollmentSecretStatus?.configured" class="space-y-2">
+          <div class="flex items-center gap-1.5">
+            <code class="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] font-mono overflow-x-auto whitespace-nowrap border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white">
+              {{ store.enrollmentSecretStatus.secret }}
+            </code>
+            <button type="button" class="p-2 rounded-lg border shrink-0 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400" @click="copyEnrollmentSecret">
+              <component :is="ICONS.Copy" :size="12" weight="Linear" />
+            </button>
+          </div>
+          <p v-if="store.enrollmentSecretStatus.rotatedBy" class="text-[10px] text-gray-500 dark:text-gray-400">
+            Last generated by {{ store.enrollmentSecretStatus.rotatedBy }} on {{ fmt(store.enrollmentSecretStatus.rotatedAt) }}
+          </p>
+
+          <button type="button" class="text-[10px] font-medium text-blue-600 dark:text-blue-400 underline" @click="showEnrollmentSnippet = !showEnrollmentSnippet">
+            {{ showEnrollmentSnippet ? "Hide" : "Show" }} Managed Configuration snippet (Windows)
+          </button>
+          <div v-if="showEnrollmentSnippet" class="space-y-1.5">
+            <code class="block px-2.5 py-2 rounded-lg text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white">{{ windowsEnrollmentSnippet }}</code>
+            <div class="flex gap-1.5">
+              <Button size="sm" variant="ghost" @click="downloadEnrollmentSnippet">Download .ps1</Button>
+              <Button size="sm" variant="ghost" @click="copyEnrollmentSnippet">Copy</Button>
+            </div>
+            <p class="text-[10px] leading-relaxed text-gray-400">
+              Paste into Applivery Dashboard &gt; Resources &gt; Scripts &gt; Create Script, then assign to the Policy
+              covering this fleet (Scope: Machine, Execution: Once) — deploys to every enrolled device at next sync.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-1">
+          <Button v-if="store.enrollmentSecretStatus?.configured" variant="ghost" size="sm" :disabled="!canEdit()" :loading="store.enrollmentSecretBusy" @click="doClearEnrollmentSecret">Remove</Button>
+          <Button size="sm" :disabled="!canEdit()" :loading="store.enrollmentSecretBusy" @click="doRotateEnrollmentSecret">
+            {{ store.enrollmentSecretStatus?.configured ? "Rotate secret" : "Generate enrollment secret" }}
+          </Button>
+        </div>
+
+        <div class="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
+          <label class="block text-[10px] font-medium text-gray-500 dark:text-gray-400">Mode</label>
+          <Alert v-if="store.selfServiceModeError" type="danger">{{ store.selfServiceModeError }}</Alert>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="m in (['disabled', 'approval', 'silent'] as SelfServiceMode[])"
+              :key="m"
+              type="button"
+              :disabled="!canEdit() || store.selfServiceModeBusy"
+              class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-50"
+              :class="store.selfServiceMode === m ? 'text-white bg-blue-500 border-blue-500' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'"
+              @click="doSetSelfServiceMode(m)"
+            >
+              {{ MODE_LABEL[m] }}
+            </button>
+          </div>
+          <p class="text-[10px] leading-relaxed text-gray-400">{{ MODE_DESCRIPTION[store.selfServiceMode ?? "disabled"] }}</p>
+        </div>
+
+        <div v-if="store.selfServiceMode === 'approval'" class="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">Pending enrollment requests</p>
+            <Button size="sm" variant="ghost" :loading="store.enrollmentRequestsLoading" @click="store.fetchEnrollmentRequests()">Refresh</Button>
+          </div>
+          <Alert v-if="store.enrollmentRequestsError" type="danger">{{ store.enrollmentRequestsError }}</Alert>
+          <div v-if="store.enrollmentRequests.filter((r) => r.status === 'pending').length > 0" class="space-y-1.5">
+            <div
+              v-for="r in store.enrollmentRequests.filter((r) => r.status === 'pending')"
+              :key="r.id"
+              class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium truncate text-gray-900 dark:text-white">{{ r.displayName || r.serialNumber }}</p>
+                <p class="text-[10px] font-mono text-gray-500 dark:text-gray-400">{{ r.serialNumber }} · requested {{ fmt(r.requestedAt) }}</p>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <Button size="sm" variant="ghost" :disabled="!canEdit()" :loading="store.enrollmentRequestBusy" @click="doRejectRequest(r.id, r.serialNumber)">Reject</Button>
+                <Button size="sm" :disabled="!canEdit()" :loading="store.enrollmentRequestBusy" @click="doApproveRequest(r.id, r.serialNumber)">Approve</Button>
+              </div>
+            </div>
+          </div>
+          <p v-else-if="!store.enrollmentRequestsLoading" class="text-xs text-gray-500 dark:text-gray-400">No pending requests.</p>
+        </div>
       </div>
     </div>
 

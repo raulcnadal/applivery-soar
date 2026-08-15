@@ -29,6 +29,8 @@ const PUBLIC_ROUTES = new Set([
   "POST /api/device-data/event-notify",
   "POST /api/device-mtls/register",
   "POST /api/device-mtls/renew",
+  "POST /api/device-mtls/enroll",
+  "GET /api/device-mtls/enroll/status",
   "POST /api/internal/agent-builds/:platform",
   "GET /api/agent-downloads",
   "GET /api/agent-downloads/:platform",

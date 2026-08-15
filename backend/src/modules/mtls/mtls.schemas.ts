@@ -33,6 +33,20 @@ export const mtlsEnforcementPayloadSchema = z.object({
   enabled: z.boolean(),
 });
 
+export const selfServiceModePayloadSchema = z.object({
+  mode: z.enum(["disabled", "silent", "approval"]),
+});
+
+export const enrollmentRequestRejectPayloadSchema = z.object({
+  reason: z.string().min(1),
+});
+
+export const deviceMtlsEnrollPayloadSchema = z.object({
+  csrPem: z.string().min(1),
+  serialNumber: z.string().min(1),
+  platform: z.string().optional(),
+});
+
 export const deviceMtlsRegisterPayloadSchema = z.object({
   csrPem: z.string().min(1),
   serialNumber: z.string().min(1),

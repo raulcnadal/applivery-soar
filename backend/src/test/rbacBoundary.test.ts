@@ -150,6 +150,10 @@ const CASES: Case[] = [
   { label: "mtls: GET /api/mtls/certificates", method: "get", path: "/api/mtls/certificates", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
   { label: "mtls: POST /api/mtls/certificates/:id/revoke", method: "post", path: "/api/mtls/certificates/cert-1/revoke", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
   { label: "mtls: GET /api/mtls/enrollment-candidates", method: "get", path: "/api/mtls/enrollment-candidates", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "mtls: POST /api/mtls/enrollment-secret", method: "post", path: "/api/mtls/enrollment-secret", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
+  { label: "mtls: PUT /api/mtls/self-service-mode", method: "put", path: "/api/mtls/self-service-mode", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
+  { label: "mtls: GET /api/mtls/enrollment-requests", method: "get", path: "/api/mtls/enrollment-requests", area: "settings", level: "read", insufficientAccess: roleWithAccess({ settings: "none" }) },
+  { label: "mtls: POST /api/mtls/enrollment-requests/:id/approve", method: "post", path: "/api/mtls/enrollment-requests/req-1/approve", area: "settings", level: "manage", action: "canManageMtlsCA", insufficientAccess: roleWithAccess({ settings: "manage" }, { canManageMtlsCA: false }) },
 ];
 
 describe("RBAC boundary — insufficient access is denied, sufficient access clears the gate", () => {

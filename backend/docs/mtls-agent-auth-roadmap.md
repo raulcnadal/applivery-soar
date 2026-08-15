@@ -190,3 +190,69 @@ All four open items are now confirmed:
 4. **Internal proxy secret** — in scope for this round, not deferred. New `MTLS_INTERNAL_PROXY_SECRET` env var + `X-Internal-Proxy-Secret` header (configurable name), checked before the CN lookup (§5.4).
 
 No open decisions remain — ready for Phase A once you give the go-ahead.
+
+---
+
+## 9. Self-service enrollment (Phase E addendum, added post-launch)
+
+**Why this exists:** Phase A/D shipped `DeviceBootstrapToken` — a one-time, per-device secret cryptographically bound to exactly one serial number at mint time, the strongest identity guarantee this design offers. In practice, though, minting the token was only half the problem: there was (and is) no way to deliver a *unique* value to *one specific device* through Applivery's own Managed Configuration. Its interpolation tags (`{{device.serialNumber}}` etc. — confirmed against docs.applivery.com's Dynamic Variables page) only expose Applivery's own built-in device/user fields, never a secret this backend mints. Without a separate per-device provisioning step (imaging, an installer script, an Autopilot-style JSON payload), an admin has no practical way to get 500 different bootstrap tokens onto 500 different devices. Phase D's fleet-picker UI (§below) solved "where do I find the serial numbers" but not "how do I deliver the token" — this addendum solves the second half.
+
+**The trade:** a single, workspace-wide `EnrollmentSecret` — same value on every device, deployed once via one static Managed Configuration push (identical delivery mechanism to the legacy `ReportSecret`). Because this secret is shared rather than per-device, possessing it alone is **not** sufficient to get a certificate — the backend additionally requires the claimed serial number to be a device Applivery UEM *currently* reports as enrolled in this workspace (`getDevicesFull` via the workspace's Automation Credential). This is a genuinely weaker guarantee than `DeviceBootstrapToken`'s: a serial number is not a secret (printed on the device, often tracked in asset spreadsheets). Two things bound the exposure:
+
+- **`mtlsSelfServiceMode` defaults to `"disabled"`** — this entire path is opt-in per workspace, exactly like the Phase C enforcement flag.
+- **A serial number that already has an ACTIVE certificate can never be silently re-claimed.** `assertNotAlreadyActive` (`mtlsEnrollment.service.ts`) is checked before every issuance path, at both request time and (again, since time has passed) admin-approval time. The worst a leaked `EnrollmentSecret` can do is let someone claim a *not-yet-enrolled* device before its real owner does — it can never steal an already-enrolled device's identity.
+
+Two modes, an admin-chosen default confirmed as **"approval required"** (not silent):
+
+- **`"approval"`** (recommended default) — a request lands in `DeviceEnrollmentRequest` (status `pending`) and waits for an admin to click Approve/Reject in Settings > mTLS. Nothing is issued without a human in the loop.
+- **`"silent"`** — issued immediately once the secret and the live-Applivery check both pass. True zero-touch, at the cost of the weaker per-device guarantee above being the *only* gate.
+
+### Data model additions
+
+```prisma
+model EnrollmentSecret {
+  workspaceSlug String   @id
+  secret        String   // encrypted at rest (secretCipher) — same treatment as DeviceReportSecret/CA private key
+  rotatedBy     String?
+  updatedAt     DateTime @updatedAt
+}
+
+model DeviceEnrollmentRequest {
+  id              String    @id @default(uuid())
+  workspaceSlug   String
+  serialNumber    String    // CN is always forced to this at issuance, never trusted from the CSR — same invariant as DeviceBootstrapToken
+  platform        String?
+  displayName     String?   // best-effort label from Applivery, for the approval queue's readability
+  csrPem          String    @db.Text
+  status          String    @default("pending") // "pending" | "approved" | "rejected"
+  requestedAt     DateTime  @default(now())
+  decidedBy       String?
+  decidedAt       DateTime?
+  rejectionReason String?
+
+  @@unique([workspaceSlug, serialNumber, status]) // one PENDING row per device at a time; a fresh decision frees the key for re-enrollment
+}
+```
+
+`WorkspaceState.mtlsSelfServiceMode` (`String @default("disabled")`) holds the mode, guarded the same way as Phase C's `mtlsEnforcementEnabled`: `setSelfServiceMode` refuses to enable either non-disabled mode without a CA *and* an `EnrollmentSecret` already configured.
+
+### API surface
+
+Agent-facing (no dashboard token, `X-Enrollment-Secret` header):
+
+- `POST /api/device-mtls/enroll` — `{csrPem, serialNumber, platform?}`. Returns `200 {certPem, caCertPem, notAfter}` (silent mode) or `202 {requestId}` (approval mode, queued). 404 if the workspace's mode is `"disabled"`.
+- `GET /api/device-mtls/enroll/status?serialNumber=...` — the agent's poll after a 202. Re-validates the secret on every single poll. Returns `{status: "issued", certPem, caCertPem, notAfter}` | `{status: "pending"}` | `{status: "rejected", reason}`.
+
+Admin-facing (dashboard token + `settings:read`/`settings:manage` + `canManageMtlsCA` on mutations, same RBAC shape as the rest of `mtls.controller.ts`):
+
+- `GET/POST/DELETE /api/mtls/enrollment-secret` — status / rotate / clear (mirrors `deviceReportSecret.service.ts`'s pattern exactly). Clearing force-resets the mode back to `"disabled"`.
+- `GET/PUT /api/mtls/self-service-mode`.
+- `GET /api/mtls/enrollment-requests` (optional `?status=` filter), `POST /api/mtls/enrollment-requests/:id/approve`, `POST /api/mtls/enrollment-requests/:id/reject` (`{reason}`).
+
+### Windows Agent client
+
+`Config.EnrollmentSecret` (new registry value, same `HKLM\SOFTWARE\Policies\Applivery\SOAR` key as everything else) is only consulted when `BootstrapToken` is empty — a device with both always prefers the per-device token. `ensureSelfServiceEnrollment` (`mtls_windows.go`) POSTs once, then on subsequent report cycles polls `/enroll/status` using the SAME keypair/CSR from the original request (so an admin's Approve click signs exactly what the agent asked for) until issued or rejected; a rejection clears local pending state so the next cycle submits a fresh request, matching the backend's "a new request after a decision is a fresh row" design.
+
+### Admin UI
+
+Settings > mTLS > **Self-Service Enrollment**: secret status/rotate/remove, a Managed Configuration snippet generator (same "download/copy a ready-to-deploy .ps1" pattern as Device Data Webhook and Bootstrap Tokens), a three-way mode selector with an explicit confirm dialog on switching to `"silent"` that repeats the trade-off in plain language, and (visible in approval mode) a pending-requests queue with Approve/Reject actions.
