@@ -18,7 +18,7 @@ function baseDevice(installedApps: Set<string>): NormalizedDevice & Record<strin
   return {
     id: "device-1",
     installedApps,
-  } as NormalizedDevice & Record<string, any>;
+  } as unknown as NormalizedDevice & Record<string, any>;
 }
 
 describe("evaluateCondition — requiredAppList/disallowedAppList vs. PackageFamilyName-shaped catalog identifiers", () => {

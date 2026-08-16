@@ -113,6 +113,13 @@ export const deviceAppReportPayloadSchema = z.object({
         // (or one that never detected AppX packages at all) simply omits
         // this field, same as every other field here.
         origin: z.enum(["winget", "msi", "store"]).optional(),
+        // Windows-only, optional — on-disk install path, when the agent
+        // could determine one (AppX packages always have one via
+        // Get-AppxPackage's InstallLocation; classic Win32 installs only
+        // when the installer wrote one to the registry's Uninstall key).
+        // Purely informational (App detail modal), never used for
+        // identifier/matching logic. Absent on older agent builds.
+        installLocation: z.string().optional(),
       }),
     )
     .default([]),

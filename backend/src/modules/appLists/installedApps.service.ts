@@ -40,6 +40,10 @@ export interface InstalledAppsEntry {
     productCode?: string;
     enforcedByPolicy?: boolean;
     origin?: "winget" | "msi" | "store";
+    // Windows-only, purely informational on-disk install path (see
+    // apps_windows.go's InstallLocation doc comment). Never used for
+    // identifier/matching logic — only surfaced in the App detail modal.
+    installLocation?: string;
   }>;
   platform: string;
   fetchedAt: string;
@@ -441,6 +445,9 @@ export interface ReportedAppDeviceRef {
   productCode: string | null;
   enforcedByPolicy: boolean;
   origin?: "winget" | "msi" | "store";
+  // Windows-only, purely informational on-disk install path — see
+  // InstalledAppsEntry's apps[].installLocation doc comment.
+  installLocation: string | null;
 }
 export interface ReportedAppSummary {
   identifier: string;
@@ -562,6 +569,7 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
         productCode: contributions.map((c) => c.app.productCode).find(Boolean) ?? null,
         enforcedByPolicy: contributions.some((c) => Boolean(c.app.enforcedByPolicy)),
         origin: contributions.map((c) => c.app.origin).find(Boolean),
+        installLocation: contributions.map((c) => c.app.installLocation).find(Boolean) ?? null,
       });
     }
   }

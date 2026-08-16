@@ -10,11 +10,13 @@
 // (Windows only) a best-effort Applivery application-catalog lookup.
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { ICONS } from "../../lib/solarIcons";
 import { useComplianceStore, type ReportedAppDeviceRef, type ReportedAppSummary } from "../../stores/compliance";
 import AppDetailModal from "./AppDetailModal.vue";
 
 const store = useComplianceStore();
+const route = useRoute();
 
 const PLATFORM_LABELS: Record<string, string> = { apple: "iOS/iPadOS", macos: "macOS", android: "Android", windows: "Windows" };
 const platformOptions = [
@@ -222,13 +224,25 @@ async function refresh() {
   }
 }
 
-onMounted(() => {
-  store.fetchReportedApps();
+onMounted(async () => {
+  await store.fetchReportedApps();
   // The detail modal's "App Lists" section needs these — loaded here too
   // (not just AppCatalogPanel.vue's own onMounted) since an admin may open
   // Reported Apps without ever visiting the App Catalog sub-view first.
   if (!store.appCatalog.length) store.fetchAppCatalog();
   if (!store.appLists.length) store.fetchAppLists();
+
+  // Arrived via a cross-link (Device modal Apps tab row click,
+  // DeviceDetailDrawer.vue's openApp) — auto-open that app's own detail
+  // modal, same ?deviceId=/?caseId= query-param pattern DevicesView.vue and
+  // AuditLogsView.vue already use for their own cross-links.
+  const platform = route.query.appPlatform;
+  const identifier = route.query.appIdentifier;
+  if (typeof platform === "string" && typeof identifier === "string" && identifier) {
+    const target = identifier.toLowerCase();
+    const match = store.reportedApps.find((a) => a.platform === platform && a.identifier.toLowerCase() === target);
+    if (match) selectedApp.value = match;
+  }
 });
 </script>
 

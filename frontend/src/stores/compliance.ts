@@ -272,6 +272,10 @@ export interface ReportedAppDeviceRef {
   // packages, from either source). Undefined for non-Windows platforms and
   // older cached rows/agent builds that predate this field.
   origin?: "winget" | "msi" | "store";
+  // Windows-only, purely informational on-disk install path — see
+  // installedApps.service.ts's ReportedAppDeviceRef doc comment. Never used
+  // for identifier/matching logic.
+  installLocation: string | null;
 }
 // Per-version CVE detail — one entry per (app, version) combo with a fresh
 // cached Vulnerability Service match. Mirrors backend/vulnService.ts's

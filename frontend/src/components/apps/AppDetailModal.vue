@@ -269,7 +269,14 @@ const versionsWithVulns = computed(() => {
                  as a data-integrity bug: the same app appearing to be
                  "installed twice" on one device). -->
             <div v-for="d in app.devices" :key="d.deviceId" class="grid grid-cols-2 sm:grid-cols-[minmax(140px,1fr)_92px_60px_168px_150px] gap-2 items-center px-2.5 py-1.5 text-xs">
-              <span class="text-gray-900 dark:text-white truncate col-span-2 sm:col-span-1" :title="d.deviceName">{{ d.deviceName }}</span>
+              <span class="min-w-0 col-span-2 sm:col-span-1">
+                <span class="block text-gray-900 dark:text-white truncate" :title="d.deviceName">{{ d.deviceName }}</span>
+                <!-- Install path — Windows-only, purely informational (mirrors
+                     what an admin would see running Get-AppxPackage/registry
+                     lookups by hand); absent for platforms/apps that never
+                     report one (e.g. winget-sourced entries). -->
+                <span v-if="d.installLocation" class="block text-[10px] font-normal text-gray-400 truncate" :title="d.installLocation">{{ d.installLocation }}</span>
+              </span>
               <span class="flex items-center gap-1 font-mono" :title="d.versionsBySource ? Object.entries(d.versionsBySource).map(([s, v]) => `${SOURCE_LABELS[s] || s}: ${v}`).join(' · ') : undefined">
                 <component
                   v-if="d.enforcedByPolicy"

@@ -193,6 +193,10 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
       // | undefined by deviceAppReportPayloadSchema) — see installedApps.service.ts's
       // InstalledAppsEntry.apps[].origin doc comment.
       ...(a.origin ? { origin: a.origin } : {}),
+      // Purely informational on-disk path, passed through as-is — see
+      // installedApps.service.ts's InstalledAppsEntry.apps[].installLocation
+      // doc comment.
+      ...(a.installLocation ? { installLocation: a.installLocation } : {}),
     }))
     .sort((a, b) => a.identifier.localeCompare(b.identifier));
 

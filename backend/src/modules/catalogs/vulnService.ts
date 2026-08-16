@@ -540,6 +540,7 @@ export async function computeDeviceAppsDetail(
   productCode: string | null;
   enforcedByPolicy: boolean;
   origin?: "winget" | "msi" | "store";
+  installLocation: string | null;
   vuln: AppVersionVulnInfo | null;
 }>> {
   if (appsEntries.length === 0) return [];
@@ -563,7 +564,7 @@ export async function computeDeviceAppsDetail(
 
   const out: Array<{
     identifier: string; name: string | null; version: string; sources: string[]; updateAvailable: boolean;
-    productCode: string | null; enforcedByPolicy: boolean; origin?: "winget" | "msi" | "store"; vuln: AppVersionVulnInfo | null;
+    productCode: string | null; enforcedByPolicy: boolean; origin?: "winget" | "msi" | "store"; installLocation: string | null; vuln: AppVersionVulnInfo | null;
   }> = [];
   for (const [identifier, contributions] of byIdentifier) {
     // Freshest contribution wins for the headline name/version, same rule
@@ -587,6 +588,7 @@ export async function computeDeviceAppsDetail(
       productCode: contributions.map((c) => c.app.productCode).find(Boolean) ?? null,
       enforcedByPolicy: contributions.some((c) => Boolean(c.app.enforcedByPolicy)),
       origin: contributions.map((c) => c.app.origin).find(Boolean),
+      installLocation: contributions.map((c) => c.app.installLocation).find(Boolean) ?? null,
       vuln,
     });
   }
