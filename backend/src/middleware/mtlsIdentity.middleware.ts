@@ -73,25 +73,49 @@ function workspaceOf(req: Request): string {
   return req.header("X-Workspace-Slug") || "global";
 }
 
+// Every rejection here is logged (console.warn, not .error — this is
+// expected traffic from a misconfigured/unregistered device, not an
+// application bug) with enough context to actually diagnose it, since
+// errorHandler.middleware.ts deliberately does NOT log HttpError instances
+// (see its own comment) — an mTLS auth rejection used to be completely
+// invisible server-side, which cost real debugging time on a live incident
+// (a device's every request 401ing, "backend logs clean, no errors", the
+// actual reason sitting unlogged in the response body the whole time).
+// req.path/method identify which route rejected it; workspaceSlug + a
+// masked CN (never the full raw header — it's PII-adjacent device identity)
+// identify which device without needing to correlate against the agent's
+// own logs.
+function logRejection(req: Request, reason: string, extra?: Record<string, unknown>) {
+  // eslint-disable-next-line no-console
+  console.warn(`[mTLS] ${req.method} ${req.path} rejected: ${reason}`, extra ?? {});
+}
+
 export async function assertMtlsIdentity(req: Request): Promise<string> {
+  const workspaceSlug = workspaceOf(req);
   if (!env.mtlsInternalProxySecret) {
+    // Deliberately NOT run through logRejection — this is a deployment
+    // misconfiguration (fails closed at 503), not per-request device
+    // traffic, and every single request would otherwise log the identical
+    // line forever until an admin sets the env var.
     throw new HttpError(503, "MTLS_INTERNAL_PROXY_SECRET is not configured for this deployment — mTLS enforcement is not active yet.");
   }
   const providedProxySecret = req.header(env.mtlsHeaderProxySecret);
   if (!providedProxySecret || !timingSafeEqual(providedProxySecret, env.mtlsInternalProxySecret)) {
+    logRejection(req, "missing or invalid internal proxy secret", { workspaceSlug, hadHeader: Boolean(providedProxySecret) });
     throw new HttpError(401, "Missing or invalid internal proxy secret.");
   }
 
   const verified = req.header(env.mtlsHeaderCertVerified);
   const rawCn = req.header(env.mtlsHeaderCertCn);
   if (verified !== "SUCCESS" || !rawCn) {
+    logRejection(req, "no verified client certificate identity presented", { workspaceSlug, verifiedHeaderValue: verified ?? null, hadCnHeader: Boolean(rawCn) });
     throw new HttpError(401, "No verified client certificate identity was presented.");
   }
   const cn = extractCommonName(rawCn);
 
-  const workspaceSlug = workspaceOf(req);
   const activeCert = await findActiveCertificate(workspaceSlug, cn);
   if (!activeCert) {
+    logRejection(req, "no active DeviceCertificate row for this CN/workspace (revoked, superseded, expired, or never registered)", { workspaceSlug, cn });
     throw new HttpError(401, "The presented client certificate is not a currently active certificate for this workspace (it may be revoked, superseded, or expired).");
   }
 
