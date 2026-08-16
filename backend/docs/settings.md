@@ -67,7 +67,8 @@ Configuration bundle, instead of assembling everything by hand.
   [Vulnerability Service](#vulnerability-service) per-app CVE matching) and **Security Attestation Reporting** (BitLocker/FileVault + firewall —
   feeds Self-Reported Attribute compliance conditions), plus the report interval. If a [Global Bootstrap Token](#mtls-agent-authentication) is
   configured, it's included in the Windows bundle automatically — no separate opt-in, since a device with an already-active certificate can never
-  be silently re-registered by it.
+  be silently re-registered by it. Also surfaces an editable **Agent Base URL** (defaults to this dashboard's own address) — only needs changing
+  if you've set up a dedicated agents subdomain per [Reverse Proxy Configuration](#mtls-agent-authentication) below; leave it as-is otherwise.
 - **Download Managed Configuration** — Windows Script (`.ps1`) / macOS Script (`.sh`) (recommended: paste into an Applivery Script resource and
   assign to a Policy for zero-touch fleet push), or a manually-imported Windows `.reg` / macOS `.json`.
 
@@ -90,9 +91,12 @@ permission. Windows only today — the macOS Agent has no mTLS support yet.
   [Device Data Webhook](#device-data-webhook)'s combined download once generated here.
 - **Reverse Proxy Configuration** — the exact nginx/NPM config reference (with your workspace's actual header names) plus a live status check for
   whether the internal proxy secret is configured on this backend. Required before enforcement below will work — without it, every mTLS-gated
-  request fails closed (503). The reference config's single `location /api/device-` block deliberately covers both agent registration/renewal
-  (`/api/device-mtls/*`) and device reporting (`/api/device-data/*`) — reporting is the prefix that's actually cert-gated once Enforcement is
-  on, so it must forward the verified-cert headers too, not just registration. Never extend this block to the dashboard/frontend.
+  request fails closed (503). **Requires a separate subdomain dedicated to agent traffic** (editable **Agent subdomain** field on this panel,
+  e.g. `agents.yourdomain.com`) — TLS client-certificate verification is a whole-domain setting in nginx (and most reverse proxies), never
+  scoped to a URL path, so it cannot be added to the same proxy host serving the dashboard without breaking normal browser access to it. This
+  was tried and confirmed broken in practice before this two-domain design was adopted — see `backend/docs/mtls-agent-auth-roadmap.md` §5.5 for
+  the full incident writeup and the corrected config. Once the new proxy host exists, point every agent's **Agent Base URL** (Device Data
+  Webhook, above) at it.
 - **Certificates** — issued fleet, with per-device status (active/expiring-soon/expired/revoked/superseded) and a **Revoke** action.
 - **Enforcement** — the cutover switch: once enabled, every device-caller route requires a valid client certificate and the legacy secret stops
   being accepted for that workspace. Cuts off any macOS device on the workspace entirely (no mTLS support), not just unregistered Windows ones.

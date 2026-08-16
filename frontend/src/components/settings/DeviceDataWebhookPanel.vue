@@ -66,6 +66,15 @@ const reportIntervalWarning = computed(() => reportIntervalMinutes.value > 0 && 
 // already-enrolled device.
 const bootstrapTokenAvailable = computed(() => Boolean(mtls.bootstrapTokenStatus?.configured));
 
+// Defaults to this dashboard's own origin — correct for everyone NOT using
+// mTLS. Editable because TLS client-certificate verification can't be
+// scoped to a URL path in nginx (or most reverse proxies) — it's a
+// connection-level, whole-domain setting — so a workspace using mTLS needs
+// agent traffic routed through a SEPARATE subdomain/vhost dedicated to
+// device calls (see mTLS Agent Authentication > Reverse Proxy
+// Configuration), and every agent's BaseURL must point there instead.
+const agentBaseUrl = ref(window.location.origin);
+
 function boolToRegDword(value: boolean): string {
   return `dword:${value ? "00000001" : "00000000"}`;
 }
@@ -76,7 +85,7 @@ const windowsRegSnippet = computed(() => {
     `Windows Registry Editor Version 5.00`,
     ``,
     `[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Applivery\\SOAR]`,
-    `"BaseURL"="${window.location.origin}"`,
+    `"BaseURL"="${agentBaseUrl.value}"`,
     `"WorkspaceSlug"="${auth.orgSlug}"`,
     `"ReportSecret"="${reportSecret}"`,
     `"ReportBitLocker"=${boolToRegDword(includeSecurityAttestation.value)}`,
@@ -92,7 +101,7 @@ const windowsRegSnippet = computed(() => {
 const macosConfigSnippet = computed(() =>
   JSON.stringify(
     {
-      base_url: window.location.origin,
+      base_url: agentBaseUrl.value,
       workspace_slug: auth.orgSlug,
       report_secret: store.status?.secret ?? "",
       interval_sec: reportIntervalSeconds.value,
@@ -118,7 +127,7 @@ const windowsScriptSnippet = computed(() => {
     `$ErrorActionPreference = "Stop"`,
     `$regPath = "HKLM:\\SOFTWARE\\Policies\\Applivery\\SOAR"`,
     `New-Item -Path $regPath -Force | Out-Null`,
-    `Set-ItemProperty -Path $regPath -Name "BaseURL" -Value "${window.location.origin}" -Type String`,
+    `Set-ItemProperty -Path $regPath -Name "BaseURL" -Value "${agentBaseUrl.value}" -Type String`,
     `Set-ItemProperty -Path $regPath -Name "WorkspaceSlug" -Value "${auth.orgSlug}" -Type String`,
     `Set-ItemProperty -Path $regPath -Name "ReportSecret" -Value "${reportSecret}" -Type String`,
     `Set-ItemProperty -Path $regPath -Name "ReportBitLocker" -Value ${includeSecurityAttestation.value ? 1 : 0} -Type DWord`,
@@ -432,6 +441,18 @@ onMounted(async () => {
           No Global Bootstrap Token configured yet — this bundle will only include the device report secret above.
           Generate one in <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'mtls')">mTLS Agent Authentication</button> to also enroll devices for client certificates.
         </p>
+
+        <div v-if="bootstrapTokenAvailable" class="pt-2 border-t border-gray-100 dark:border-gray-800">
+          <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Agent Base URL</label>
+          <Input v-model="agentBaseUrl" type="text" class="w-full font-mono text-[11px]" />
+          <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
+            Defaults to this dashboard's own address. A reverse proxy can't scope TLS client-certificate verification
+            to a URL path — it's a whole-domain setting — so agent traffic needs a separate subdomain dedicated to
+            device calls once mTLS is in use. Point this at that subdomain (see
+            <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'mtls')">mTLS Agent Authentication</button>
+            &gt; Reverse Proxy Configuration); leave it as-is if you're not routing agent traffic separately.
+          </p>
+        </div>
       </div>
     </div>
 

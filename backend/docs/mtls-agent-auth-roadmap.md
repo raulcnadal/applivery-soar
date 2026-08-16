@@ -137,32 +137,55 @@ The entire trust model in §5 depends on the backend only ever seeing these head
 
 ### 5.5 Reverse-proxy config reference
 
-The exact snippet to hand the user depends on the proxy in front of the backend. Since NPM is nginx under the hood, the reference config is written against nginx's `ssl_client_*` directives and applies to NPM's "Advanced" config box directly:
+**Revised after a real production outage.** The original version of this section (still in git history) told the user to add `ssl_verify_client`/`ssl_client_certificate` plus a `location /api/device-` block to their *existing* dashboard proxy host. Doing exactly that took the dashboard offline — browsers could no longer reach it at all. Root cause, confirmed against nginx's own bug tracker and Nginx Proxy Manager's own issue tracker, not guessed:
+
+- `ssl_verify_client` / `ssl_client_certificate` are **TLS-handshake directives**. Nginx has never supported scoping them to a `location` block — they only take effect at `http`/`server` scope. Two feature requests asking for per-location client-cert verification have sat open on nginx's tracker since 2013/2015: [trac #400](https://trac.nginx.org/nginx/ticket/400), [trac #498](https://trac.nginx.org/nginx/ticket/498).
+- The client-certificate negotiation happens **during the TLS handshake**, before nginx has parsed the HTTP request line — so there is no path-based information available yet to scope by. A `location /api/device-` block only ever controlled where the *header-forwarding to the backend* happened; it never controlled the "ask the client for a certificate" step, which nginx applies to every single connection reaching that server block, dashboard included.
+- Nginx Proxy Manager has a known issue tracking exactly this failure mode: enabling `ssl_verify_client` on a proxy host's Advanced tab is reported to take the whole proxy host offline with SSL handshake failures ([jc21/nginx-proxy-manager#175](https://github.com/jc21/nginx-proxy-manager/issues/175)).
+
+**The only correct fix: a separate subdomain/vhost dedicated to agent traffic**, so the dashboard domain never carries any client-cert directive. Two proxy hosts, not one:
+
+| Proxy host | Domain | Client-cert directives |
+|---|---|---|
+| Existing (unchanged) | `soar.example.com` | None, ever |
+| New | `agents.soar.example.com` (your own choice) | `ssl_verify_client`, `ssl_client_certificate` |
+
+Both point at the same backend/forward target — this isn't a new deployment, just a second NPM Proxy Host (or equivalent) for the same service, with its own hostname. Since browsers never visit the agents subdomain, the client-cert negotiation happening on every connection there is by design, not a problem.
 
 ```nginx
-# In the proxy host's Advanced config (or equivalent nginx server block)
-ssl_verify_client optional;   # "optional" not "on" — registration (/api/device-mtls/register)
-                               # has no cert yet, and reporting (/api/device-data/*) is only
-                               # cert-gated once the workspace's Enforcement flag is on. The
-                               # backend decides per request whether a cert is actually required.
+# A NEW, SEPARATE Nginx Proxy Manager proxy host — Domain: agents.soar.example.com
+# Do NOT add any of this to the existing dashboard proxy host.
+#
+# Details tab: Forward Hostname/Port — same target as the existing SOAR proxy host.
+#
+# Advanced tab:
+ssl_verify_client optional;   # "optional" not "on" — registration has no cert yet, and
+                               # reporting is only cert-gated once Enforcement is on; the
+                               # backend decides per request whether one is actually required.
 ssl_client_certificate /path/to/soar-ca.pem;   # download from Settings > mTLS Agent
                                                 # Authentication > Certificate Authority >
                                                 # Download CA certificate (also GET /api/mtls/ca)
 
-# Covers BOTH agent registration/renewal (/api/device-mtls/*) AND device reporting
-# (/api/device-data/*) — both need the verified-cert headers forwarded. Do not extend this
-# block to any other location: the dashboard/frontend never needs client-cert headers.
-location /api/device- {
+location /api/ {
+    proxy_pass http://<same forward target as the existing SOAR proxy host>;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Client-Cert-Verified $ssl_client_verify;
     proxy_set_header X-Client-Cert-CN       $ssl_client_s_dn_cn;
     proxy_set_header X-Internal-Proxy-Secret "<the MTLS_INTERNAL_PROXY_SECRET value>";
-    proxy_pass http://soar-backend:8000;
 }
 ```
 
-**Location-block scoping, made explicit:** three categories, three different needs. (1) **Agent registration** (`POST /api/device-mtls/register`) never requires a client cert — the bootstrap token is the credential, and `verifyMtlsIdentity` is never applied to this route (see §4.1/§10) — but it's still inside the `/api/device-` block above, which is harmless since the route never reads the forwarded cert headers anyway. Renewal (`POST /api/device-mtls/renew`) is the opposite: it's *always* gated by `verifyMtlsIdentity`, cert required unconditionally, same location block. (2) **Device reporting** (`POST/GET /api/device-data/*` — report, report-apps, custom-checks, evaluate-now, agent-status, event-watches, event-notify) is cert-gated only once Enforcement is switched on for that workspace; before that it accepts the legacy `X-Device-Report-Secret` instead. This block was originally scoped to `/api/device-mtls/` only and silently missed `/api/device-data/` — a real gap, since enabling Enforcement without also covering this prefix means every reporting call fails closed once a device's request actually needs the cert headers. The `/api/device-` prefix above fixes this by covering both in one block (and doesn't accidentally match `/api/devices/...`, the plural dashboard-facing routes, since `s` ≠ `-`). (3) **Frontend and all other dashboard/admin routes** (`/`, `/api/mtls/*`, everything else under `/api/*`) never need client-cert headers forwarded at all — leave them out of this location block entirely.
+`location /api/` (not `/`) is deliberate: NPM auto-generates its own `location /` from the Details tab, and nginx rejects a duplicate `location /` in the same server block at config-reload time. `/api/` is a proven-safe, non-colliding prefix — it's the exact pattern `frontend/nginx.conf` already uses in this repo, coexisting with its own `location /` for the SPA, so it's not a new, untested claim.
 
-For a non-nginx-family proxy, the same three values are needed: (1) trust the SOAR-issued CA cert for client verification, (2) forward the verification result and the client cert's CN as headers, (3) inject the shared secret. Traefik does this via `passTLSClientCert` middleware (has direct equivalents to `$ssl_client_verify`/CN extraction); Caddy via `tls.client_auth` plus `header_up` directives; HAProxy via `ssl_c_verify`/`ssl_c_s_dn` fetches converted to headers in the backend section. None of these require backend code changes — only the header *names* need to line up with `MTLS_HEADER_CERT_VERIFIED`/`MTLS_HEADER_CERT_CN` env vars, which default to the nginx/NPM names but can be repointed.
+**This means every agent's `BaseURL` changes.** The Windows Agent's `BaseURL` config value is used exclusively for device-data and device-mtls calls (report, report-apps, custom-checks, evaluate-now, agent-status, event-watches, event-notify, register, renew) — confirmed by grep, nothing else in the client touches it — so pointing it at the new agents subdomain instead of the dashboard's own origin is a clean, no-code-change swap. Settings > Device Data Webhook's Managed Configuration bundle has an editable **Agent Base URL** field for exactly this (defaults to the dashboard's own origin, correct for anyone not using mTLS).
+
+**Location-block scoping, made explicit:** three categories, three different needs. (1) **Agent registration** (`POST /api/device-mtls/register`) never requires a client cert — the bootstrap token is the credential, and `verifyMtlsIdentity` is never applied to this route (see §4.1/§10) — but it's still inside the `/api/` block above, which is harmless since the route never reads the forwarded cert headers anyway. Renewal (`POST /api/device-mtls/renew`) is the opposite: it's *always* gated by `verifyMtlsIdentity`, cert required unconditionally, same location block. (2) **Device reporting** (`POST/GET /api/device-data/*` — report, report-apps, custom-checks, evaluate-now, agent-status, event-watches, event-notify) is cert-gated only once Enforcement is switched on for that workspace; before that it accepts the legacy `X-Device-Report-Secret` instead. Both prefixes live under `/api/` on the agents subdomain, so one location block covers both. (3) **Frontend and all other dashboard/admin routes** (`/`, `/api/mtls/*` admin, everything else) live entirely on the *other* domain — the one with zero client-cert directives — so there's nothing to scope away from at all.
+
+For a non-nginx-family proxy, the same three values are needed on the dedicated agents vhost: (1) trust the SOAR-issued CA cert for client verification, (2) forward the verification result and the client cert's CN as headers, (3) inject the shared secret. Traefik does this via `passTLSClientCert` middleware (has direct equivalents to `$ssl_client_verify`/CN extraction); Caddy via `tls.client_auth` plus `header_up` directives; HAProxy via `ssl_c_verify`/`ssl_c_s_dn` fetches converted to headers in the backend section. None of these require backend code changes — only the header *names* need to line up with `MTLS_HEADER_CERT_VERIFIED`/`MTLS_HEADER_CERT_CN` env vars, which default to the nginx/NPM names but can be repointed. The separate-vhost requirement is not nginx-specific — it follows from TLS itself (SNI-based client-cert policy is per-listener/per-vhost in every mainstream proxy), so it applies the same way regardless of proxy choice.
 
 ---
 

@@ -150,25 +150,49 @@ async function doRevokeCert(id: string, serialNumber: string) {
 }
 
 // ── Reverse-proxy config reference ──
+//
+// IMPORTANT, learned the hard way: ssl_verify_client / ssl_client_certificate are
+// TLS-handshake directives. Nginx has never supported scoping them to a `location` —
+// they only take effect at http/server scope (nginx trac #400, #498, both still open).
+// The client-certificate negotiation happens for the WHOLE domain, before nginx even
+// knows which path was requested. Adding these directives to your EXISTING dashboard
+// proxy host — even "just" inside a location block — makes every connection to that
+// domain go through client-cert negotiation, which breaks normal browser access to the
+// dashboard (confirmed by Nginx Proxy Manager's own tracker: jc21/nginx-proxy-manager#175).
+//
+// The only correct fix is a SEPARATE subdomain/vhost dedicated to agent traffic, so the
+// dashboard domain never carries any client-cert directive at all. Point every agent's
+// Managed Configuration BaseURL (Device Data Webhook > Agent Base URL) at that subdomain.
+
+const agentSubdomain = ref(`agents.${window.location.hostname}`);
 
 const proxySnippet = computed(() => {
   const c = store.proxyConfig;
   if (!c) return "";
-  return `# In the proxy host's Advanced config (or equivalent nginx server block)
-ssl_verify_client optional;   # "optional" not "on" — registration (/api/device-mtls/register)
-                               # has no cert yet, and reporting (/api/device-data/*) is only
-                               # cert-gated once Enforcement below is switched on. The backend
-                               # decides per request whether a cert is actually required.
+  return `# A NEW, SEPARATE Nginx Proxy Manager proxy host — Domain: ${agentSubdomain.value}
+# Do NOT add any of this to your existing dashboard proxy host (${window.location.hostname}).
+# TLS client-certificate verification applies to the whole domain it's configured on, not
+# to a single path — so this must live on its own subdomain that only ever serves agent
+# traffic (registration/renewal + reporting), never the dashboard or browser traffic.
+#
+# Details tab: Forward Hostname/Port — same target as your existing SOAR proxy host.
+#
+# Advanced tab:
+ssl_verify_client optional;   # "optional" not "on" — registration has no cert yet, and
+                               # reporting is only cert-gated once Enforcement below is on;
+                               # the backend decides per request whether one is required.
 ssl_client_certificate /path/to/soar-ca.pem;   # download above (Certificate Authority > Download CA certificate)
 
-# Covers agent registration/renewal (/api/device-mtls/*) AND device reporting
-# (/api/device-data/*) — both need the verified-cert headers forwarded. Do not add this
-# block to any other location: the dashboard/frontend never needs client-cert headers.
-location /api/device- {
+location /api/ {
+    proxy_pass http://<same forward target as your existing SOAR proxy host>;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header ${c.headerCertVerified} $ssl_client_verify;
     proxy_set_header ${c.headerCertCn}       $ssl_client_s_dn_cn;
     proxy_set_header ${c.headerProxySecret} "<the MTLS_INTERNAL_PROXY_SECRET value>";
-    proxy_pass http://soar-backend:8000;
 }`;
 });
 function copyProxySnippet() {
@@ -373,6 +397,12 @@ onMounted(async () => {
           as headers — the backend trusts and validates those headers rather than re-terminating TLS itself. Required
           before enforcement below will actually work; without it every mTLS-gated request fails closed (503).
         </p>
+        <Alert type="warning">
+          TLS client-certificate verification applies to an entire domain, not a URL path — nginx (and most reverse
+          proxies) can't scope it to a location block. Adding it to your existing dashboard's proxy host breaks
+          normal browser access to the dashboard. It must live on a <strong>separate subdomain</strong> dedicated to
+          agent traffic — see the reference config below.
+        </Alert>
         <Alert v-if="store.proxyConfigError" type="danger">{{ store.proxyConfigError }}</Alert>
         <div v-if="store.proxyConfig" class="space-y-2">
           <div class="flex items-center gap-2">
@@ -380,6 +410,16 @@ onMounted(async () => {
             <span class="text-xs font-semibold text-gray-900 dark:text-white">
               {{ store.proxyConfig.proxySecretConfigured ? "Internal proxy secret is configured on this backend" : "Internal proxy secret is NOT configured — mTLS-gated requests fail closed" }}
             </span>
+          </div>
+          <div>
+            <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Agent subdomain</label>
+            <Input v-model="agentSubdomain" type="text" class="w-full font-mono text-[11px]" />
+            <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
+              A new hostname you create a DNS record and a separate Nginx Proxy Manager proxy host for — never your
+              existing dashboard domain. Point every agent's Managed Configuration
+              <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'device-webhook')">Agent Base URL</button>
+              at it once set up.
+            </p>
           </div>
           <p class="text-[10px] leading-relaxed text-gray-400">
             Reference config for nginx/NPM (Traefik/Caddy/HAProxy need the same three values via their own
