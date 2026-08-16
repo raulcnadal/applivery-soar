@@ -40,7 +40,7 @@ const subView = ref<"reported" | "catalog">("reported");
           :class="subView === 'catalog' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
           @click="subView = 'catalog'"
         >
-          <component :is="ICONS.Checklist" :size="14" weight="Linear" /> App Catalog
+          <component :is="ICONS.Checklist" :size="14" weight="Linear" /> Custom Catalog
         </button>
       </div>
     </header>
