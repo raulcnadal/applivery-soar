@@ -197,10 +197,18 @@ const proxySnippet = computed(() => {
 # Details tab: Forward Hostname/Port — same target as your existing SOAR proxy host.
 #
 # Advanced tab:
+# IMPORTANT: ssl_client_certificate's path is read INSIDE the NPM container's own
+# filesystem, not your host's. NPM's docker-compose only persists ./data:/data and
+# ./letsencrypt:/etc/letsencrypt — /app is the app's own code directory, not a volume,
+# so a file placed there may be unreadable (or gone after a container recreate) even
+# though the proxy host looks "saved" and "green". Put the downloaded cert under /data
+# (e.g. bind-mount it, or docker cp it into the running container at /data/soar-ca.pem)
+# and reference that path here — NOT /app/soar-ca.pem.
 ssl_verify_client optional;   # "optional" not "on" — registration has no cert yet, and
                                # reporting is only cert-gated once Enforcement below is on;
                                # the backend decides per request whether one is required.
-ssl_client_certificate /path/to/soar-ca.pem;   # download above (Certificate Authority > Download CA certificate)
+ssl_client_certificate /data/soar-ca.pem;   # download above (Certificate Authority > Download CA certificate);
+                               # verify with: docker exec <npm-container> ls -la /data/soar-ca.pem
 
 location /api/ {
     proxy_pass http://<same forward target as your existing SOAR proxy host>;
