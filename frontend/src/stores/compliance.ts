@@ -251,8 +251,15 @@ export interface ReportedAppDeviceRef {
   deviceId: string;
   deviceName: string;
   version: string | null;
-  source: string;
-  fetchedAt: string;
+  // Only set when self-reported and Applivery UEM genuinely disagree on the
+  // installed version for this device (rare drift moment) — see
+  // installedApps.service.ts's ReportedAppDeviceRef doc comment.
+  versionsBySource?: Record<string, string>;
+  // Every source that reported this app on this device — one row per
+  // physical device (an app seen by both the SOAR Agent and Applivery UEM
+  // has sources.length === 2, it no longer produces two separate rows).
+  sources: string[];
+  lastSyncAt: string | null;
   updateAvailable: boolean;
   lastFetchError: string | null;
   // Windows-only — see installedApps.service.ts's ReportedAppDeviceRef doc comment.

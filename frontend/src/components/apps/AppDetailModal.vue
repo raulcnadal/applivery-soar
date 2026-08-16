@@ -230,11 +230,15 @@ const versionsWithVulns = computed(() => {
       <div>
         <p class="text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Devices</p>
         <div class="border border-gray-100 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700 max-h-64 overflow-y-auto">
-          <!-- keyed on deviceId+source, not just deviceId: a device can now report the
-               same app from both the SOAR Agent (self_reported) and Applivery UEM
-               (server_fetch) as two independent rows since installedApps.service.ts's
-               dual-slot storage change — see InstalledAppsRecord's doc comment. -->
-          <div v-for="d in app.devices" :key="`${d.deviceId}-${d.source}`" class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
+          <!-- keyed on deviceId alone: this is one row per physical device now.
+               A device reporting the same app via both the SOAR Agent
+               (self_reported) and Applivery UEM (server_fetch) is merged into
+               a single row with both source badges — see
+               installedApps.service.ts's getReportedAppsOverview doc comment
+               for why (an earlier one-row-per-source design read as a
+               data-integrity bug: the same app appearing to be "installed
+               twice" on one device). -->
+          <div v-for="d in app.devices" :key="d.deviceId" class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
             <span class="text-gray-900 dark:text-white truncate">{{ d.deviceName }}</span>
             <span class="flex items-center gap-2 shrink-0 text-gray-400">
               <component
@@ -246,7 +250,12 @@ const versionsWithVulns = computed(() => {
                 title="Enforced by Applivery's Windows App Distribution policy on this device"
               />
               <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500" title="Update available" />
-              <span class="font-mono">{{ d.version || "—" }}</span>
+              <span
+                class="font-mono"
+                :title="d.versionsBySource ? Object.entries(d.versionsBySource).map(([s, v]) => `${SOURCE_LABELS[s] || s}: ${v}`).join(' · ') : undefined"
+              >
+                {{ d.version || "—" }}<span v-if="d.versionsBySource" class="text-amber-500"> ⚠</span>
+              </span>
               <span
                 v-if="d.origin === 'store'"
                 class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/10 text-violet-500"
@@ -259,14 +268,26 @@ const versionsWithVulns = computed(() => {
               >
                 MSI
               </span>
+              <!-- One badge per contributing source — both shown side by side
+                   when both the SOAR Agent and Applivery UEM see this app on
+                   this device, rather than picking just one. -->
               <span
+                v-for="s in d.sources"
+                :key="s"
                 class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
-                :class="d.source === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+                :class="s === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
               >
-                {{ SOURCE_LABELS[d.source] || d.source }}
+                {{ SOURCE_LABELS[s] || s }}
               </span>
-              <span>{{ formatAge(d.fetchedAt) }}</span>
-              <component v-if="d.lastFetchError" :is="ICONS.DangerTriangle" :size="11" weight="Linear" class="text-amber-500" :title="d.lastFetchError" />
+              <!-- Last Sync — its own labeled value rather than a bare
+                   timestamp, and the sync-failure triangle now lives here
+                   specifically (not floating next to version/source), since
+                   it's a freshness/sync-health signal, not a data-quality one. -->
+              <span class="inline-flex items-center gap-1" :title="d.lastFetchError ? `Last live-fetch error: ${d.lastFetchError}` : 'Last sync'">
+                <span class="text-gray-300 dark:text-gray-600">Last sync</span>
+                <span>{{ formatAge(d.lastSyncAt) }}</span>
+                <component v-if="d.lastFetchError" :is="ICONS.DangerTriangle" :size="11" weight="Linear" class="text-amber-500" />
+              </span>
             </span>
           </div>
         </div>

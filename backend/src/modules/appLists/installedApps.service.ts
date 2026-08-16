@@ -265,11 +265,24 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
   // permanently reset this slot to empty. Note this is now a within-slot
   // concern only — the selfReported slot lives entirely independently and
   // was never at risk from this path even before the dual-slot model.
+  //
+  // fetchedAt must be preserved the same way on error — it's meant to answer
+  // "how fresh is this data", not "when did we last try". Stamping it to now()
+  // unconditionally (the bug this comment replaces) meant a device that's
+  // been failing every fetch for months — offline, unenrolled, whatever —
+  // still showed "X minutes ago" in the UI, because that's just how recently
+  // the background job's most recent FAILED attempt ran, not how old the app
+  // data actually is. Found via a real report: Applivery UEM showed a
+  // device's last report as 3 months old while SOAR's Apps view showed the
+  // same device's data as "19m ago" for exactly this reason. Only a
+  // brand-new device with zero prior successful fetch has no better value to
+  // fall back to, so that one case still uses now() — there's no
+  // meaningfully "more honest" timestamp available for it.
   const entry: InstalledAppsEntry = {
     identifiers: error === null ? Array.from(identifiers).sort() : existingEntry?.identifiers ?? [],
     apps: error === null ? versionedApps.sort((a, b) => a.identifier.localeCompare(b.identifier)) : existingEntry?.apps ?? [],
     platform: platformPath,
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: error === null ? new Date().toISOString() : existingEntry?.fetchedAt ?? new Date().toISOString(),
     error,
     source: "server_fetch",
     appleAppUpdates:
@@ -392,17 +405,30 @@ export interface ReportedAppDeviceRef {
   deviceId: string;
   deviceName: string;
   version: string | null;
-  source: string;
-  fetchedAt: string;
+  // Only populated when the SOAR Agent's self-report and Applivery UEM's
+  // live fetch genuinely disagree on which version is installed on this
+  // device (rare drift moment, e.g. one side hasn't re-synced since an
+  // update) — `version` above is whichever contribution is more recent, and
+  // this records the divergence rather than silently hiding it.
+  versionsBySource?: Record<string, string>;
+  // Every source that reported this app on this device — one row per
+  // physical device now (see getReportedAppsOverview's doc comment), so an
+  // app seen by both the SOAR Agent and Applivery UEM has sources.length === 2
+  // instead of producing two separate rows.
+  sources: string[];
+  // The most recent fetchedAt/reportedAt across all contributing sources —
+  // named lastSyncAt (not fetchedAt) to be explicit this answers "how fresh
+  // is this row's data", the same freshness question the AppDetailModal's
+  // dedicated "Last Sync" column asks.
+  lastSyncAt: string | null;
   updateAvailable: boolean;
   // Last live-MDM-fetch error for this device, if any — carried over even
   // when the apps shown for it came from self-report (installedApps.service.ts's
   // error-preservation fix keeps a self-reported entry's data intact through
   // a failing live fetch, but the `error` field itself is still recorded so
-  // it's visible here rather than silently disappearing). Explains cases
-  // like "why does this device only ever show self-reported data" — surfaces
-  // the actual reason (e.g. Applivery's own API returning a non-2xx for this
-  // device/platform) instead of leaving it a mystery.
+  // it's visible here rather than silently disappearing). Only ever comes
+  // from a server_fetch contribution — self-reporting has no "fetch attempt"
+  // concept to fail.
   lastFetchError: string | null;
   // Windows-only, from windowsDeviceApps.service.ts — see InstalledAppsEntry's
   // apps[] doc comment for what these mean.
@@ -432,6 +458,8 @@ export interface ReportedAppSummary {
   vulnSummary?: AppVulnSummary | null;
 }
 
+type AppContribution = { entry: InstalledAppsEntry; app: InstalledAppsEntry["apps"][number] };
+
 /**
  * GET /api/app-lists/reported-apps — the data source for the new "Apps"
  * main-nav view (troubleshooting aid: "which exact version of X is on
@@ -442,13 +470,18 @@ export interface ReportedAppSummary {
  * — regardless of whether a policy references it, since the whole point is
  * visibility independent of compliance enforcement.
  *
- * Iterates BOTH slots of every device's record now (not just whichever one
- * happened to be written last) — a device reporting the same app via both
- * the SOAR Agent and Applivery UEM contributes two rows to that app's
- * `devices` list (one per source, exactly what the user asked to see side
- * by side), while `deviceCount`/`devicesWithPendingUpdate`/
- * `devicesEnforcedByPolicy` are deduped back down to distinct physical
- * devices so a device reporting via both sources still only counts once.
+ * Iterates BOTH slots of every device's record (not just whichever one
+ * happened to be written last), but — unlike an earlier version of this
+ * function — merges a device's contributions from both slots into exactly
+ * ONE row per (device, app) in `devices`, tagged with every source that saw
+ * it (`sources: string[]`). The earlier one-row-per-source design produced
+ * two visually-identical device rows for any app both the SOAR Agent and
+ * Applivery UEM see (the common case once both are active), which reads as
+ * a data-integrity bug at any real fleet size ("why does this app show 2
+ * devices when only 1 device has it" — a real user report). `deviceCount`/
+ * `devicesWithPendingUpdate`/`devicesEnforcedByPolicy` are now simply
+ * `devices.length`/filtered lengths — no separate de-dup pass needed, since
+ * `devices` is already one row per physical device by construction.
  */
 export async function getReportedAppsOverview(workspaceSlug: string, devices: NormalizedDevice[]): Promise<{ apps: ReportedAppSummary[]; devicesWithData: number; lastRefreshedAt: string | null }> {
   const store = await loadInstalledAppsStore(workspaceSlug);
@@ -464,33 +497,66 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
     const device = devicesById.get(deviceId);
     const deviceName = device?.displayName || deviceId;
 
+    // First pass: within THIS device, group every app contribution (from
+    // either slot) by (platform, identifier) — before touching the
+    // fleet-wide `byIdentifier` map at all, so an app this device reports
+    // via both sources is already merged down to one bucket by the time it
+    // becomes a `devices` row below.
+    const perDeviceApps = new Map<string, { platform: string; contributions: AppContribution[] }>();
     for (const entry of entries) {
       if (!entry.fetchedAt) continue;
       if (!lastRefreshedAt || new Date(entry.fetchedAt) > new Date(lastRefreshedAt)) lastRefreshedAt = entry.fetchedAt;
-      const platform = entry.platform;
       for (const app of entry.apps ?? []) {
-        const key = `${platform}:${app.identifier}`;
-        let summary = byIdentifier.get(key);
-        if (!summary) {
-          summary = { identifier: app.identifier, name: app.name || app.identifier, platform, deviceCount: 0, versions: [], sources: [], devicesWithPendingUpdate: 0, devicesEnforcedByPolicy: 0, devices: [] };
-          byIdentifier.set(key, summary);
+        const key = `${entry.platform}:${app.identifier}`;
+        let bucket = perDeviceApps.get(key);
+        if (!bucket) {
+          bucket = { platform: entry.platform, contributions: [] };
+          perDeviceApps.set(key, bucket);
         }
+        bucket.contributions.push({ entry, app });
+      }
+    }
+
+    for (const [key, { platform, contributions }] of perDeviceApps) {
+      let summary = byIdentifier.get(key);
+      const identifier = contributions[0].app.identifier;
+      if (!summary) {
+        summary = { identifier, name: identifier, platform, deviceCount: 0, versions: [], sources: [], devicesWithPendingUpdate: 0, devicesEnforcedByPolicy: 0, devices: [] };
+        byIdentifier.set(key, summary);
+      }
+      for (const { app } of contributions) {
         if (app.name && summary.name === summary.identifier) summary.name = app.name;
         if (app.version && !summary.versions.includes(app.version)) summary.versions.push(app.version);
-        if (!summary.sources.includes(entry.source)) summary.sources.push(entry.source);
-        summary.devices.push({
-          deviceId,
-          deviceName,
-          version: app.version ?? null,
-          source: entry.source,
-          fetchedAt: entry.fetchedAt,
-          updateAvailable: Boolean(app.updateAvailable),
-          lastFetchError: entry.error,
-          productCode: app.productCode ?? null,
-          enforcedByPolicy: Boolean(app.enforcedByPolicy),
-          origin: app.origin,
-        });
       }
+      const sources = Array.from(new Set(contributions.map((c) => c.entry.source)));
+      for (const s of sources) if (!summary.sources.includes(s)) summary.sources.push(s);
+
+      // The freshest contribution (by fetchedAt/reportedAt) supplies this
+      // row's headline version/lastSyncAt — if the sources disagree on
+      // version, versionsBySource records the divergence instead of hiding it.
+      const ranked = [...contributions].sort((a, b) => new Date(b.entry.fetchedAt).getTime() - new Date(a.entry.fetchedAt).getTime());
+      const primary = ranked[0];
+      const serverFetchContribution = contributions.find((c) => c.entry.source === "server_fetch") ?? null;
+      const distinctVersions = new Set(contributions.map((c) => c.app.version).filter(Boolean));
+      let versionsBySource: Record<string, string> | undefined;
+      if (distinctVersions.size > 1) {
+        versionsBySource = {};
+        for (const c of contributions) if (c.app.version) versionsBySource[c.entry.source] = c.app.version;
+      }
+
+      summary.devices.push({
+        deviceId,
+        deviceName,
+        version: primary.app.version ?? null,
+        versionsBySource,
+        sources,
+        lastSyncAt: primary.entry.fetchedAt,
+        updateAvailable: contributions.some((c) => Boolean(c.app.updateAvailable)),
+        lastFetchError: serverFetchContribution?.entry.error ?? null,
+        productCode: contributions.map((c) => c.app.productCode).find(Boolean) ?? null,
+        enforcedByPolicy: contributions.some((c) => Boolean(c.app.enforcedByPolicy)),
+        origin: contributions.map((c) => c.app.origin).find(Boolean),
+      });
     }
   }
 
@@ -499,10 +565,9 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
     app.versions.sort();
     app.sources.sort();
     app.devices.sort((a, b) => a.deviceName.localeCompare(b.deviceName));
-    const distinctDeviceIds = new Set(app.devices.map((d) => d.deviceId));
-    app.deviceCount = distinctDeviceIds.size;
-    app.devicesWithPendingUpdate = new Set(app.devices.filter((d) => d.updateAvailable).map((d) => d.deviceId)).size;
-    app.devicesEnforcedByPolicy = new Set(app.devices.filter((d) => d.enforcedByPolicy).map((d) => d.deviceId)).size;
+    app.deviceCount = app.devices.length;
+    app.devicesWithPendingUpdate = app.devices.filter((d) => d.updateAvailable).length;
+    app.devicesEnforcedByPolicy = app.devices.filter((d) => d.enforcedByPolicy).length;
   }
   apps.sort((a, b) => b.deviceCount - a.deviceCount || a.name.localeCompare(b.name));
 

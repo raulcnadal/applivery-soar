@@ -501,25 +501,30 @@ export async function computeReportedAppsVulnSummaries(
 /**
  * Per-device read for the Device modal's Apps tab — pairs each app this
  * device actually reports (across BOTH the self-reported and Applivery-UEM-
- * fetched slots — the whole point of this being a list of entries, not one)
- * with its own cached CVE result, so the tab can show "this specific device
- * has Chrome 118 with these 3 CVEs" rather than the fleet-wide aggregate
- * computeReportedAppsVulnSummaries returns. An app reported by both sources
- * produces two rows here, each correctly tagged with its own source —
- * deliberately NOT deduped the way computeVulnServiceStatus's aggregate
- * counts are, since showing both is the point of this tab (see
- * installedApps.service.ts's InstalledAppsRecord doc comment). One query
- * per installed app (not batched) — acceptable since this runs inside
- * getDevicesFull's per-device loop, same cost class as
- * computeVulnServiceStatus's own per-app cache reads immediately above, and
- * that whole response is cached for DEVICES_CACHE_TTL_SECONDS (15 min), not
- * recomputed per request. `vulnServiceEnabled` mirrors the caller's own
- * vulnServiceCfg.enabled check for computeVulnServiceStatus: false skips
- * every cache lookup here too (a device with 80 self-reported apps would
- * otherwise add 80 no-op queries per fleet-cache refresh for a workspace
- * that never turned the integration on) and every app gets `vuln: null` at
- * zero extra DB cost — the tab still shows the plain installed-apps
- * inventory either way.
+ * fetched slots) with its own cached CVE result, so the tab can show "this
+ * specific device has Chrome 118 with these 3 CVEs" rather than the
+ * fleet-wide aggregate computeReportedAppsVulnSummaries returns.
+ *
+ * An app reported by both sources produces exactly ONE row here (merged,
+ * `sources: string[]` records which side(s) saw it) — an earlier version of
+ * this produced two visually-identical rows per app in that case, which is
+ * the same data-integrity complaint that prompted getReportedAppsOverview's
+ * own merge (installedApps.service.ts): a device shouldn't appear to have
+ * "Chrome" installed twice just because two sources both confirm it's
+ * there. See installedApps.service.ts's InstalledAppsRecord doc comment for
+ * the two-slot storage model this merges back down from.
+ *
+ * One query per distinct installed app (not batched, and not one per raw
+ * source contribution) — acceptable since this runs inside getDevicesFull's
+ * per-device loop, same cost class as computeVulnServiceStatus's own
+ * per-app cache reads immediately above, and that whole response is cached
+ * for DEVICES_CACHE_TTL_SECONDS (15 min), not recomputed per request.
+ * `vulnServiceEnabled` mirrors the caller's own vulnServiceCfg.enabled check
+ * for computeVulnServiceStatus: false skips every cache lookup here too (a
+ * device with 80 self-reported apps would otherwise add 80 no-op queries
+ * per fleet-cache refresh for a workspace that never turned the integration
+ * on) and every app gets `vuln: null` at zero extra DB cost — the tab still
+ * shows the plain installed-apps inventory either way.
  */
 export async function computeDeviceAppsDetail(
   workspaceSlug: string,
@@ -530,7 +535,7 @@ export async function computeDeviceAppsDetail(
   identifier: string;
   name: string | null;
   version: string;
-  source: string;
+  sources: string[];
   updateAvailable: boolean;
   productCode: string | null;
   enforcedByPolicy: boolean;
@@ -540,24 +545,50 @@ export async function computeDeviceAppsDetail(
   if (appsEntries.length === 0) return [];
   const workerPlatform = vulnServiceEnabled ? PLATFORM_MAP[device.platform] : null;
 
-  const out: Array<{
-    identifier: string; name: string | null; version: string; source: string; updateAvailable: boolean;
-    productCode: string | null; enforcedByPolicy: boolean; origin?: "msi" | "store"; vuln: AppVersionVulnInfo | null;
-  }> = [];
+  // Merge contributions from every entry (slot) down to one bucket per
+  // identifier before building output rows — same two-pass shape as
+  // getReportedAppsOverview's per-device merge.
+  const byIdentifier = new Map<string, Array<{ entry: InstalledAppsEntry; app: InstalledAppsEntry["apps"][number] }>>();
   for (const entry of appsEntries) {
     for (const a of entry.apps ?? []) {
-      let vuln: AppVersionVulnInfo | null = null;
-      if (workerPlatform && a.version) {
-        const key = `${a.identifier.toLowerCase()}|${a.version}|${workerPlatform}`;
-        const row = await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
-        if (row && isFreshCache(row.cachedAt)) vuln = toVersionVulnInfo(row);
+      const key = a.identifier;
+      let bucket = byIdentifier.get(key);
+      if (!bucket) {
+        bucket = [];
+        byIdentifier.set(key, bucket);
       }
-      out.push({
-        identifier: a.identifier, name: a.name ?? null, version: a.version, source: entry.source,
-        updateAvailable: Boolean(a.updateAvailable), productCode: a.productCode ?? null, enforcedByPolicy: Boolean(a.enforcedByPolicy),
-        origin: a.origin, vuln,
-      });
+      bucket.push({ entry, app: a });
     }
+  }
+
+  const out: Array<{
+    identifier: string; name: string | null; version: string; sources: string[]; updateAvailable: boolean;
+    productCode: string | null; enforcedByPolicy: boolean; origin?: "msi" | "store"; vuln: AppVersionVulnInfo | null;
+  }> = [];
+  for (const [identifier, contributions] of byIdentifier) {
+    // Freshest contribution wins for the headline name/version, same rule
+    // getReportedAppsOverview uses.
+    const ranked = [...contributions].sort((a, b) => new Date(b.entry.fetchedAt).getTime() - new Date(a.entry.fetchedAt).getTime());
+    const primary = ranked[0].app;
+    const sources = Array.from(new Set(contributions.map((c) => c.entry.source)));
+
+    let vuln: AppVersionVulnInfo | null = null;
+    if (workerPlatform && primary.version) {
+      const key = `${identifier.toLowerCase()}|${primary.version}|${workerPlatform}`;
+      const row = await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
+      if (row && isFreshCache(row.cachedAt)) vuln = toVersionVulnInfo(row);
+    }
+    out.push({
+      identifier,
+      name: contributions.map((c) => c.app.name).find(Boolean) ?? null,
+      version: primary.version,
+      sources,
+      updateAvailable: contributions.some((c) => Boolean(c.app.updateAvailable)),
+      productCode: contributions.map((c) => c.app.productCode).find(Boolean) ?? null,
+      enforcedByPolicy: contributions.some((c) => Boolean(c.app.enforcedByPolicy)),
+      origin: contributions.map((c) => c.app.origin).find(Boolean),
+      vuln,
+    });
   }
   return out;
 }

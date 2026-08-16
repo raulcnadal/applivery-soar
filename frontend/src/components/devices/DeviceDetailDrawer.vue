@@ -1047,7 +1047,12 @@ function traceTitle(t: Record<string, any>): string {
               </div>
               <p v-if="filteredInstalledApps.length === 0" class="text-xs text-gray-400 px-3 py-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">No apps match "{{ appsSearchQuery }}".</p>
               <div v-else class="space-y-2.5">
-              <div v-for="a in filteredInstalledApps" :key="`${a.identifier}-${a.version}-${a.source}`" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+              <!-- keyed on identifier alone: computeDeviceAppsDetail (vulnService.ts)
+                   now merges a self-reported + Applivery-UEM sighting of the
+                   same app on this device into one row, so identifier is
+                   already unique here — no more duplicate rows for one app
+                   just because both sources confirm it's installed. -->
+              <div v-for="a in filteredInstalledApps" :key="a.identifier" class="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/50">
                 <div class="flex items-center justify-between gap-2">
                   <div class="min-w-0">
                     <p class="text-sm text-gray-900 dark:text-white truncate flex items-center gap-1.5">
@@ -1061,11 +1066,15 @@ function traceTitle(t: Record<string, any>): string {
                       <span v-else-if="a.origin === 'msi'" class="ml-1 px-1 py-0.5 rounded text-[9px] font-semibold bg-sky-500/10 text-sky-500 align-middle">MSI</span>
                     </p>
                   </div>
-                  <span
-                    class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold shrink-0"
-                    :class="a.source === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
-                  >
-                    {{ APP_SOURCE_LABELS[a.source] || a.source }}
+                  <span class="flex items-center gap-1 shrink-0">
+                    <span
+                      v-for="s in a.sources"
+                      :key="s"
+                      class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+                      :class="s === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+                    >
+                      {{ APP_SOURCE_LABELS[s] || s }}
+                    </span>
                   </span>
                 </div>
                 <div v-if="a.vuln && a.vuln.cveList.length > 0" class="mt-1.5 space-y-1">
