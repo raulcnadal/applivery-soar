@@ -38,15 +38,30 @@ model Role {
   @@index([workspaceSlug])
 }
 
+// Rewritten from a session-snapshot (apiToken/refreshToken pair) design to a
+// single Applivery Service Account Bearer token (see
+// https://docs.applivery.com/en/platform/api/service-accounts/). The original
+// design took a snapshot of whichever admin's browser session was open when
+// they clicked "Use this session for automation" and self-refreshed it in
+// the background — but Applivery's own POST /auth/refresh rotates the
+// refresh token on every call (confirmed against its OpenAPI spec: each
+// response includes a fresh refreshToken.token, and a stale pair is
+// rejected with 401 code 4011 "Last access token and refresh token
+// invalid"). A live browser session proactively refreshing itself every
+// ~60s (frontend/src/composables/useSessionGuards.ts) and this backend's own
+// periodic refresh were two independent consumers racing to rotate the same
+// shared token — whichever side refreshed first silently invalidated the
+// other's copy, so the stored credential could go stale within one refresh
+// cycle no matter how often an admin re-clicked "Use this session." Service
+// Accounts have no refresh flow at all — a static, workspace-scoped Bearer
+// token, exactly the mechanism Applivery's own docs recommend for "Workspace
+// automation scripts" — which eliminates this whole class of race.
 model AutomationCredential {
   workspaceSlug        String    @id
-  apiToken             String // encrypted at rest
-  refreshToken         String // encrypted at rest
-  apiTokenExpireAt     DateTime?
-  refreshTokenExpireAt DateTime?
+  serviceAccountToken  String // encrypted at rest — Applivery Service Account Bearer token
   configuredBy         String?
   configuredAt         DateTime?
-  lastRefreshedAt      DateTime?
+  lastVerifiedAt       DateTime?
   updatedAt            DateTime  @updatedAt
 }
 

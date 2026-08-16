@@ -5,16 +5,25 @@ import { ref } from "vue";
  * Port of the "Workspace Automation" Settings section (docs/settings.md) —
  * GET/POST/DELETE /api/settings/automation-credential
  * (settings.controller.ts). Background jobs (compliance evaluator, ticket
- * sync, scheduled reports, etc.) run with no human logged in, but Applivery
- * API tokens are per-session and expire, so this stores a standing
- * credential per workspace.
+ * sync, scheduled reports, etc.) run with no human logged in, so this stores
+ * a standing credential per workspace: an Applivery Service Account Bearer
+ * token (https://docs.applivery.com/en/platform/api/service-accounts/).
+ *
+ * Rewritten from an earlier "Use this session for automation" design that
+ * snapshotted the signed-in admin's own apiToken/refreshToken pair. That
+ * broke in production: Applivery's refresh endpoint rotates the refresh
+ * token on every call, and the live browser session (useSessionGuards.ts)
+ * kept refreshing itself independently of this stored snapshot — the two
+ * consumers raced to rotate the same token and kept invalidating each
+ * other's copy. A Service Account token has no refresh flow at all, so
+ * there's nothing left to race.
  */
 export interface AutomationCredentialStatus {
   configured: boolean;
   source: "stored" | null;
   configuredBy?: string | null;
   configuredAt?: string | null;
-  lastRefreshedAt?: string | null;
+  lastVerifiedAt?: string | null;
 }
 
 export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", () => {
@@ -37,18 +46,13 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
     }
   }
 
-  /** "Use this session for automation" — captures the currently-signed-in session's own tokens. */
-  async function useCurrentSession(payload: {
-    apiToken: string;
-    refreshToken: string;
-    apiTokenExpireAt?: string | null;
-    refreshTokenExpireAt?: string | null;
-  }) {
+  /** Persists a Service Account Bearer token for this workspace — validated against Applivery before it's stored (see automationCredential.service.ts). */
+  async function setServiceAccountToken(serviceAccountToken: string) {
     isSaving.value = true;
     error.value = null;
     try {
       const { api } = await import("../api/http");
-      await api.post("/settings/automation-credential", payload);
+      await api.post("/settings/automation-credential", { serviceAccountToken });
       await fetchStatus();
     } catch (err: any) {
       error.value = err?.response?.data?.detail || "Failed to set automation credential.";
@@ -73,5 +77,5 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
     }
   }
 
-  return { status, isLoading, isSaving, error, fetchStatus, useCurrentSession, remove };
+  return { status, isLoading, isSaving, error, fetchStatus, setServiceAccountToken, remove };
 });

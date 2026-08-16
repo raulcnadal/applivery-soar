@@ -46,10 +46,12 @@ One dropdown: **Keep audit log events for** — 30 / 90 / 180 / 365 days, or For
 
 ## Workspace Automation
 
-Background jobs (the compliance evaluator, snapshot capture, [scheduled report sender](reporting.md#schedules-tab)) run with no human logged in, but Applivery API tokens are scoped per-session and expire — so the app needs a standing credential per workspace to keep calling Applivery's API unattended.
+Background jobs (the compliance evaluator, snapshot capture, [scheduled report sender](reporting.md#schedules-tab)) run with no human logged in, so the app needs a standing credential per workspace to keep calling Applivery's API unattended. This uses an **Applivery Service Account** Bearer token ([docs.applivery.com](https://docs.applivery.com/en/platform/api/service-accounts/)) — a static, workspace-scoped credential with no expiry or refresh cycle, purpose-built for exactly this ("Workspace-level automation scripts" is one of the use cases Applivery's own docs list). Create one from the Applivery Dashboard → Workspace Settings → Service Accounts (Admin role recommended — background jobs read and act across devices, compliance, and cases), then paste the Bearer token shown right after creation.
 
-- **"Use this session for automation"** — captures your *own currently signed-in* session's tokens and stores them for background jobs to use; the stored credential self-refreshes afterward without further action.
+- **Service Account Bearer token** — pasted per workspace; validated against Applivery before it's saved, so a bad paste is caught immediately rather than failing silently on the next background job run.
 - **Remove** — clears it (confirm-gated: background jobs for this workspace stop until reconfigured).
+
+**Why not just use a signed-in admin's own session?** An earlier design ("Use this session for automation") snapshotted the signed-in admin's own Applivery access/refresh token pair and self-refreshed it in the background. That broke in production: Applivery's refresh endpoint rotates the refresh token on every call, and the admin's own browser tab was *also* independently refreshing its own copy of the same token pair every ~60 seconds while open — two consumers racing to rotate one shared token, each silently invalidating the other's copy within one refresh cycle. Re-clicking "Use this session" only ever fixed it until the next refresh on either side. A Service Account token has no refresh flow at all, so there's nothing left to race — each workspace just needs its own Service Account created once during onboarding.
 - Status shows configured/not-configured, and who set it if it's a stored credential (vs. a legacy environment-variable fallback).
 
 No permission gate — any signed-in admin can set the automation credential to be their own session.

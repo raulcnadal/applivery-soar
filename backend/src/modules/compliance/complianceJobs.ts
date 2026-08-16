@@ -66,7 +66,12 @@ export async function runComplianceSchedulerTick(): Promise<void> {
 
     const bearer = await getAutomationBearer(workspaceSlug);
     if (!bearer) {
-      blocked.push(`${workspaceSlug} (Automation Credential could not be refreshed — needs reconfiguring)`);
+      // Rare: the credential was cleared between listAutomationWorkspaces()'s
+      // snapshot and here. getAutomationBearer no longer has a refresh step
+      // that can itself fail (it's a Service Account token — see
+      // automationCredential.service.ts's doc comment), so this branch isn't
+      // the "stale refresh token" case the wording used to describe.
+      blocked.push(`${workspaceSlug} (Automation Credential not configured — Settings > Workspace Automation)`);
       continue;
     }
 

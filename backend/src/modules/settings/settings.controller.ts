@@ -31,10 +31,7 @@ const readSettings = [verifyDashboardToken, requirePermission({ area: "settings"
 const manageSettings = [verifyDashboardToken, requirePermission({ area: "settings", level: "manage" })];
 
 const automationCredentialPayloadSchema = z.object({
-  apiToken: z.string().min(1),
-  refreshToken: z.string().min(1),
-  apiTokenExpireAt: z.string().nullish(),
-  refreshTokenExpireAt: z.string().nullish(),
+  serviceAccountToken: z.string().min(1),
 });
 
 function workspaceOf(req: { header(name: string): string | undefined }): string {
