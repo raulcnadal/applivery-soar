@@ -71,10 +71,18 @@ export const env = {
   // mTLS agent authentication (backend/docs/mtls-agent-auth-roadmap.md §5) —
   // header names are configurable (not hardcoded) so this design isn't
   // coupled to any one reverse-proxy product; the defaults below match
-  // NPM's underlying nginx engine ($ssl_client_verify/$ssl_client_s_dn_cn),
-  // which is what's actually deployed today, but any proxy that can forward
+  // NPM's underlying nginx engine ($ssl_client_verify/$ssl_client_s_dn), which
+  // is what's actually deployed today, but any proxy that can forward
   // equivalent values under different header names just needs these three
-  // env vars repointed, no code change. MTLS_INTERNAL_PROXY_SECRET has no
+  // env vars repointed, no code change. NOTE: nginx has no built-in "just the
+  // CN" variable — $ssl_client_s_dn_cn does not exist in open-source nginx
+  // (confirmed against nginx's own variable list; only $ssl_client_s_dn, the
+  // full RFC 2253 subject DN string, is real) and referencing it silently
+  // breaks config application on NPM (found the hard way — see roadmap
+  // §5.5's incident writeup). The CN header therefore carries the full DN
+  // string (e.g. "CN=<serial>"), and mtlsIdentity.middleware.ts's
+  // extractCommonName() parses the bare CN back out before the active-cert
+  // lookup, which expects a bare value. MTLS_INTERNAL_PROXY_SECRET has no
   // default — verifyMtlsIdentity fails closed (503) until an operator
   // explicitly configures it, same fail-closed-until-configured shape as
   // DeviceReportSecret above, since this secret is the defense-in-depth

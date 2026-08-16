@@ -218,7 +218,12 @@ location /api/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header ${c.headerCertVerified} $ssl_client_verify;
-    proxy_set_header ${c.headerCertCn}       $ssl_client_s_dn_cn;
+    # $ssl_client_s_dn_cn is NOT a real nginx variable — nginx only exposes the
+    # full subject DN via $ssl_client_s_dn (e.g. "CN=<value>"). Referencing the
+    # fake variable doesn't error visibly on NPM; it just silently fails to
+    # save (config reverts, UI still says "saved"). The backend parses the bare
+    # CN back out of this DN string automatically, so use the real variable:
+    proxy_set_header ${c.headerCertCn}       $ssl_client_s_dn;
     proxy_set_header ${c.headerProxySecret} "<the MTLS_INTERNAL_PROXY_SECRET value>";
 }`;
 });

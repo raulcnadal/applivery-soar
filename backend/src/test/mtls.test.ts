@@ -206,6 +206,36 @@ describe("assertMtlsIdentity — header/secret/revocation chain", () => {
     await expect(assertMtlsIdentity(req)).resolves.toBe("DEVICE-1");
   });
 
+  it("parses the bare CN out of a full RFC 2253 subject DN string ($ssl_client_s_dn's real format — $ssl_client_s_dn_cn is not a real nginx variable, see mtlsIdentity.middleware.ts's extractCommonName doc comment)", async () => {
+    process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
+    vi.doMock("../modules/mtls/certificates.service", () => ({
+      findActiveCertificate: vi.fn(async (_workspaceSlug: string, cn: string) => (cn === "DEVICE-1" ? { id: "cert-1" } : null)),
+    }));
+    const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
+    const req = fakeReq({
+      "X-Internal-Proxy-Secret": "the-real-secret",
+      "X-Client-Cert-Verified": "SUCCESS",
+      "X-Client-Cert-CN": "CN=DEVICE-1",
+      "X-Workspace-Slug": "acme",
+    });
+    await expect(assertMtlsIdentity(req)).resolves.toBe("DEVICE-1");
+  });
+
+  it("parses the bare CN out of a multi-RDN subject DN string (CN not the only attribute)", async () => {
+    process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
+    vi.doMock("../modules/mtls/certificates.service", () => ({
+      findActiveCertificate: vi.fn(async (_workspaceSlug: string, cn: string) => (cn === "DEVICE-1" ? { id: "cert-1" } : null)),
+    }));
+    const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
+    const req = fakeReq({
+      "X-Internal-Proxy-Secret": "the-real-secret",
+      "X-Client-Cert-Verified": "SUCCESS",
+      "X-Client-Cert-CN": "CN=DEVICE-1,O=Applivery SOAR",
+      "X-Workspace-Slug": "acme",
+    });
+    await expect(assertMtlsIdentity(req)).resolves.toBe("DEVICE-1");
+  });
+
   it("respects env-configured (non-default) header names, proving the design isn't NPM/nginx-specific", async () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
     process.env.MTLS_HEADER_CERT_VERIFIED = "X-Custom-Verified";

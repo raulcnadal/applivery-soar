@@ -50,6 +50,25 @@ function timingSafeEqual(a: string, b: string): boolean {
   return cryptoTimingSafeEqual(bufA, bufB);
 }
 
+/**
+ * nginx has no built-in "just the CN" variable — `$ssl_client_s_dn_cn` does
+ * not exist in open-source nginx (found the hard way against a live NPM
+ * deployment: referencing it silently breaks the proxy host's config
+ * application entirely, with no error surfaced anywhere in NPM's own logs —
+ * see roadmap §5.5's incident writeup). The only real variable is
+ * `$ssl_client_s_dn`, the full RFC 2253 subject DN string (e.g.
+ * "CN=fe5db86528ae", or "CN=fe5db86528ae,O=Example" if a subject ever grows
+ * more RDNs), so the CN header may carry either a bare CN (older deployments,
+ * or a non-nginx proxy that already extracts it) or a full DN string.
+ * findActiveCertificate expects a bare CN (it's stored as the device's plain
+ * serial number — see certificates.service.ts), so this always normalizes
+ * before that lookup.
+ */
+function extractCommonName(headerValue: string): string {
+  const match = headerValue.match(/(?:^|,)\s*CN=([^,]+)/i);
+  return (match ? match[1] : headerValue).trim();
+}
+
 function workspaceOf(req: Request): string {
   return req.header("X-Workspace-Slug") || "global";
 }
@@ -64,10 +83,11 @@ export async function assertMtlsIdentity(req: Request): Promise<string> {
   }
 
   const verified = req.header(env.mtlsHeaderCertVerified);
-  const cn = req.header(env.mtlsHeaderCertCn);
-  if (verified !== "SUCCESS" || !cn) {
+  const rawCn = req.header(env.mtlsHeaderCertCn);
+  if (verified !== "SUCCESS" || !rawCn) {
     throw new HttpError(401, "No verified client certificate identity was presented.");
   }
+  const cn = extractCommonName(rawCn);
 
   const workspaceSlug = workspaceOf(req);
   const activeCert = await findActiveCertificate(workspaceSlug, cn);
