@@ -51,10 +51,27 @@ function formatBytes(bytes: number | string | null | undefined): string | null {
 // invokable from the agent's LocalSystem service context — matching on
 // identifier alone would show "not in the App Catalog" for an app that
 // demonstrably is, just added/reported under different naming conventions.
+//
+// Windows Store (AppX/MSIX) apps need a second normalization on top of
+// that: a catalog entry added via the MS Store search stores whatever
+// Applivery's search API returns as the identifier, which is
+// PackageFamilyName-shaped ("<PackageName>_<PublisherId>", e.g.
+// "1ED5AEA5.4160926B82DB_p2gbknwb5d8r2"), while the device/UEM-reported
+// identifier is always the bare package identity Name — the PublisherId
+// segment isn't knowable before the app is actually installed. Stripping
+// a trailing "_<13-char base32 PublisherId>" recovers the identity Name
+// for comparison (mirrors complianceEvaluate.ts's identical strip).
+const stripPackageFamilySuffix = (id: string) => id.replace(/_[a-z0-9]{13}$/i, "");
 const catalogEntry = computed(() => {
   if (!props.app) return null;
   const target = props.app.identifier.toLowerCase();
-  return store.appCatalog.find((e) => e.platform === props.app!.platform && (e.identifier.toLowerCase() === target || (e.name ?? "").toLowerCase() === target)) ?? null;
+  return (
+    store.appCatalog.find((e) => {
+      if (e.platform !== props.app!.platform) return false;
+      const entryId = e.identifier.toLowerCase();
+      return entryId === target || stripPackageFamilySuffix(entryId) === target || (e.name ?? "").toLowerCase() === target;
+    }) ?? null
+  );
 });
 const listsContaining = computed(() => {
   if (!catalogEntry.value) return [];

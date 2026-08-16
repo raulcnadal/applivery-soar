@@ -269,8 +269,32 @@ export function evaluateCondition(
       // requiredAppList/disallowedAppList would never recognize it, leaving
       // a policy permanently "violated" with no way to self-recover even
       // after the underlying data was correct.
-      const isPresent = (e: { identifier: string; name?: string | null }) =>
-        installed.has(e.identifier.toLowerCase()) || Boolean(e.name && installed.has(e.name.toLowerCase()));
+      //
+      // A second, separate mismatch affects Windows Store (AppX/MSIX) apps
+      // specifically: a catalog entry added via the MS Store search (App
+      // Catalog / Apps view) stores whatever Applivery's own search API
+      // returns as the identifier — `productId`/`packageFamilyName`/`storeId`
+      // (appSearch.service.ts's searchMsStore), which is PackageFamilyName-
+      // shaped: "<PackageName>_<PublisherId>" (e.g.
+      // "1ED5AEA5.4160926B82DB_p2gbknwb5d8r2"). But both the Windows agent's
+      // self-report (apps_windows.go's getAppsViaAppx) and Applivery UEM's
+      // own AppInventoryResults XML (windowsDeviceApps.service.ts) report the
+      // bare package identity Name only — the PackageFamilyName's
+      // PublisherId segment (always a 13-character lowercase base32 string)
+      // is never knowable ahead of install, so it can't be included there.
+      // Stripping that trailing "_<13 chars>" segment recovers the identity
+      // Name for comparison, without risking false strips of legitimate
+      // identifiers (winget's dotted PackageIdentifiers never end in an
+      // underscore + exactly 13 alphanumeric characters).
+      const stripPackageFamilySuffix = (id: string) => id.replace(/_[a-z0-9]{13}$/i, "");
+      const isPresent = (e: { identifier: string; name?: string | null }) => {
+        const idLower = e.identifier.toLowerCase();
+        return (
+          installed.has(idLower) ||
+          installed.has(stripPackageFamilySuffix(idLower)) ||
+          Boolean(e.name && installed.has(e.name.toLowerCase()))
+        );
+      };
       if (field === "requiredAppList") {
         return !entries.every(isPresent);
       }
