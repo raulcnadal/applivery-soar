@@ -70,6 +70,10 @@ Configuration bundle, instead of assembling everything by hand.
   be silently re-registered by it. Also shows a **read-only Agent Base URL** — defaults to this dashboard's own address, or the dedicated agents
   subdomain automatically once one is saved in [Reverse Proxy Configuration](#mtls-agent-authentication)'s **Agent subdomain** field below. That
   field is the only place this value is ever set, so every downloaded Managed Configuration always matches it — nothing to keep in sync by hand.
+  When an agent subdomain is configured, the Windows bundle also sets a separate `RegisterURL` pointing back at this dashboard's own address —
+  one-time registration never presents a client certificate, so it doesn't need the agent subdomain's health at all, only renewal and reporting
+  do. Confirmed necessary in practice: a temporarily-broken agent subdomain (e.g. reverse-proxy cert issue) otherwise blocks brand-new device
+  enrollment for no real reason, even though `/register` never touches that vhost's client-cert machinery.
 - **Download Managed Configuration** — Windows Script (`.ps1`) / macOS Script (`.sh`) (recommended: paste into an Applivery Script resource and
   assign to a Policy for zero-touch fleet push), or a manually-imported Windows `.reg` / macOS `.json`.
 

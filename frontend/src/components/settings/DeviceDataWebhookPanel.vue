@@ -77,6 +77,16 @@ const bootstrapTokenAvailable = computed(() => Boolean(mtls.bootstrapTokenStatus
 // (correct for anyone not using mTLS).
 const agentBaseUrl = computed(() => (mtls.agentSubdomain ? `https://${mtls.agentSubdomain}` : window.location.origin));
 
+// Only meaningful — and only included in the Windows bundle below — once an
+// agent subdomain is actually configured (BaseURL then differs from this
+// dashboard's own origin). Decouples first-time registration from the mTLS
+// vhost's health: /register never presents a client cert, so it doesn't
+// need that dedicated domain at all, only /renew and reporting do. Windows
+// Agent's Config.RegisterURL falls back to BaseURL when unset, so omitting
+// this line entirely is the correct, harmless default for anyone not using
+// a separate agent subdomain.
+const registerBaseUrl = computed(() => (mtls.agentSubdomain ? window.location.origin : null));
+
 function boolToRegDword(value: boolean): string {
   return `dword:${value ? "00000001" : "00000000"}`;
 }
@@ -97,6 +107,9 @@ const windowsRegSnippet = computed(() => {
   ];
   if (bootstrapTokenAvailable.value) {
     lines.push(`"BootstrapToken"="${mtls.bootstrapTokenStatus?.secret ?? ""}"`);
+  }
+  if (registerBaseUrl.value) {
+    lines.push(`"RegisterURL"="${registerBaseUrl.value}"`);
   }
   return lines.join("\n") + "\n";
 });
@@ -139,6 +152,9 @@ const windowsScriptSnippet = computed(() => {
   ];
   if (bootstrapTokenAvailable.value) {
     lines.push(`Set-ItemProperty -Path $regPath -Name "BootstrapToken" -Value "${mtls.bootstrapTokenStatus?.secret ?? ""}" -Type String`);
+  }
+  if (registerBaseUrl.value) {
+    lines.push(`Set-ItemProperty -Path $regPath -Name "RegisterURL" -Value "${registerBaseUrl.value}" -Type String`);
   }
   lines.push(`Write-Host "Applivery SOAR Agent managed configuration applied."`);
   return lines.join("\n") + "\n";
@@ -453,6 +469,11 @@ onMounted(async () => {
             &gt; Reverse Proxy Configuration's Agent subdomain field, the single source of truth. Defaults to this
             dashboard's own address until a dedicated agent subdomain is saved there (required once mTLS is in use —
             a reverse proxy can't scope TLS client-certificate verification to a URL path, only a whole domain).
+          </p>
+          <p v-if="registerBaseUrl" class="text-[10px] mt-1.5 leading-relaxed text-gray-400">
+            The bundle also sets a separate <span class="font-mono">RegisterURL</span> pointing back at this
+            dashboard's own address — one-time registration never presents a client certificate, so it doesn't need
+            the agent subdomain's health at all, only renewal and reporting do.
           </p>
         </div>
       </div>
