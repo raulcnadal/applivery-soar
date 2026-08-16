@@ -152,31 +152,35 @@ The entire trust model in §5 depends on the backend only ever seeing these head
 
 Both point at the same backend/forward target — this isn't a new deployment, just a second NPM Proxy Host (or equivalent) for the same service, with its own hostname. Since browsers never visit the agents subdomain, the client-cert negotiation happening on every connection there is by design, not a problem.
 
+**Confirmed-working recipe on NPM: use its own UI structure, don't hand-write a `location{}` block into the host-level Advanced field.** NPM's Details-tab "Advanced" gear icon and each entry under "Custom Locations" are separate text fields that NPM assembles into the final config itself. Pasting a `location{}` block directly into the host-level Advanced field (this section's earlier guidance, shown below only as what NOT to do) was found in a real deployment to intermittently fail to save with zero visible error anywhere — not in NPM's UI, not in its container log (which only ever logs `Reloading Nginx`, success or not) — leaving a stale config silently in place while the UI still said "saved." Splitting the same directives across NPM's own two fields, matching how NPM's `backend/templates/proxy_host.conf` actually assembles a proxy host (confirmed against NPM's own template source), is what worked:
+
 ```nginx
-# A NEW, SEPARATE Nginx Proxy Manager proxy host — Domain: agents.soar.example.com
-# Do NOT add any of this to the existing dashboard proxy host.
-#
-# Details tab: Forward Hostname/Port — same target as the existing SOAR proxy host.
-#
-# Advanced tab:
+# STEP 1 — Details tab's own "Advanced" gear icon (server-level only, no location block):
 ssl_verify_client optional;   # "optional" not "on" — registration has no cert yet, and
                                # reporting is only cert-gated once Enforcement is on; the
                                # backend decides per request whether one is actually required.
-ssl_client_certificate /path/to/soar-ca.pem;   # download from Settings > mTLS Agent
-                                                # Authentication > Certificate Authority >
-                                                # Download CA certificate (also GET /api/mtls/ca)
+                               # ("on" also works once every device has a cert issued.)
+ssl_client_certificate /data/soar-ca.pem;   # download from Settings > mTLS Authentication >
+                                             # Certificate Authority > Download CA certificate
+                                             # (also GET /api/mtls/ca). Path is read INSIDE the
+                                             # NPM container — /app is NPM's own app code
+                                             # directory, not a volume (its docker-compose only
+                                             # persists ./data:/data and ./letsencrypt:/etc/letsencrypt).
 
-location /api/ {
-    proxy_pass http://<same forward target as the existing SOAR proxy host>;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Client-Cert-Verified $ssl_client_verify;
-    proxy_set_header X-Client-Cert-CN       $ssl_client_s_dn;
-    proxy_set_header X-Internal-Proxy-Secret "<the MTLS_INTERNAL_PROXY_SECRET value>";
-}
+# STEP 2 — Custom Locations tab — Add Location:
+#   Location: /api/
+#   Forward Hostname/Port: same as this host's own Details tab
+#   Then click THAT location's own gear icon and paste this (no location{} wrapper — NPM
+#   generates that itself from the Location field above):
+proxy_set_header X-Client-Cert-Verified $ssl_client_verify;
+proxy_set_header X-Client-Cert-CN       $ssl_client_s_dn;
+proxy_set_header X-Internal-Proxy-Secret "<the MTLS_INTERNAL_PROXY_SECRET value>";
+    # Pull this value directly from the backend's own environment (e.g. docker exec
+    # <soar-backend-container> printenv MTLS_INTERNAL_PROXY_SECRET) and paste that output
+    # as-is. Retyping/re-pasting it by hand across multiple edits is exactly how this got
+    # silently corrupted in one real incident — a duplicated middle fragment inserted into
+    # the string — and every request then failed a 401 with no hint the secret was the
+    # actual mismatch, since it's checked before the certificate/CN headers are even read.
 ```
 
 `location /api/` (not `/`) is deliberate: NPM auto-generates its own `location /` from the Details tab, and nginx rejects a duplicate `location /` in the same server block at config-reload time. `/api/` is a proven-safe, non-colliding prefix — it's the exact pattern `frontend/nginx.conf` already uses in this repo, coexisting with its own `location /` for the SPA, so it's not a new, untested claim.
@@ -192,6 +196,8 @@ location /api/ {
 **Location-block scoping, made explicit:** three categories, three different needs. (1) **Agent registration** (`POST /api/device-mtls/register`) never requires a client cert — the bootstrap token is the credential, and `verifyMtlsIdentity` is never applied to this route (see §4.1/§10) — but it's still inside the `/api/` block above, which is harmless since the route never reads the forwarded cert headers anyway. Renewal (`POST /api/device-mtls/renew`) is the opposite: it's *always* gated by `verifyMtlsIdentity`, cert required unconditionally, same location block. (2) **Device reporting** (`POST/GET /api/device-data/*` — report, report-apps, custom-checks, evaluate-now, agent-status, event-watches, event-notify) is cert-gated only once Enforcement is switched on for that workspace; before that it accepts the legacy `X-Device-Report-Secret` instead. Both prefixes live under `/api/` on the agents subdomain, so one location block covers both. (3) **Frontend and all other dashboard/admin routes** (`/`, `/api/mtls/*` admin, everything else) live entirely on the *other* domain — the one with zero client-cert directives — so there's nothing to scope away from at all.
 
 For a non-nginx-family proxy, the same three values are needed on the dedicated agents vhost: (1) trust the SOAR-issued CA cert for client verification, (2) forward the verification result and the client cert's CN as headers, (3) inject the shared secret. Traefik does this via `passTLSClientCert` middleware (has direct equivalents to `$ssl_client_verify`/CN extraction); Caddy via `tls.client_auth` plus `header_up` directives; HAProxy via `ssl_c_verify`/`ssl_c_s_dn` fetches converted to headers in the backend section. None of these require backend code changes — only the header *names* need to line up with `MTLS_HEADER_CERT_VERIFIED`/`MTLS_HEADER_CERT_CN` env vars, which default to the nginx/NPM names but can be repointed. The separate-vhost requirement is not nginx-specific — it follows from TLS itself (SNI-based client-cert policy is per-listener/per-vhost in every mainstream proxy), so it applies the same way regardless of proxy choice.
+
+**End-to-end confirmed working**, closing out this incident chain: separate agents subdomain + `RegisterURL` split + `/data`-backed CA cert path + real `$ssl_client_s_dn` variable + NPM's own Details/Custom-Locations split + a clean (non-corrupted) `MTLS_INTERNAL_PROXY_SECRET` — a pilot Windows device registered, reported, and passed custom-checks/event-watches polls with Enforcement on and no legacy-secret fallback.
 
 ---
 

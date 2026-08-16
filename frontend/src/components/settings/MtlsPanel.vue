@@ -196,36 +196,46 @@ const proxySnippet = computed(() => {
 #
 # Details tab: Forward Hostname/Port — same target as your existing SOAR proxy host.
 #
-# Advanced tab:
-# IMPORTANT: ssl_client_certificate's path is read INSIDE the NPM container's own
-# filesystem, not your host's. NPM's docker-compose only persists ./data:/data and
-# ./letsencrypt:/etc/letsencrypt — /app is the app's own code directory, not a volume,
-# so a file placed there may be unreadable (or gone after a container recreate) even
-# though the proxy host looks "saved" and "green". Put the downloaded cert under /data
-# (e.g. bind-mount it, or docker cp it into the running container at /data/soar-ca.pem)
-# and reference that path here — NOT /app/soar-ca.pem.
+# CONFIRMED WORKING RECIPE ON NPM — use its own UI structure, don't hand-write a location
+# block into the host-level Advanced field. NPM's "Advanced" gear icon on the Details tab
+# and each entry under the "Custom Locations" tab are SEPARATE text fields that NPM
+# assembles itself; pasting a location{} block into the host-level field (this repo's
+# earlier guidance) was found to intermittently fail to save with no visible error.
+#
+# STEP 1 — Details tab's own "Advanced" gear icon (server-level only, no location block):
 ssl_verify_client optional;   # "optional" not "on" — registration has no cert yet, and
                                # reporting is only cert-gated once Enforcement below is on;
                                # the backend decides per request whether one is required.
-ssl_client_certificate /data/soar-ca.pem;   # download above (Certificate Authority > Download CA certificate);
-                               # verify with: docker exec <npm-container> ls -la /data/soar-ca.pem
+                               # ("on" also works once every device has a cert, but has no
+                               # fallback for anything that can't present one at all.)
+ssl_client_certificate /data/soar-ca.pem;   # download above (Certificate Authority > Download CA
+                               # certificate). Path is read INSIDE the NPM container — /app is
+                               # NPM's own app code directory, not a volume (its docker-compose
+                               # only persists ./data:/data and ./letsencrypt:/etc/letsencrypt),
+                               # so a file placed there can vanish on container recreate even
+                               # though it reads fine right now. Bind-mount the file under /data
+                               # (or wherever your compose file actually persists) instead.
+                               # Verify: docker exec <npm-container> ls -la /data/soar-ca.pem
 
-location /api/ {
-    proxy_pass http://<same forward target as your existing SOAR proxy host>;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header ${c.headerCertVerified} $ssl_client_verify;
-    # $ssl_client_s_dn_cn is NOT a real nginx variable — nginx only exposes the
-    # full subject DN via $ssl_client_s_dn (e.g. "CN=<value>"). Referencing the
-    # fake variable doesn't error visibly on NPM; it just silently fails to
-    # save (config reverts, UI still says "saved"). The backend parses the bare
-    # CN back out of this DN string automatically, so use the real variable:
-    proxy_set_header ${c.headerCertCn}       $ssl_client_s_dn;
-    proxy_set_header ${c.headerProxySecret} "<the MTLS_INTERNAL_PROXY_SECRET value>";
-}`;
+# STEP 2 — Custom Locations tab — Add Location:
+#   Location: /api/
+#   Forward Hostname/Port: same as this host's own Details tab
+#   Then click THAT location's own gear icon and paste this (no location{} wrapper — NPM
+#   generates that itself from the Location field above):
+proxy_set_header ${c.headerCertVerified} $ssl_client_verify;
+proxy_set_header ${c.headerCertCn}       $ssl_client_s_dn;
+                               # $ssl_client_s_dn_cn is NOT a real nginx variable — nginx only
+                               # exposes the full subject DN via $ssl_client_s_dn (e.g.
+                               # "CN=<value>"). The backend parses the bare CN back out of this
+                               # DN string automatically, so use the real variable above.
+proxy_set_header ${c.headerProxySecret} "<the MTLS_INTERNAL_PROXY_SECRET value>";
+                               # Pull this value directly from the backend's own environment —
+                               # e.g. docker exec <soar-backend-container> printenv MTLS_INTERNAL_PROXY_SECRET
+                               # — and paste that output as-is. Retyping/re-pasting it by hand
+                               # across multiple edits is exactly how this gets silently corrupted
+                               # (a duplicated middle fragment, in one real incident) and every
+                               # request then fails a 401 with no hint that the secret is the
+                               # actual mismatch, since it's checked before the certificate.`;
 });
 function copyProxySnippet() {
   copyToClipboard(proxySnippet.value);
