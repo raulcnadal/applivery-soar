@@ -62,7 +62,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   { id: "device-webhook", label: "Device Data Webhook", icon: ICONS.PlugCircle },
   { id: "custom-checks", label: "Custom Device Checks", icon: ICONS.Checklist },
   { id: "event-watches", label: "Event-Driven Detection", icon: ICONS.Radar },
-  { id: "mtls", label: "mTLS Agent Authentication", icon: ICONS.Lock },
+  { id: "mtls", label: "mTLS Authentication", icon: ICONS.Lock },
   { id: "logexport", label: "Log Export", icon: ICONS.Database },
   { id: "triggers", label: "Inbound Webhooks", icon: ICONS.Bolt },
   { id: "case-autorun", label: "Case Auto-Run Rules", icon: ICONS.Target },

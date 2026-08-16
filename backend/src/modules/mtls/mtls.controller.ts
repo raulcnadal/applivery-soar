@@ -3,11 +3,12 @@ import { verifyDashboardToken } from "../../middleware/auth.middleware";
 import { requirePermission } from "../../middleware/rbac.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { env } from "../../config/env";
-import { caGeneratePayloadSchema, caLeafValidityPayloadSchema, caUploadPayloadSchema, certificateRevokePayloadSchema, mtlsEnforcementPayloadSchema } from "./mtls.schemas";
+import { agentSubdomainPayloadSchema, caGeneratePayloadSchema, caLeafValidityPayloadSchema, caUploadPayloadSchema, certificateRevokePayloadSchema, mtlsEnforcementPayloadSchema } from "./mtls.schemas";
 import { generateCa, getCaStatus, setLeafValidityDays, uploadCa } from "./ca.service";
 import { listCertificates, revokeCertificate } from "./certificates.service";
 import { getMtlsEnforcementEnabled, setMtlsEnforcementEnabled } from "./mtlsEnforcement.service";
 import { clearGlobalBootstrapToken, getGlobalBootstrapTokenStatus, rotateGlobalBootstrapToken } from "./globalBootstrapToken.service";
+import { getAgentSubdomain, setAgentSubdomain } from "./agentSubdomain.service";
 
 /**
  * Admin-facing mTLS management — Settings > mTLS Agent Authentication.
@@ -111,4 +112,18 @@ mtlsRouter.get("/api/mtls/proxy-config", ...readMtls, asyncHandler(async (_req, 
     headerProxySecret: env.mtlsHeaderProxySecret,
     proxySecretConfigured: Boolean(env.mtlsInternalProxySecret),
   });
+}));
+
+// ── Agent subdomain — single source of truth, see agentSubdomain.service.ts.
+// Device Data Webhook's Managed Configuration bundle reads this back
+// read-only; this panel (Reverse Proxy Configuration) is the only place it's
+// ever set.
+
+mtlsRouter.get("/api/mtls/agent-subdomain", ...readMtls, asyncHandler(async (req, res) => {
+  res.json(await getAgentSubdomain(workspaceOf(req)));
+}));
+
+mtlsRouter.put("/api/mtls/agent-subdomain", ...manageMtls, asyncHandler(async (req, res) => {
+  const payload = agentSubdomainPayloadSchema.parse(req.body);
+  res.json(await setAgentSubdomain(workspaceOf(req), actorOf(req), payload.agentSubdomain));
 }));

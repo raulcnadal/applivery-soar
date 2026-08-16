@@ -23,6 +23,21 @@ export const mtlsEnforcementPayloadSchema = z.object({
   enabled: z.boolean(),
 });
 
+// Hostname only — no scheme, no path, no trailing slash. Loosely validated
+// (DNS hostname shape) rather than strictly, since this is admin-entered
+// infrastructure config, not user-facing input; the service layer strips a
+// stray scheme/path/trailing-slash defensively too, in case someone pastes
+// a full URL by habit.
+export const agentSubdomainPayloadSchema = z.object({
+  agentSubdomain: z
+    .string()
+    .trim()
+    .min(1)
+    .max(253)
+    .regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/, "Enter a bare hostname (e.g. agents.example.com) — no scheme, path, or port.")
+    .nullable(),
+});
+
 export const deviceMtlsRegisterPayloadSchema = z.object({
   csrPem: z.string().min(1),
   serialNumber: z.string().min(1),

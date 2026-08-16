@@ -131,6 +131,17 @@ model WorkspaceState {
   // yet (that would lock out the entire fleet with no way back in except
   // flipping this back off).
   mtlsEnforcementEnabled            Boolean   @default(false)
+  // Hostname only (e.g. "agents.soar.example.com"), no scheme, no path,
+  // null until an admin sets one. Single source of truth for the dedicated
+  // reverse-proxy vhost that carries the mTLS client-cert directives (see
+  // backend/docs/mtls-agent-auth-roadmap.md §5.5) — TLS client-certificate
+  // verification can't be scoped below server/vhost level, so this MUST be
+  // a different domain than the dashboard's own. mtls.controller.ts's
+  // Reverse Proxy Configuration panel is where an admin sets this;
+  // Device Data Webhook's Managed Configuration bundle reads it back
+  // read-only, so there is exactly one place to change it and every agent's
+  // BaseURL derives from the same value.
+  agentSubdomain                    String?
   updatedAt                         DateTime  @updatedAt
 }
 

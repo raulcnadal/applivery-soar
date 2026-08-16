@@ -66,14 +66,16 @@ const reportIntervalWarning = computed(() => reportIntervalMinutes.value > 0 && 
 // already-enrolled device.
 const bootstrapTokenAvailable = computed(() => Boolean(mtls.bootstrapTokenStatus?.configured));
 
-// Defaults to this dashboard's own origin — correct for everyone NOT using
-// mTLS. Editable because TLS client-certificate verification can't be
+// Read-only here — the single source of truth is mTLS Agent Authentication >
+// Reverse Proxy Configuration's Agent subdomain field (mtls.ts's
+// agentSubdomain state), since TLS client-certificate verification can't be
 // scoped to a URL path in nginx (or most reverse proxies) — it's a
 // connection-level, whole-domain setting — so a workspace using mTLS needs
 // agent traffic routed through a SEPARATE subdomain/vhost dedicated to
-// device calls (see mTLS Agent Authentication > Reverse Proxy
-// Configuration), and every agent's BaseURL must point there instead.
-const agentBaseUrl = ref(window.location.origin);
+// device calls, and every agent's BaseURL must point there instead. Falls
+// back to this dashboard's own origin when no agent subdomain is configured
+// (correct for anyone not using mTLS).
+const agentBaseUrl = computed(() => (mtls.agentSubdomain ? `https://${mtls.agentSubdomain}` : window.location.origin));
 
 function boolToRegDword(value: boolean): string {
   return `dword:${value ? "00000001" : "00000000"}`;
@@ -242,6 +244,7 @@ const platformLabels: Record<string, string> = {
 onMounted(async () => {
   await store.fetchStatus();
   await mtls.fetchBootstrapTokenStatus();
+  await mtls.fetchAgentSubdomain();
   await agentStore.fetchBuildMeta();
   await agentStore.fetchPublishStatus();
   await agentStore.fetchConfig();
@@ -444,13 +447,12 @@ onMounted(async () => {
 
         <div v-if="bootstrapTokenAvailable" class="pt-2 border-t border-gray-100 dark:border-gray-800">
           <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Agent Base URL</label>
-          <Input v-model="agentBaseUrl" type="text" class="w-full font-mono text-[11px]" />
+          <Input :model-value="agentBaseUrl" type="text" disabled class="w-full font-mono text-[11px]" />
           <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
-            Defaults to this dashboard's own address. A reverse proxy can't scope TLS client-certificate verification
-            to a URL path — it's a whole-domain setting — so agent traffic needs a separate subdomain dedicated to
-            device calls once mTLS is in use. Point this at that subdomain (see
-            <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'mtls')">mTLS Agent Authentication</button>
-            &gt; Reverse Proxy Configuration); leave it as-is if you're not routing agent traffic separately.
+            Read-only — set from <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'mtls')">mTLS Agent Authentication</button>
+            &gt; Reverse Proxy Configuration's Agent subdomain field, the single source of truth. Defaults to this
+            dashboard's own address until a dedicated agent subdomain is saved there (required once mTLS is in use —
+            a reverse proxy can't scope TLS client-certificate verification to a URL path, only a whole domain).
           </p>
         </div>
       </div>

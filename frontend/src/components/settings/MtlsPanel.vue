@@ -19,7 +19,7 @@
 // deployment, live Applivery serial-number check, per-device unique certs)
 // without the extra per-device minting step or the approval-queue mode a
 // bootstrap token doesn't need (unattended by design).
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useAuthStore } from "../../stores/auth";
@@ -164,12 +164,31 @@ async function doRevokeCert(id: string, serialNumber: string) {
 // dashboard domain never carries any client-cert directive at all. Point every agent's
 // Managed Configuration BaseURL (Device Data Webhook > Agent Base URL) at that subdomain.
 
-const agentSubdomain = ref(`agents.${window.location.hostname}`);
+// Editable, saved to the backend (single source of truth — Device Data
+// Webhook reads this back read-only). Local draft starts from whatever's
+// already saved, falling back to a suggested value only when nothing is
+// saved yet; onMounted's fetchAgentSubdomain() below overwrites this once
+// the real value loads.
+const agentSubdomainInput = ref(`agents.${window.location.hostname}`);
+const agentSubdomainDirty = ref(false);
+watch(() => store.agentSubdomain, (value) => {
+  agentSubdomainInput.value = value ?? `agents.${window.location.hostname}`;
+  agentSubdomainDirty.value = false;
+});
+async function doSaveAgentSubdomain() {
+  try {
+    await store.setAgentSubdomain(agentSubdomainInput.value.trim() || null);
+    agentSubdomainDirty.value = false;
+  } catch {
+    // Surfaced via store.agentSubdomainError in the template.
+  }
+}
 
 const proxySnippet = computed(() => {
   const c = store.proxyConfig;
   if (!c) return "";
-  return `# A NEW, SEPARATE Nginx Proxy Manager proxy host — Domain: ${agentSubdomain.value}
+  const domain = store.agentSubdomain || agentSubdomainInput.value;
+  return `# A NEW, SEPARATE Nginx Proxy Manager proxy host — Domain: ${domain}
 # Do NOT add any of this to your existing dashboard proxy host (${window.location.hostname}).
 # TLS client-certificate verification applies to the whole domain it's configured on, not
 # to a single path — so this must live on its own subdomain that only ever serves agent
@@ -220,6 +239,7 @@ onMounted(async () => {
   await store.fetchCertificates();
   await store.fetchEnforcement();
   await store.fetchProxyConfig();
+  await store.fetchAgentSubdomain();
 });
 </script>
 
@@ -411,14 +431,25 @@ onMounted(async () => {
               {{ store.proxyConfig.proxySecretConfigured ? "Internal proxy secret is configured on this backend" : "Internal proxy secret is NOT configured — mTLS-gated requests fail closed" }}
             </span>
           </div>
+          <Alert v-if="store.agentSubdomainError" type="danger">{{ store.agentSubdomainError }}</Alert>
           <div>
             <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Agent subdomain</label>
-            <Input v-model="agentSubdomain" type="text" class="w-full font-mono text-[11px]" />
+            <div class="flex items-center gap-2">
+              <Input
+                v-model="agentSubdomainInput"
+                type="text"
+                :disabled="!canEdit()"
+                class="flex-1 font-mono text-[11px]"
+                @update:model-value="agentSubdomainDirty = true"
+              />
+              <Button size="sm" variant="ghost" :disabled="!canEdit() || !agentSubdomainDirty" :loading="store.agentSubdomainBusy" @click="doSaveAgentSubdomain">Save</Button>
+            </div>
             <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
               A new hostname you create a DNS record and a separate Nginx Proxy Manager proxy host for — never your
-              existing dashboard domain. Point every agent's Managed Configuration
+              existing dashboard domain. This is the single source of truth: once saved, every agent's Managed
+              Configuration
               <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'device-webhook')">Agent Base URL</button>
-              at it once set up.
+              picks it up automatically (read-only there).
             </p>
           </div>
           <p class="text-[10px] leading-relaxed text-gray-400">

@@ -81,6 +81,14 @@ export const useMtlsStore = defineStore("mtls", () => {
   const proxyConfigLoading = ref(false);
   const proxyConfigError = ref<string | null>(null);
 
+  // Single source of truth for the dedicated reverse-proxy vhost — set only
+  // from this panel's Reverse Proxy Configuration section; Device Data
+  // Webhook reads agentSubdomain back read-only to build its Agent Base URL.
+  const agentSubdomain = ref<string | null>(null);
+  const agentSubdomainLoading = ref(false);
+  const agentSubdomainError = ref<string | null>(null);
+  const agentSubdomainBusy = ref(false);
+
   function errMsg(err: any, fallback: string): string {
     return err?.response?.data?.detail || fallback;
   }
@@ -260,6 +268,35 @@ export const useMtlsStore = defineStore("mtls", () => {
     }
   }
 
+  async function fetchAgentSubdomain() {
+    agentSubdomainLoading.value = true;
+    agentSubdomainError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/mtls/agent-subdomain");
+      agentSubdomain.value = res.data.agentSubdomain;
+    } catch (err: any) {
+      agentSubdomainError.value = errMsg(err, "Failed to load the agent subdomain.");
+    } finally {
+      agentSubdomainLoading.value = false;
+    }
+  }
+
+  async function setAgentSubdomain(value: string | null) {
+    agentSubdomainBusy.value = true;
+    agentSubdomainError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.put("/mtls/agent-subdomain", { agentSubdomain: value });
+      agentSubdomain.value = res.data.agentSubdomain;
+    } catch (err: any) {
+      agentSubdomainError.value = errMsg(err, "Failed to save the agent subdomain.");
+      throw err;
+    } finally {
+      agentSubdomainBusy.value = false;
+    }
+  }
+
   return {
     caStatus, caLoading, caError, caBusy,
     fetchCaStatus, generateCa, uploadCa, setLeafValidityDays,
@@ -270,5 +307,7 @@ export const useMtlsStore = defineStore("mtls", () => {
     bootstrapTokenStatus, bootstrapTokenLoading, bootstrapTokenError, bootstrapTokenBusy,
     fetchBootstrapTokenStatus, rotateBootstrapToken, clearBootstrapToken,
     proxyConfig, proxyConfigLoading, proxyConfigError, fetchProxyConfig,
+    agentSubdomain, agentSubdomainLoading, agentSubdomainError, agentSubdomainBusy,
+    fetchAgentSubdomain, setAgentSubdomain,
   };
 });
