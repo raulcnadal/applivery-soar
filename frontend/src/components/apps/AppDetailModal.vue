@@ -147,7 +147,7 @@ const versionsWithVulns = computed(() => {
 </script>
 
 <template>
-  <Modal :open="open" :title="app ? app.name : 'App'" size="lg" class="max-w-3xl" @close="emit('close')">
+  <Modal :open="open" :title="app ? app.name : 'App'" size="lg" class="max-w-4xl" @close="emit('close')">
     <div v-if="app" class="space-y-5">
       <div>
         <div class="flex items-center gap-1.5">
@@ -268,70 +268,75 @@ const versionsWithVulns = computed(() => {
                  comment for why (an earlier one-row-per-source design read
                  as a data-integrity bug: the same app appearing to be
                  "installed twice" on one device). -->
-            <div v-for="d in app.devices" :key="d.deviceId" class="grid grid-cols-2 sm:grid-cols-[minmax(140px,1fr)_92px_60px_168px_150px] gap-2 items-center px-2.5 py-1.5 text-xs">
-              <span class="min-w-0 col-span-2 sm:col-span-1">
-                <span class="block text-gray-900 dark:text-white truncate" :title="d.deviceName">{{ d.deviceName }}</span>
-                <!-- Install path — Windows-only, purely informational (mirrors
-                     what an admin would see running Get-AppxPackage/registry
-                     lookups by hand); absent for platforms/apps that never
-                     report one (e.g. winget-sourced entries). -->
-                <span v-if="d.installLocation" class="block text-[10px] font-normal text-gray-400 truncate" :title="d.installLocation">{{ d.installLocation }}</span>
-              </span>
-              <span class="flex items-center gap-1 font-mono" :title="d.versionsBySource ? Object.entries(d.versionsBySource).map(([s, v]) => `${SOURCE_LABELS[s] || s}: ${v}`).join(' · ') : undefined">
-                <component
-                  v-if="d.enforcedByPolicy"
-                  :is="ICONS.ShieldCheck"
-                  :size="12"
-                  weight="Linear"
-                  class="text-emerald-500 shrink-0"
-                  title="Enforced by Applivery's Windows App Distribution policy on this device"
-                />
-                <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500 shrink-0" title="Update available" />
-                <span class="truncate">{{ d.version || "—" }}</span>
-                <span v-if="d.versionsBySource" class="text-amber-500 shrink-0">⚠</span>
-              </span>
-              <span>
-                <span
-                  v-if="d.origin === 'store'"
-                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/10 text-violet-500 whitespace-nowrap"
-                >
-                  Store
+            <div v-for="d in app.devices" :key="d.deviceId" class="px-2.5 py-1.5">
+              <div class="grid grid-cols-2 sm:grid-cols-[minmax(140px,1fr)_92px_60px_168px_150px] gap-2 items-center text-xs">
+                <span class="min-w-0 col-span-2 sm:col-span-1 text-gray-900 dark:text-white truncate" :title="d.deviceName">{{ d.deviceName }}</span>
+                <span class="flex items-center gap-1 font-mono" :title="d.versionsBySource ? Object.entries(d.versionsBySource).map(([s, v]) => `${SOURCE_LABELS[s] || s}: ${v}`).join(' · ') : undefined">
+                  <component
+                    v-if="d.enforcedByPolicy"
+                    :is="ICONS.ShieldCheck"
+                    :size="12"
+                    weight="Linear"
+                    class="text-emerald-500 shrink-0"
+                    title="Enforced by Applivery's Windows App Distribution policy on this device"
+                  />
+                  <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500 shrink-0" title="Update available" />
+                  <span class="truncate">{{ d.version || "—" }}</span>
+                  <span v-if="d.versionsBySource" class="text-amber-500 shrink-0">⚠</span>
                 </span>
-                <span
-                  v-else-if="d.origin === 'winget'"
-                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 whitespace-nowrap"
-                >
-                  Winget
+                <span>
+                  <span
+                    v-if="d.origin === 'store'"
+                    class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/10 text-violet-500 whitespace-nowrap"
+                  >
+                    Store
+                  </span>
+                  <span
+                    v-else-if="d.origin === 'winget'"
+                    class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 whitespace-nowrap"
+                  >
+                    Winget
+                  </span>
+                  <span
+                    v-else-if="d.origin === 'msi'"
+                    class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-sky-500/10 text-sky-500 whitespace-nowrap"
+                  >
+                    MSI
+                  </span>
+                  <span v-else class="text-gray-300 dark:text-gray-600">—</span>
                 </span>
-                <span
-                  v-else-if="d.origin === 'msi'"
-                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-sky-500/10 text-sky-500 whitespace-nowrap"
-                >
-                  MSI
+                <!-- One badge per contributing source — both shown side by
+                     side when both the SOAR Agent and Applivery UEM see this
+                     app on this device, rather than picking just one. -->
+                <span class="flex items-center gap-1 flex-wrap">
+                  <span
+                    v-for="s in d.sources"
+                    :key="s"
+                    class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap"
+                    :class="s === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+                  >
+                    {{ SOURCE_LABELS[s] || s }}
+                  </span>
                 </span>
-                <span v-else class="text-gray-300 dark:text-gray-600">—</span>
-              </span>
-              <!-- One badge per contributing source — both shown side by
-                   side when both the SOAR Agent and Applivery UEM see this
-                   app on this device, rather than picking just one. -->
-              <span class="flex items-center gap-1 flex-wrap">
-                <span
-                  v-for="s in d.sources"
-                  :key="s"
-                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap"
-                  :class="s === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
-                >
-                  {{ SOURCE_LABELS[s] || s }}
+                <!-- Last sync — its own column rather than a bare trailing
+                     timestamp, and the sync-failure triangle lives here
+                     specifically (not floating next to version/source), since
+                     it's a freshness/sync-health signal, not a data-quality one. -->
+                <span class="flex items-center gap-1 text-gray-400" :title="d.lastFetchError ? `Last live-fetch error: ${d.lastFetchError}` : undefined">
+                  <span>{{ formatAge(d.lastSyncAt) }}</span>
+                  <component v-if="d.lastFetchError" :is="ICONS.DangerTriangle" :size="11" weight="Linear" class="text-amber-500 shrink-0" />
                 </span>
-              </span>
-              <!-- Last sync — its own column rather than a bare trailing
-                   timestamp, and the sync-failure triangle lives here
-                   specifically (not floating next to version/source), since
-                   it's a freshness/sync-health signal, not a data-quality one. -->
-              <span class="flex items-center gap-1 text-gray-400" :title="d.lastFetchError ? `Last live-fetch error: ${d.lastFetchError}` : undefined">
-                <span>{{ formatAge(d.lastSyncAt) }}</span>
-                <component v-if="d.lastFetchError" :is="ICONS.DangerTriangle" :size="11" weight="Linear" class="text-amber-500 shrink-0" />
-              </span>
+              </div>
+              <!-- Install path — its own full-width line, never truncated
+                   (long WindowsApps paths are exactly the kind of thing an
+                   admin needs to read/copy in full, not guess at from an
+                   ellipsis) — Windows-only, purely informational; absent for
+                   platforms/apps that never report one (e.g. winget-sourced
+                   entries). -->
+              <div v-if="d.installLocation" class="mt-1 flex items-start gap-1.5 text-[10px] text-gray-400">
+                <component :is="ICONS.Folder" :size="11" weight="Linear" class="shrink-0 mt-0.5" />
+                <span class="font-mono break-all select-all">{{ d.installLocation }}</span>
+              </div>
             </div>
           </div>
         </div>
