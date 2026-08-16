@@ -10,7 +10,9 @@ Columns:
 
 - **App** — name and identifier (bundle ID / package name / winget ID, depending on platform and source).
 - **Version** — the single version if every device agrees, or a "N versions" count if they've drifted (open the row for the per-device breakdown of which device has which).
-- **Source** — "Self-reported," "Applivery UEM," or "Mixed" when devices disagree.
+- **Type** — the package format: "MSI" for classic Win32 installers, "APPX" for AppX/UWP (Store) packages, "IPA"/"APK" for Apple/Android, "Mixed" if a fleet has both an MSI and an APPX install of the same identifier. Windows-only data beyond the platform-derived Apple/Android fallback.
+- **Reported by** — who told SOAR about this app: "Self-reported" (SOAR Agent), "Applivery UEM," or "Mixed" when both sources see it.
+- **Source** — how the app got onto the device (Windows only): "UEM" when Applivery's own Windows App Distribution has it assigned/enforced, "MS Store" for AppX/UWP packages, "Winget" for an app the SOAR Agent detected via `winget list`, "Manual" otherwise — including a self-reporting agent build older than the winget/registry-fallback split, which can't yet distinguish "Winget" from "Manual" and reports "Manual" until that device's agent is updated.
 - **Update** — count of devices with a pending update available (Apple/macOS only — Applivery is the only platform that exposes this flag today).
 - **Risk** — see [Vulnerability Service risk scoring](#vulnerability-service-risk-scoring) below.
 - **Devices** — total device count.
@@ -22,7 +24,7 @@ A platform filter and a name/identifier search sit above the table. Clicking a r
 - **App Lists** — which of your [App Lists](compliance.md#app-lists-sub-view) reference this app, matched against the App Catalog by identifier *or* name (case-insensitive) — an app added to the catalog via Winget search stores winget's PackageIdentifier (e.g. `Google.Chrome`), while a device's self-report often carries the lowercased DisplayName instead (`google chrome`) when winget isn't invokable from the agent's LocalSystem service context, so identifier-only matching would wrongly say "not in the catalog" for an app that demonstrably is.
 - **Applivery Application Library** (Windows only) — a best-effort lookup against Applivery's own Windows App Distribution catalog, matched by MSI product code when available (exact) or by name (fallback).
 - **Vulnerabilities** — per-version CVE breakdown, see below. Only shown when the [Vulnerability Service](settings.md#vulnerability-service) is enabled and has a cached match for at least one version of this app.
-- **Devices** — every device reporting this app, with version, source, "enforced by policy" badge (Windows only — assigned via Applivery's Windows App Distribution, not just incidentally present), update-available flag, last-sync age, and any live-fetch error.
+- **Devices** — one row per physical device (a device seen via both the SOAR Agent and Applivery UEM is merged, not duplicated), with version, package-type badge, every "Reported by" source that saw it, "enforced by policy" badge (Windows only — assigned via Applivery's Windows App Distribution, not just incidentally present), update-available flag, and its own "Last sync" column showing freshness and any live-fetch error.
 
 ### Vulnerability Service risk scoring
 

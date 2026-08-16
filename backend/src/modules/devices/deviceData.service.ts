@@ -189,8 +189,8 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
       identifier: String(a.identifier).toLowerCase(),
       name: a.name ?? null,
       version: String(a.version),
-      // Passed through as-is (already validated to "msi" | "store" | undefined
-      // by deviceAppReportPayloadSchema) — see installedApps.service.ts's
+      // Passed through as-is (already validated to "winget" | "msi" | "store"
+      // | undefined by deviceAppReportPayloadSchema) — see installedApps.service.ts's
       // InstalledAppsEntry.apps[].origin doc comment.
       ...(a.origin ? { origin: a.origin } : {}),
     }))

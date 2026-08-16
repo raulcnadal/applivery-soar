@@ -539,7 +539,7 @@ export async function computeDeviceAppsDetail(
   updateAvailable: boolean;
   productCode: string | null;
   enforcedByPolicy: boolean;
-  origin?: "msi" | "store";
+  origin?: "winget" | "msi" | "store";
   vuln: AppVersionVulnInfo | null;
 }>> {
   if (appsEntries.length === 0) return [];
@@ -563,7 +563,7 @@ export async function computeDeviceAppsDetail(
 
   const out: Array<{
     identifier: string; name: string | null; version: string; sources: string[]; updateAvailable: boolean;
-    productCode: string | null; enforcedByPolicy: boolean; origin?: "msi" | "store"; vuln: AppVersionVulnInfo | null;
+    productCode: string | null; enforcedByPolicy: boolean; origin?: "winget" | "msi" | "store"; vuln: AppVersionVulnInfo | null;
   }> = [];
   for (const [identifier, contributions] of byIdentifier) {
     // Freshest contribution wins for the headline name/version, same rule

@@ -11,7 +11,7 @@
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
-import { useComplianceStore, type ReportedAppSummary } from "../../stores/compliance";
+import { useComplianceStore, type ReportedAppDeviceRef, type ReportedAppSummary } from "../../stores/compliance";
 import AppDetailModal from "./AppDetailModal.vue";
 
 const store = useComplianceStore();
@@ -156,6 +156,55 @@ function sourceLabel(app: ReportedAppSummary): string {
   if (app.sources.length === 1) return SOURCE_LABELS[app.sources[0]] || app.sources[0];
   return "Mixed";
 }
+// Type — the package format, derived from the per-device origin values
+// (Windows-only data; every other platform has no format signal today).
+// Winget-detected and registry-fallback-detected Win32 apps are the same
+// *format* (a classic installer) — the winget/registry distinction is a
+// question of "how do we know", which is what the Source column (below)
+// answers, not Type.
+function typeLabel(app: ReportedAppSummary): string {
+  if (app.platform === "windows") {
+    const origins = app.devices.map((d) => d.origin).filter((o): o is NonNullable<typeof o> => Boolean(o));
+    if (origins.length === 0) return "—";
+    const hasStore = origins.some((o) => o === "store");
+    const hasInstaller = origins.some((o) => o === "msi" || o === "winget");
+    if (hasStore && hasInstaller) return "Mixed";
+    return hasStore ? "APPX" : "MSI";
+  }
+  if (app.platform === "apple" || app.platform === "macos") return "IPA";
+  if (app.platform === "android" || app.platform === "aosp") return "APK";
+  return "—";
+}
+// Source — how the app got onto the device, distinct from "Reported by"
+// (who told SOAR about it). "UEM" wins over origin when Applivery's own
+// Windows App Distribution policy has this app assigned/enforced on the
+// device (deviceWinPolicy.applicationsInfo) — that's a stronger signal than
+// how the agent happened to detect it. "Winget" requires an agent build new
+// enough to tag it distinctly from a plain registry-fallback detection (see
+// apps_windows.go's getAppsViaWinget/getAppsViaRegistry) — an older agent's
+// self-reports fall back to "Manual" here until that device's agent is
+// updated, same as any other origin-derived field.
+const ACQUISITION_SOURCE_LABELS: Record<string, string> = { store: "MS Store", winget: "Winget" };
+function acquisitionSource(d: ReportedAppDeviceRef): string {
+  if (d.enforcedByPolicy) return "UEM";
+  return ACQUISITION_SOURCE_LABELS[d.origin ?? ""] ?? "Manual";
+}
+function acquisitionSourceLabel(app: ReportedAppSummary): string {
+  // Windows-only — the underlying origin/enforcedByPolicy data doesn't
+  // exist for other platforms yet.
+  if (app.platform !== "windows") return "—";
+  const values = new Set(app.devices.map(acquisitionSource));
+  if (values.size === 0) return "—";
+  if (values.size > 1) return "Mixed";
+  return [...values][0];
+}
+const ACQUISITION_BADGE_CLASS: Record<string, string> = {
+  UEM: "bg-brand-500/10 text-brand-600 dark:text-brand-400",
+  "MS Store": "bg-violet-500/10 text-violet-500",
+  Winget: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  Manual: "bg-gray-500/10 text-gray-500 dark:text-gray-400",
+  Mixed: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+};
 // The first non-null fetch error among this app's devices — surfaced as a
 // hover tooltip so "why does this only ever show self-reported data" is
 // answerable without digging through backend logs (see
@@ -207,7 +256,7 @@ onMounted(() => {
 
     <p class="text-[10px] text-gray-400 flex items-start gap-1">
       <component :is="ICONS.InfoCircle" :size="10" weight="Linear" class="shrink-0 mt-0.5" />
-      "Self-reported" comes from the SOAR Agent's App Inventory Reporting; "Applivery UEM" comes from Applivery's own device-management API. "Update available" is currently only reported by Applivery for iOS/iPadOS/macOS apps — it flags that an update exists but Applivery doesn't expose the target version number. "Risk" needs Settings &gt; Vulnerability Service enabled — shows "—" otherwise, or when no CVE match is cached yet for any reported version. Click a row for per-device detail, App List membership, per-version CVE breakdown, and (Windows) a lookup against Applivery's own application library.
+      "Reported by" is who told SOAR about this app — "Self-reported" from the SOAR Agent's App Inventory Reporting, "Applivery UEM" from Applivery's own device-management API. "Source" is how the app got onto the device (Windows only) — "UEM" when Applivery's own Windows App Distribution has it assigned/enforced, "MS Store" for AppX/UWP packages, "Winget" for an app the SOAR Agent detected via `winget list`, "Manual" otherwise (also covers a self-reporting agent build older than the winget/registry split). "Update available" is currently only reported by Applivery for iOS/iPadOS/macOS apps — it flags that an update exists but Applivery doesn't expose the target version number. "Risk" needs Settings &gt; Vulnerability Service enabled — shows "—" otherwise, or when no CVE match is cached yet for any reported version. Click a row for per-device detail, App List membership, per-version CVE breakdown, and (Windows) a lookup against Applivery's own application library.
     </p>
 
     <Alert v-if="store.reportedAppsError" type="danger">{{ store.reportedAppsError }}</Alert>
@@ -216,13 +265,34 @@ onMounted(() => {
       No app inventory data yet — devices report their installed apps via the SOAR Agent (App Inventory Reporting) or the background installed-apps refresher once a Compliance Policy references an App List.
     </Alert>
 
-    <div v-else class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 overflow-hidden">
-      <div class="hidden sm:grid grid-cols-[1fr_140px_120px_120px_70px_90px_24px] gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700">
+    <div v-else class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 overflow-hidden overflow-x-auto">
+      <div class="hidden sm:grid grid-cols-[1fr_90px_60px_110px_100px_90px_70px_70px_24px] gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700 min-w-[900px]">
         <span>App</span>
         <button
           v-for="col in [
             { key: 'version', label: 'Version' },
-            { key: 'source', label: 'Source' },
+          ]"
+          :key="col.key"
+          type="button"
+          class="inline-flex items-center gap-1 uppercase tracking-wider text-left"
+          :style="{ color: sortBy === col.key ? '#0241E3' : undefined }"
+          @click.stop="toggleSort(col.key as SortKey)"
+        >
+          {{ col.label }} <component :is="ICONS.SortVertical" :size="10" weight="Linear" />
+        </button>
+        <span title="Package format — MSI, APPX, etc.">Type</span>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 uppercase tracking-wider text-left"
+          :style="{ color: sortBy === 'source' ? '#0241E3' : undefined }"
+          title="Who told SOAR about this app"
+          @click.stop="toggleSort('source')"
+        >
+          Reported by <component :is="ICONS.SortVertical" :size="10" weight="Linear" />
+        </button>
+        <span title="How the app got onto the device — Windows only">Source</span>
+        <button
+          v-for="col in [
             { key: 'update', label: 'Update' },
             { key: 'risk', label: 'Risk' },
           ]"
@@ -243,7 +313,7 @@ onMounted(() => {
           v-for="app in sorted"
           :key="appKey(app)"
           type="button"
-          class="w-full grid grid-cols-2 sm:grid-cols-[1fr_140px_120px_120px_70px_90px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40"
+          class="w-full grid grid-cols-2 sm:grid-cols-[1fr_90px_60px_110px_100px_90px_70px_70px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40 sm:min-w-[900px]"
           @click="selectedApp = app"
         >
           <div class="min-w-0 col-span-2 sm:col-span-1">
@@ -261,6 +331,7 @@ onMounted(() => {
             <p class="text-[11px] text-gray-400 truncate">{{ PLATFORM_LABELS[app.platform] || app.platform }} · {{ app.identifier }}</p>
           </div>
           <div class="text-xs text-gray-700 dark:text-gray-300 truncate" :title="app.versions.join(', ')">{{ versionLabel(app) }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ typeLabel(app) }}</div>
           <div>
             <span
               class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
@@ -268,6 +339,16 @@ onMounted(() => {
             >
               {{ sourceLabel(app) }}
             </span>
+          </div>
+          <div>
+            <span
+              v-if="acquisitionSourceLabel(app) !== '—'"
+              class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+              :class="ACQUISITION_BADGE_CLASS[acquisitionSourceLabel(app)] || 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+            >
+              {{ acquisitionSourceLabel(app) }}
+            </span>
+            <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
           </div>
           <div>
             <span v-if="app.devicesWithPendingUpdate > 0" class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 whitespace-nowrap">

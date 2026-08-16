@@ -130,7 +130,7 @@ const versionsWithVulns = computed(() => {
 </script>
 
 <template>
-  <Modal :open="open" :title="app ? app.name : 'App'" size="lg" @close="emit('close')">
+  <Modal :open="open" :title="app ? app.name : 'App'" size="lg" class="max-w-3xl" @close="emit('close')">
     <div v-if="app" class="space-y-5">
       <div>
         <div class="flex items-center gap-1.5">
@@ -229,66 +229,86 @@ const versionsWithVulns = computed(() => {
       <!-- Per-device breakdown -->
       <div>
         <p class="text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Devices</p>
-        <div class="border border-gray-100 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700 max-h-64 overflow-y-auto">
-          <!-- keyed on deviceId alone: this is one row per physical device now.
-               A device reporting the same app via both the SOAR Agent
-               (self_reported) and Applivery UEM (server_fetch) is merged into
-               a single row with both source badges — see
-               installedApps.service.ts's getReportedAppsOverview doc comment
-               for why (an earlier one-row-per-source design read as a
-               data-integrity bug: the same app appearing to be "installed
-               twice" on one device). -->
-          <div v-for="d in app.devices" :key="d.deviceId" class="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
-            <span class="text-gray-900 dark:text-white truncate">{{ d.deviceName }}</span>
-            <span class="flex items-center gap-2 shrink-0 text-gray-400">
-              <component
-                v-if="d.enforcedByPolicy"
-                :is="ICONS.ShieldCheck"
-                :size="12"
-                weight="Linear"
-                class="text-emerald-500"
-                title="Enforced by Applivery's Windows App Distribution policy on this device"
-              />
-              <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500" title="Update available" />
-              <span
-                class="font-mono"
-                :title="d.versionsBySource ? Object.entries(d.versionsBySource).map(([s, v]) => `${SOURCE_LABELS[s] || s}: ${v}`).join(' · ') : undefined"
-              >
-                {{ d.version || "—" }}<span v-if="d.versionsBySource" class="text-amber-500"> ⚠</span>
+        <div class="border border-gray-100 dark:border-gray-700 rounded-lg overflow-hidden">
+          <!-- A real grid (not a flexbox that squeezes the name column to
+               fit its neighbors) — columns line up across every row
+               regardless of device-name length now that the modal itself is
+               wider, and a long device name is truncated with the full name
+               available on hover rather than silently stripped mid-string. -->
+          <div class="hidden sm:grid grid-cols-[minmax(140px,1fr)_92px_60px_168px_150px] gap-2 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+            <span>Device</span>
+            <span>Version</span>
+            <span>Type</span>
+            <span>Reported by</span>
+            <span>Last sync</span>
+          </div>
+          <div class="divide-y divide-gray-100 dark:divide-gray-700 max-h-64 overflow-y-auto">
+            <!-- keyed on deviceId alone: this is one row per physical device
+                 now. A device reporting the same app via both the SOAR Agent
+                 (self_reported) and Applivery UEM (server_fetch) is merged
+                 into a single row with both "Reported by" badges — see
+                 installedApps.service.ts's getReportedAppsOverview doc
+                 comment for why (an earlier one-row-per-source design read
+                 as a data-integrity bug: the same app appearing to be
+                 "installed twice" on one device). -->
+            <div v-for="d in app.devices" :key="d.deviceId" class="grid grid-cols-2 sm:grid-cols-[minmax(140px,1fr)_92px_60px_168px_150px] gap-2 items-center px-2.5 py-1.5 text-xs">
+              <span class="text-gray-900 dark:text-white truncate col-span-2 sm:col-span-1" :title="d.deviceName">{{ d.deviceName }}</span>
+              <span class="flex items-center gap-1 font-mono" :title="d.versionsBySource ? Object.entries(d.versionsBySource).map(([s, v]) => `${SOURCE_LABELS[s] || s}: ${v}`).join(' · ') : undefined">
+                <component
+                  v-if="d.enforcedByPolicy"
+                  :is="ICONS.ShieldCheck"
+                  :size="12"
+                  weight="Linear"
+                  class="text-emerald-500 shrink-0"
+                  title="Enforced by Applivery's Windows App Distribution policy on this device"
+                />
+                <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500 shrink-0" title="Update available" />
+                <span class="truncate">{{ d.version || "—" }}</span>
+                <span v-if="d.versionsBySource" class="text-amber-500 shrink-0">⚠</span>
               </span>
-              <span
-                v-if="d.origin === 'store'"
-                class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/10 text-violet-500"
-              >
-                Store
+              <span>
+                <span
+                  v-if="d.origin === 'store'"
+                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/10 text-violet-500 whitespace-nowrap"
+                >
+                  Store
+                </span>
+                <span
+                  v-else-if="d.origin === 'winget'"
+                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 whitespace-nowrap"
+                >
+                  Winget
+                </span>
+                <span
+                  v-else-if="d.origin === 'msi'"
+                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-sky-500/10 text-sky-500 whitespace-nowrap"
+                >
+                  MSI
+                </span>
+                <span v-else class="text-gray-300 dark:text-gray-600">—</span>
               </span>
-              <span
-                v-else-if="d.origin === 'msi'"
-                class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-sky-500/10 text-sky-500"
-              >
-                MSI
+              <!-- One badge per contributing source — both shown side by
+                   side when both the SOAR Agent and Applivery UEM see this
+                   app on this device, rather than picking just one. -->
+              <span class="flex items-center gap-1 flex-wrap">
+                <span
+                  v-for="s in d.sources"
+                  :key="s"
+                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap"
+                  :class="s === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+                >
+                  {{ SOURCE_LABELS[s] || s }}
+                </span>
               </span>
-              <!-- One badge per contributing source — both shown side by side
-                   when both the SOAR Agent and Applivery UEM see this app on
-                   this device, rather than picking just one. -->
-              <span
-                v-for="s in d.sources"
-                :key="s"
-                class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
-                :class="s === 'self_reported' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
-              >
-                {{ SOURCE_LABELS[s] || s }}
-              </span>
-              <!-- Last Sync — its own labeled value rather than a bare
-                   timestamp, and the sync-failure triangle now lives here
+              <!-- Last sync — its own column rather than a bare trailing
+                   timestamp, and the sync-failure triangle lives here
                    specifically (not floating next to version/source), since
                    it's a freshness/sync-health signal, not a data-quality one. -->
-              <span class="inline-flex items-center gap-1" :title="d.lastFetchError ? `Last live-fetch error: ${d.lastFetchError}` : 'Last sync'">
-                <span class="text-gray-300 dark:text-gray-600">Last sync</span>
+              <span class="flex items-center gap-1 text-gray-400" :title="d.lastFetchError ? `Last live-fetch error: ${d.lastFetchError}` : undefined">
                 <span>{{ formatAge(d.lastSyncAt) }}</span>
-                <component v-if="d.lastFetchError" :is="ICONS.DangerTriangle" :size="11" weight="Linear" class="text-amber-500" />
+                <component v-if="d.lastFetchError" :is="ICONS.DangerTriangle" :size="11" weight="Linear" class="text-amber-500 shrink-0" />
               </span>
-            </span>
+            </div>
           </div>
         </div>
       </div>

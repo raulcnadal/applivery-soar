@@ -21,11 +21,17 @@ export interface InstalledAppsEntry {
   // to the device via its policy (deviceWinPolicy.applicationsInfo), false
   // when it's just present on the device for some other reason (manually
   // installed, or installed by the enrollment process like the Applivery
-  // Agent MSI itself). origin is Windows-only too — "msi" for classic
-  // installer apps, "store" for AppX/UWP packages parsed out of
-  // AppInventoryResults (windowsDeviceApps.service.ts) — absent for every
-  // other platform and for self-reported Windows apps (the agent doesn't yet
-  // distinguish the two either, see apps_windows.go).
+  // Agent MSI itself). origin is Windows-only too — absent for every other
+  // platform. On a server_fetch entry (windowsDeviceApps.service.ts's
+  // AppInventoryResults parse) it's only ever "msi" or "store" — Applivery's
+  // own fetch has no concept of "installed via winget" vs. some other
+  // installer. On a self_reported entry (apps_windows.go) it can be
+  // "winget" (detected via `winget list`, a real package-manager source),
+  // "msi" (the agent's registry Uninstall-key fallback, only used when
+  // winget itself isn't invokable), or "store" (AppX/UWP, via
+  // Get-AppxPackage) — this three-way split is what lets the Apps view show
+  // a genuine Winget/MS Store/UEM/Manual Source value instead of collapsing
+  // every self-reported Win32 app into one bucket.
   apps: Array<{
     identifier: string;
     name?: string | null;
@@ -33,7 +39,7 @@ export interface InstalledAppsEntry {
     updateAvailable?: boolean;
     productCode?: string;
     enforcedByPolicy?: boolean;
-    origin?: "msi" | "store";
+    origin?: "winget" | "msi" | "store";
   }>;
   platform: string;
   fetchedAt: string;
@@ -434,7 +440,7 @@ export interface ReportedAppDeviceRef {
   // apps[] doc comment for what these mean.
   productCode: string | null;
   enforcedByPolicy: boolean;
-  origin?: "msi" | "store";
+  origin?: "winget" | "msi" | "store";
 }
 export interface ReportedAppSummary {
   identifier: string;

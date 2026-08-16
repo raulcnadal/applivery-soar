@@ -105,10 +105,14 @@ export const deviceAppReportPayloadSchema = z.object({
         identifier: z.string().optional(),
         name: z.string().optional(),
         version: z.string().optional(),
-        // Windows-only, optional — an agent build new enough to detect AppX/
-        // Store packages (via PowerShell Get-AppxPackage) tags them here;
-        // older agent builds simply omit it, same as every other field here.
-        origin: z.enum(["msi", "store"]).optional(),
+        // Windows-only, optional — "winget" for apps detected via `winget
+        // list` (a real package-manager source), "msi" for the agent's
+        // registry Uninstall-key fallback (only used when winget itself
+        // isn't invokable), "store" for AppX/UWP packages (PowerShell
+        // Get-AppxPackage). An agent build older than the winget/msi split
+        // (or one that never detected AppX packages at all) simply omits
+        // this field, same as every other field here.
+        origin: z.enum(["winget", "msi", "store"]).optional(),
       }),
     )
     .default([]),

@@ -1063,6 +1063,7 @@ function traceTitle(t: Record<string, any>): string {
                     <p class="text-[11px] text-gray-400 truncate">
                       {{ a.identifier }} · v{{ a.version }}
                       <span v-if="a.origin === 'store'" class="ml-1 px-1 py-0.5 rounded text-[9px] font-semibold bg-violet-500/10 text-violet-500 align-middle">Store</span>
+                      <span v-else-if="a.origin === 'winget'" class="ml-1 px-1 py-0.5 rounded text-[9px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 align-middle">Winget</span>
                       <span v-else-if="a.origin === 'msi'" class="ml-1 px-1 py-0.5 rounded text-[9px] font-semibold bg-sky-500/10 text-sky-500 align-middle">MSI</span>
                     </p>
                   </div>
