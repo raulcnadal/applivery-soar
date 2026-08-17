@@ -85,10 +85,13 @@ This is the biggest net-new piece, and where Xcode access matters. Structure:
 
 ## 4. Phase 4 — Custom Device Checks: verify, don't rebuild
 
-Already implemented and already backend-ready (`CHECK_PLATFORMS` includes `"macos"`, all 5 checker types have macOS branches, `customchecks_macos.go` implements all of them). This phase is verification/polish only:
+**Verified (2026-08-17), no code changes needed.** Already implemented and already backend-ready (`CHECK_PLATFORMS` includes `"macos"`, all 5 checker types have macOS branches, `customchecks_macos.go` implements all of them). Checked directly against the Windows agent's `customchecks_windows.go` and the backend's `customChecks.schemas.ts`:
 
-- Confirm error-message parity with Windows (same phrasing conventions: "errored = no data yet" semantics, not different wording that'd confuse an admin comparing the two platforms in one dashboard).
-- Confirm the 30s command timeout / 4KB output cap match Windows exactly (they already do, per the code read).
+- **Param field names match the backend's `validateCheckParams` exactly** on both platforms — macOS's `registryOrFileValue` correctly uses `path`/`plistKey` (not Windows' `registryPath`/`valueName`), `serviceStatus` uses the launchd label, `appInstalled` uses a bundle identifier — all per-platform-appropriate, all consistent with what the schema requires and what the frontend's `CustomDeviceChecksPanel.vue` actually sends (confirmed the panel already fully supports macOS: platform toggle, correct field labels/placeholders — "Launchd label", "Bundle identifier", "bash" for the command checker — no gating anywhere).
+- **Error-message *semantics* parity confirmed** (error = "couldn't determine," a legitimately negative result like "process not running" is a normal `Value`, never an `Error`) — exact wording necessarily differs between platforms since the underlying primitives differ (WMI/SCM/registry vs pgrep/launchctl/plutil), which is expected and fine; the contract the backend's compliance evaluator depends on is the semantic one, not literal string matching.
+- **30s command timeout / 4000-char output cap with `"… (truncated)"` suffix match Windows exactly**, character-for-character in the truncation logic.
+
+This phase really was verification-only, as predicted — no engineering follow-up.
 
 No new engineering — call this phase essentially done, just needs a pass of cross-platform QA once other phases land.
 
