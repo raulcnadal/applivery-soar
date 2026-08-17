@@ -787,11 +787,11 @@ model CustomCheckDefinition {
 model EventWatchDefinition {
   id            String   @id @default(uuid())
   workspaceSlug String
-  platform      String   // "windows" for now (macos reserved, see roadmap doc)
+  platform      String   // "windows" | "macos"
   key           String   // stable slug, unique per (workspaceSlug, platform)
   name          String
   description   String?
-  watchType     String   // "registryKey" | "etwProvider" (more added as agent support grows)
+  watchType     String   // "registryKey" | "etwProvider" (windows) | "fsEventsPath" | "launchdJobState" (macos)
   params        Json     // shape depends on watchType — see eventWatches.schemas.ts
   debounceMs    Int      @default(5000)
   action        String   // "refreshInstalledApps" | "evaluateComplianceNow"

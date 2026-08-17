@@ -116,15 +116,21 @@ export interface CustomCheckDefinition {
 // backend/docs/event-driven-agent-detection-roadmap.md for the full design.
 // Deliberately mirrors CustomCheckDefinition's shape just above — same
 // "admin authors in Settings, agent polls read-only" feature class.
-export const WATCH_TYPES = ["registryKey", "etwProvider"] as const;
+// registryKey/etwProvider are Windows-only; fsEventsPath/launchdJobState
+// (macOS parity roadmap Phase 5) are macOS-only — see backend's
+// eventWatches.schemas.ts WATCH_TYPES doc comment for why these are
+// disjoint per-platform values rather than shared ones.
+export const WATCH_TYPES = ["registryKey", "etwProvider", "fsEventsPath", "launchdJobState"] as const;
 export type WatchType = (typeof WATCH_TYPES)[number];
+export const WATCH_PLATFORMS = ["windows", "macos"] as const;
+export type WatchPlatform = (typeof WATCH_PLATFORMS)[number];
 export const WATCH_ACTIONS = ["refreshInstalledApps", "evaluateComplianceNow"] as const;
 export type WatchAction = (typeof WATCH_ACTIONS)[number];
 
 export interface EventWatchDefinition {
   id: string;
   workspaceSlug: string;
-  platform: "windows";
+  platform: WatchPlatform;
   key: string;
   name: string;
   description?: string | null;

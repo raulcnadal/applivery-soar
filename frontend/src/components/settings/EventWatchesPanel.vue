@@ -14,7 +14,14 @@ import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
-import { useComplianceStore, WATCH_ACTIONS, WATCH_TYPES, type EventWatchDefinition, type WatchAction, type WatchType } from "../../stores/compliance";
+import {
+  useComplianceStore,
+  WATCH_ACTIONS,
+  type EventWatchDefinition,
+  type WatchAction,
+  type WatchPlatform,
+  type WatchType,
+} from "../../stores/compliance";
 
 const PRIMARY_BLUE = "#0241E3";
 
@@ -22,9 +29,18 @@ const store = useComplianceStore();
 const auth = useAuthStore();
 const canEdit = () => auth.hasFeatureAccess("compliance", "manage");
 
+// registryKey/etwProvider are Windows-only; fsEventsPath/launchdJobState are
+// macOS-only (macOS parity roadmap Phase 5) — same disjoint-per-platform
+// split as the backend's WATCH_TYPES.
+const WATCH_TYPES_FOR_PLATFORM: Record<WatchPlatform, readonly WatchType[]> = {
+  windows: ["registryKey", "etwProvider"],
+  macos: ["fsEventsPath", "launchdJobState"],
+};
 const WATCH_TYPE_LABELS: Record<WatchType, string> = {
   registryKey: "Registry key change",
   etwProvider: "ETW provider event",
+  fsEventsPath: "File/folder change (fsnotify)",
+  launchdJobState: "Launchd job state change",
 };
 const ACTION_LABELS: Record<WatchAction, string> = {
   refreshInstalledApps: "Refresh this device's installed-apps inventory",
@@ -33,8 +49,12 @@ const ACTION_LABELS: Record<WatchAction, string> = {
 
 function defaultParamsFor(watchType: WatchType): Record<string, any> {
   if (watchType === "etwProvider") return { provider: "", eventIds: [] as number[], level: null };
+  if (watchType === "fsEventsPath") return { path: "", recursive: false };
+  if (watchType === "launchdJobState") return { label: "" };
   return { hive: "HKLM", path: "", watchSubtree: true };
 }
+
+const platform = ref<WatchPlatform>("windows");
 
 // null = list view, "new" = creating, else the watch id being edited.
 const isEditing = ref<string | null>(null);
@@ -55,18 +75,26 @@ const etwEventIdsText = ref("");
 const saveError = ref<string | null>(null);
 const isSaving = ref(false);
 
-// Windows-only for now (see backend's WATCH_PLATFORMS doc comment) — no
-// platform toggle needed the way CustomDeviceChecksPanel.vue has one.
-const filteredWatches = computed(() => store.eventWatches.filter((w) => w.platform === "windows"));
+const filteredWatches = computed(() => store.eventWatches.filter((w) => w.platform === platform.value));
+
+// Switching the platform toggle mid-creation should reset the watch type to
+// that platform's first option and clear params, same reasoning as
+// onWatchTypeChange below — a Windows registryKey's params are meaningless
+// once you're creating a macOS watch.
+function onPlatformChange() {
+  form.watchType = WATCH_TYPES_FOR_PLATFORM[platform.value][0];
+  form.params = defaultParamsFor(form.watchType);
+  etwEventIdsText.value = "";
+}
 
 function resetForm() {
   form.name = "";
   form.description = "";
-  form.watchType = "registryKey";
+  form.watchType = WATCH_TYPES_FOR_PLATFORM[platform.value][0];
   form.action = "refreshInstalledApps";
   form.debounceMs = 5000;
   form.enabled = true;
-  form.params = defaultParamsFor("registryKey");
+  form.params = defaultParamsFor(form.watchType);
   etwEventIdsText.value = "";
 }
 
@@ -84,6 +112,7 @@ function startCreate() {
 }
 
 function startEdit(watch: EventWatchDefinition) {
+  platform.value = watch.platform;
   form.name = watch.name;
   form.description = watch.description ?? "";
   form.watchType = watch.watchType;
@@ -117,7 +146,7 @@ async function save() {
       if (params.level === null || params.level === "") delete params.level;
     }
     const payload = {
-      platform: "windows" as const,
+      platform: platform.value,
       name: form.name,
       description: form.description || null,
       watchType: form.watchType,
@@ -166,6 +195,12 @@ function targetSummary(watch: EventWatchDefinition): string {
     const ids = Array.isArray(p.eventIds) && p.eventIds.length > 0 ? ` (Event IDs ${p.eventIds.join(", ")})` : " (all events)";
     return `${p.provider || ""}${ids}`;
   }
+  if (watch.watchType === "fsEventsPath") {
+    return `${p.path || ""}${p.recursive ? " (recursive)" : ""}`;
+  }
+  if (watch.watchType === "launchdJobState") {
+    return p.label || "";
+  }
   return "";
 }
 
@@ -176,6 +211,8 @@ function targetSummary(watch: EventWatchDefinition): string {
 const paramsIncomplete = computed(() => {
   if (form.watchType === "registryKey") return !form.params.path;
   if (form.watchType === "etwProvider") return !form.params.provider;
+  if (form.watchType === "fsEventsPath") return !form.params.path || !String(form.params.path).startsWith("/");
+  if (form.watchType === "launchdJobState") return !form.params.label;
   return false;
 });
 
@@ -232,9 +269,9 @@ onMounted(async () => {
     <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Event-Driven Detection</h3>
     <div class="space-y-4 max-w-2xl">
       <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-        Tell the Windows SOAR Agent to watch specific OS-native signals directly, instead of waiting for its next
-        scheduled report cycle to notice a change. The agent debounces locally — it waits for the signal to go quiet
-        (the debounce window below, 5 seconds by default) before calling SOAR back, so a burst of activity (e.g.
+        Tell the SOAR Agent to watch specific OS-native signals directly, instead of waiting for its next scheduled
+        report cycle to notice a change. The agent debounces locally — it waits for the signal to go quiet (the
+        debounce window below, 5 seconds by default) before calling SOAR back, so a burst of activity (e.g.
         installing an app) produces one clean notification, not hundreds. This <strong>supplements</strong> the
         existing report cycle, it never replaces it — a device that's offline or hasn't updated its agent keeps
         working exactly as before. Requires the Applivery SOAR Agent (Settings &gt; Device Data Webhook) — the legacy
@@ -304,6 +341,17 @@ onMounted(async () => {
       </div>
 
       <div class="flex items-center gap-1.5">
+        <button
+          v-for="p in ['windows', 'macos']"
+          :key="p"
+          type="button"
+          class="text-[11px] font-medium px-2.5 py-1 rounded-lg border"
+          :class="platform === p ? 'text-white' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'"
+          :style="platform === p ? { backgroundColor: PRIMARY_BLUE, borderColor: PRIMARY_BLUE } : {}"
+          @click="platform = p as WatchPlatform; onPlatformChange()"
+        >
+          {{ p === "windows" ? "Windows" : "macOS" }}
+        </button>
         <div class="flex-1" />
         <Button v-if="canEdit() && isEditing === null" size="sm" @click="startCreate">+ New watch</Button>
       </div>
@@ -321,7 +369,7 @@ onMounted(async () => {
             @change="onWatchTypeChange"
             class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           >
-            <option v-for="t in WATCH_TYPES" :key="t" :value="t">{{ WATCH_TYPE_LABELS[t] }}</option>
+            <option v-for="t in WATCH_TYPES_FOR_PLATFORM[platform]" :key="t" :value="t">{{ WATCH_TYPE_LABELS[t] }}</option>
           </select>
         </div>
 
@@ -365,6 +413,24 @@ onMounted(async () => {
               class="w-28 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
             />
           </div>
+        </template>
+
+        <template v-if="form.watchType === 'fsEventsPath'">
+          <Input v-model="form.params.path" label="File or folder path (absolute)" placeholder="/Library/Preferences/com.example.plist" :disabled="!canEdit()" />
+          <label class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
+            <input type="checkbox" v-model="form.params.recursive" :disabled="!canEdit()" /> Watch subdirectories too (recursive)
+          </label>
+          <p class="text-[10px] text-gray-400">
+            Recursive watches only pick up subdirectories that exist when the agent starts watching — one created afterward
+            isn't picked up until the agent restarts or re-syncs this watch.
+          </p>
+        </template>
+
+        <template v-if="form.watchType === 'launchdJobState'">
+          <Input v-model="form.params.label" label="Launchd job label" placeholder="com.crowdstrike.falcon.Agent" :disabled="!canEdit()" />
+          <p class="text-[10px] text-gray-400">
+            Fires when this job's loaded/running state changes — covers it loading, unloading, or crash-restarting.
+          </p>
         </template>
 
         <div>

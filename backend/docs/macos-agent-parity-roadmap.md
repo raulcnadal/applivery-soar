@@ -93,13 +93,23 @@ This is the biggest net-new piece, and where Xcode access matters. Structure:
 
 This phase really was verification-only, as predicted — no engineering follow-up.
 
-No new engineering — call this phase essentially done, just needs a pass of cross-platform QA once other phases land.
-
 ---
 
 ## 5. Phase 5 — Event Watches (macOS watch types)
 
-**Needs backend work.** Today `eventWatches.schemas.ts` hardcodes `WATCH_PLATFORMS = ["windows"] as const` with an explicit comment that macOS is "intentionally not offered yet — no macOS agent support exists," and `WATCH_TYPES = ["registryKey", "etwProvider"]` are both Windows-only mechanisms. The poll/notify routes themselves (`GET .../event-watches`, `POST .../event-notify`) are already generic — they just need the allowlists widened:
+**Shipped (2026-08-17).** Implemented essentially as scoped below, with the design questions this section originally left open now resolved in practice:
+
+- `WATCH_TYPES` widened to `["registryKey", "etwProvider", "fsEventsPath", "launchdJobState"]` and `WATCH_PLATFORMS` to `["windows", "macos"]` (`eventWatches.schemas.ts`), keeping `validateWatchParams(watchType, params)` at its original 2-arg signature (no `platform` argument added) — the disjoint-per-platform watchType-name approach this section already leaned toward, since Windows' `registryKey`/`etwProvider` genuinely have no macOS equivalent value to share.
+- The one other backend gate found beyond this doc's own citations: `deviceData.controller.ts`'s agent poll route had a literal `if (platform !== "windows")` 400 check (not mentioned below) — widened to check membership in `WATCH_PLATFORMS` instead of a second hardcoded literal.
+- `fsEventsPath` uses `fsnotify` exactly as planned. `launchdJobState` could NOT get a true kernel-level notification the way `registryKey`/`etwProvider` do — there's no CGo-free "notify me when this launchd job's state changes" API — so it polls `launchctl list <label>` every 3s and diffs the (loaded, PID, LastExitStatus) tuple instead. Disclosed as a deliberate trade-off (see the macOS repo's own README "Event Watches" section), not a shortcut taken silently.
+- Debounce module ported essentially verbatim from the Windows agent's own inline `debouncer` (that repo has no separate `internal/debounce/` package either, contrary to this section's phrasing below — it's inline in `eventwatch_windows.go`, and the macOS port is inline in `eventwatch_macos.go` the same way).
+- Frontend: `EventWatchesPanel.vue` gained a platform toggle (mirroring `CustomDeviceChecksPanel.vue`'s own), platform-scoped watch-type lists/labels, and `fsEventsPath`/`launchdJobState` param fields. The hardcoded `platform: "windows" as const` literal in `save()` is gone.
+- New Go dependency: `github.com/fsnotify/fsnotify` — the macOS Agent repo had zero third-party dependencies before this; CI's `build-pkg.yml` now runs `go mod tidy` before building (network access on the `macos-latest` runner generates `go.sum`, which the development sandbox that wrote this code has no way to compute by hand).
+- Also backported to macOS in the same round: the Windows agent's own Phase-4 `remoteIntervalSecAtomic`/hot-ticker-reset mechanism (`telemetry_macos.go`) — needed because the event-watches poll response carries a `remoteIntervalSec` override, and macOS had no prior mechanism to apply one without an agent restart.
+
+Original scoping notes, left for reference:
+
+Today `eventWatches.schemas.ts` hardcodes `WATCH_PLATFORMS = ["windows"] as const` with an explicit comment that macOS is "intentionally not offered yet — no macOS agent support exists," and `WATCH_TYPES = ["registryKey", "etwProvider"]` are both Windows-only mechanisms. The poll/notify routes themselves (`GET .../event-watches`, `POST .../event-notify`) are already generic — they just need the allowlists widened:
 
 - **Backend:** add `"macos"` to `WATCH_PLATFORMS`; add macOS-appropriate `watchType` values with `validateWatchParams` branches:
   - `fsEventsPath` — watch a file/directory for changes (the closest macOS analog to Windows' `registryKey` watch — e.g. "alert if `/Library/Preferences/com.apple.something.plist` changes").

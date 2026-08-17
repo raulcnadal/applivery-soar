@@ -14,13 +14,19 @@ import { HttpError } from "../../utils/httpError";
 // "etwProvider" (Phase 3) — a real-time ETW session scoped to one provider
 // (github.com/0xrawsec/golang-etw, Applivery SOAR - Windows Agent's
 // etw_windows.go), optionally kernel-filtered to specific Event IDs. Both
-// are implemented by the Windows Agent as of this round.
-export const WATCH_TYPES = ["registryKey", "etwProvider"] as const;
+// are Windows-only, implemented by the Windows Agent.
+// "fsEventsPath" / "launchdJobState" (macOS parity roadmap Phase 5) — the
+// macOS agent's own two watch types, implemented in that repo's
+// eventwatch_macos.go. Deliberately disjoint names from the Windows two
+// rather than shared watchType values with a platform-conditional params
+// shape (contrast with customChecks.schemas.ts's validateCheckParams, which
+// DOES share checkerType values across platforms) — Windows' registry/ETW
+// mechanisms have no macOS equivalent value, so there was nothing to gain
+// from forcing a shared name.
+export const WATCH_TYPES = ["registryKey", "etwProvider", "fsEventsPath", "launchdJobState"] as const;
 export type WatchType = (typeof WATCH_TYPES)[number];
 
-// "macos" is intentionally not offered yet — no macOS agent support exists
-// for this feature (see the roadmap doc's Phase 5, explicitly deferred).
-export const WATCH_PLATFORMS = ["windows"] as const;
+export const WATCH_PLATFORMS = ["windows", "macos"] as const;
 export type WatchPlatform = (typeof WATCH_PLATFORMS)[number];
 
 // What SOAR does when the agent's own local debounce goes quiet and calls
@@ -113,6 +119,44 @@ export function validateWatchParams(watchType: WatchType, params: Record<string,
         if (typeof level !== "number" || !Number.isInteger(level) || level < 0 || level > 255) {
           throw new HttpError(400, "level must be an integer between 0 and 255.");
         }
+      }
+      return;
+    }
+    case "fsEventsPath": {
+      // The macOS analog to "registryKey" — watches a single file or
+      // directory path for changes via the agent's fsnotify (kqueue-based)
+      // watcher. e.g. "alert if /Library/Preferences/com.apple.something.plist
+      // changes" (the roadmap doc's own example).
+      const path = params?.path;
+      if (typeof path !== "string" || !path.trim() || !path.startsWith("/")) {
+        throw new HttpError(400, "An absolute file or directory path is required (e.g. /Library/Preferences/com.example.plist).");
+      }
+      // recursive is optional (default false on the agent side) — when true
+      // for a directory, the agent watches every subdirectory that exists
+      // AT WATCH-START TIME only; a subdirectory created afterward is not
+      // picked up until the next full agent restart or watch resync that
+      // happens to re-walk the tree. Documented on the agent side
+      // (eventwatch_macos.go) as a known v1 limitation, not silently assumed
+      // here.
+      if (params?.recursive !== undefined && typeof params.recursive !== "boolean") {
+        throw new HttpError(400, "recursive must be true or false.");
+      }
+      return;
+    }
+    case "launchdJobState": {
+      // The macOS analog to "etwProvider"'s process-lifecycle watching —
+      // there is no native "notify me when a launchd job's state changes"
+      // API reachable from pure Go without CGo (unlike registry notification
+      // or ETW sessions on Windows), so the agent polls `launchctl list
+      // <label>` on a short interval and fires on any (loaded, pid,
+      // lastExitStatus) tuple change — covers load/unload transitions and
+      // crash-restart loops alike. See eventwatch_macos.go for the polling
+      // implementation and why this trade-off was made deliberately (keeps
+      // the "no CGo, CI can cross-compile it" property the rest of this
+      // agent's Go code already has).
+      const label = params?.label;
+      if (typeof label !== "string" || !label.trim()) {
+        throw new HttpError(400, "A launchd job label is required (e.g. com.crowdstrike.falcon.Agent).");
       }
       return;
     }

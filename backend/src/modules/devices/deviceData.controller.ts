@@ -4,6 +4,7 @@ import { deviceAppReportPayloadSchema, deviceReportPayloadSchema, eventNotifyPay
 import { getAgentStatus, handleEventNotify, reportDeviceApps, reportDeviceData, verifyDeviceIdentity } from "./deviceData.service";
 import { listEnabledChecksForAgent } from "../compliance/customChecks.service";
 import { getEventDrivenSettings, listEnabledWatchesForAgent } from "../compliance/eventWatches.service";
+import { WATCH_PLATFORMS } from "../compliance/eventWatches.schemas";
 import { forceEvaluateNow } from "../compliance/compliance.service";
 
 /** Port of main.py:7758-7804 / 9714-9804 — POST /api/device-data/report, POST /api/device-data/report-apps. */
@@ -101,7 +102,7 @@ deviceDataRouter.get(
 );
 
 /**
- * Agent poll endpoint — GET /api/device-data/event-watches?platform=windows.
+ * Agent poll endpoint — GET /api/device-data/event-watches?platform=windows|macos.
  * See eventWatches.service.ts's module doc for the full design. Same auth
  * and same "poll once per report cycle" shape as GET /custom-checks above —
  * the agent diffs the returned watch list against whichever watchers it
@@ -112,9 +113,10 @@ deviceDataRouter.get(
  * a separate endpoint — it's already polled every report cycle, so no new
  * request is needed. null means "no SOAR-side override, use whatever's in
  * this device's local Managed Configuration" — see
- * eventwatch_windows.go/telemetry_windows.go (Windows Agent repo) for how
- * the agent resets its report ticker when this value changes without
- * needing a restart.
+ * eventwatch_windows.go/telemetry_windows.go (Windows Agent repo) and
+ * eventwatch_macos.go/telemetry_macos.go (macOS Agent repo) for how each
+ * agent resets its report ticker when this value changes without needing a
+ * restart.
  */
 deviceDataRouter.get(
   "/api/device-data/event-watches",
@@ -122,8 +124,8 @@ deviceDataRouter.get(
     const workspaceSlug = workspaceOf(req);
     await verifyDeviceIdentity(req, workspaceSlug);
     const platform = typeof req.query.platform === "string" ? req.query.platform : "";
-    if (platform !== "windows") {
-      res.status(400).json({ detail: "platform query param must be 'windows'" });
+    if (!(WATCH_PLATFORMS as readonly string[]).includes(platform)) {
+      res.status(400).json({ detail: `platform query param must be one of: ${WATCH_PLATFORMS.join(", ")}` });
       return;
     }
     const [items, settings] = await Promise.all([listEnabledWatchesForAgent(workspaceSlug, platform), getEventDrivenSettings(workspaceSlug)]);
