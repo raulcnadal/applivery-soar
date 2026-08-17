@@ -56,6 +56,19 @@ Windows needed a **custom mutual-watchdog** (`AppliverySOARWatchdog` service pol
 
 ## 3. Phase 3 — Menu bar app (SwiftUI)
 
+**Shipped.** Implemented essentially as designed below, with two naming/scope
+notes worth recording here rather than only in the macOS repo's own README:
+the bundle identifier actually used is `es.mi-labs.soar.menubar` (not the
+`es.mi-labs.soar.tray` placeholder in §7 below — "menu bar" reads clearer
+than "tray" for the macOS-native term, and nothing downstream depended on
+the placeholder value yet), and the daemon-side "is the LaunchAgent actually
+loaded" self-check mentioned in Phase 2's bullet above is still NOT built —
+see the macOS repo's README "Process Supervision" section for the honest
+disclosure of that gap and why it's low-priority (the LaunchAgent installs
+once via the `.pkg`'s postinstall script and is rarely removed by anything
+short of a full uninstall). Everything else below — IPC contract, SwiftUI
+card layout/data model, fonts, notifications — shipped as designed.
+
 This is the biggest net-new piece, and where Xcode access matters. Structure:
 
 - **New target: `Applivery SOAR.app`** — a proper `.app` bundle (not a bare binary like the Go daemon), `LSUIElement: true` in `Info.plist` (no Dock icon, no menu bar app switcher entry — matches the Windows tray's "no taskbar window" feel), registered as a **LaunchAgent** (`~/Library/LaunchAgents` or, for MDM-wide deployment, `/Library/LaunchAgents` so it self-installs for whichever user logs in — matches Windows' `schtasks ONLOGON` scope).
