@@ -122,7 +122,12 @@ Today `eventWatches.schemas.ts` hardcodes `WATCH_PLATFORMS = ["windows"] as cons
 
 ## 6. Phase 6 — Agent Logs/Trace: verify UI gating only
 
-Backend is device-`_id`-keyed with no platform branch at all — confirmed nothing to build there. The only thing worth checking is whether `DeviceDetailDrawer.vue`'s Agent tab conditionally hides the fetch buttons for non-Windows devices (a frontend-only guard, if it exists) — if so, remove that gate once the macOS agent is capable of the same diagnostics surface (this doesn't require new *agent* code — Applivery's own Agent Logs/Trace API is queried by the backend directly against Applivery's UEM inventory, not by this agent).
+**Verified (2026-08-17), no code changes needed.** Checked both layers directly:
+
+- **Frontend (`DeviceDetailDrawer.vue`):** the "Agent" tab is unconditionally listed in the tab bar (no platform check) and its content template (`v-else-if="tab === 'agent'"`) has zero platform gating anywhere inside it — the "Fetch Agent Logs & Trace" button renders and works identically for every device regardless of platform. There was no Windows-only guard to remove.
+- **Backend (`devices.service.ts`):** `fetchDeviceAgentDiagnostics(authorization, workspaceSlug, deviceId, platform)` takes `platform` as a plain string and passes it straight through `mdmTypeSegment(platform)`, which already maps `"apple" | "macos"` → `"admDevice"` and `"windows"` → `"winDevice"` — the same mapping the rest of this route file (locations, network-status) already uses for macOS. `POST /api/devices/{id}/agent-diagnostics/fetch` calls Applivery's `GET /mdm/agent-logs`/`GET /mdm/agent-trace` with that resolved device type; both are Applivery's own per-device diagnostic feed, platform-blind from this backend's perspective.
+
+Original scoping note, confirmed accurate: Backend is device-`_id`-keyed with no platform branch at all. The only thing worth checking was whether `DeviceDetailDrawer.vue`'s Agent tab conditionally hid the fetch buttons for non-Windows devices — it doesn't, and never did.
 
 ---
 
