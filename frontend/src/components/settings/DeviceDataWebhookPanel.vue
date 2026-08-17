@@ -58,12 +58,12 @@ const reportIntervalSeconds = computed(() => {
 });
 const reportIntervalWarning = computed(() => reportIntervalMinutes.value > 0 && reportIntervalMinutes.value < REPORT_INTERVAL_WARN_BELOW_MINUTES);
 
-// ── mTLS bootstrap token (Windows only — see note in template) ──
-// Automatically included in the Windows snippet the moment it's configured
-// in mTLS Agent Authentication — no separate opt-in checkbox here, since a
-// device that already has an active certificate can never be silently
-// re-registered, so including it is never harmful even for an
-// already-enrolled device.
+// ── mTLS bootstrap token (Windows + macOS — see note in template) ──
+// Automatically included in both the Windows and macOS snippets the moment
+// it's configured in mTLS Agent Authentication — no separate opt-in
+// checkbox here, since a device that already has an active certificate can
+// never be silently re-registered, so including it is never harmful even
+// for an already-enrolled device.
 const bootstrapTokenAvailable = computed(() => Boolean(mtls.bootstrapTokenStatus?.configured));
 
 // Read-only here — the single source of truth is mTLS Agent Authentication >
@@ -113,21 +113,30 @@ const windowsRegSnippet = computed(() => {
   }
   return lines.join("\n") + "\n";
 });
-const macosConfigSnippet = computed(() =>
-  JSON.stringify(
-    {
-      base_url: agentBaseUrl.value,
-      workspace_slug: auth.orgSlug,
-      report_secret: store.status?.secret ?? "",
-      interval_sec: reportIntervalSeconds.value,
-      report_bitlocker: includeSecurityAttestation.value,
-      report_firewall: includeSecurityAttestation.value,
-      report_apps: includeAppInventory.value,
-    },
-    null,
-    2,
-  ),
-);
+const macosConfigSnippet = computed(() => {
+  const config: Record<string, unknown> = {
+    base_url: agentBaseUrl.value,
+    workspace_slug: auth.orgSlug,
+    report_secret: store.status?.secret ?? "",
+    interval_sec: reportIntervalSeconds.value,
+    report_bitlocker: includeSecurityAttestation.value,
+    report_firewall: includeSecurityAttestation.value,
+    report_apps: includeAppInventory.value,
+  };
+  // Same two conditional fields as windowsRegSnippet/windowsScriptSnippet
+  // above — the macOS agent's Config struct (config.go) has carried
+  // BootstrapToken/RegisterURL since mTLS Phase 1 shipped, but this
+  // generator wasn't updated to match at the time, so every macOS device
+  // enrolled through it was silently mTLS-ineligible even when a Global
+  // Bootstrap Token existed for the workspace. Fixed for parity.
+  if (bootstrapTokenAvailable.value) {
+    config.bootstrap_token = mtls.bootstrapTokenStatus?.secret ?? "";
+  }
+  if (registerBaseUrl.value) {
+    config.register_url = registerBaseUrl.value;
+  }
+  return JSON.stringify(config, null, 2);
+});
 // Applivery-native counterparts to the .reg/.json snippets above — instead
 // of a manually-imported file, these are ready to paste into Applivery
 // Dashboard > Resources > Scripts > Create Script, then assign to the
@@ -452,9 +461,8 @@ onMounted(async () => {
         </div>
 
         <p v-if="bootstrapTokenAvailable" class="text-[10px] leading-relaxed text-emerald-600 dark:text-emerald-400">
-          A Global Bootstrap Token is configured — it's included automatically in the Windows bundle below, so this
-          device will also register for its own mTLS client certificate. macOS has no mTLS support yet, so the macOS
-          bundle never includes it.
+          A Global Bootstrap Token is configured — it's included automatically in both the Windows and macOS bundles
+          below, so devices on either platform will also register for their own mTLS client certificate.
         </p>
         <p v-else class="text-[10px] leading-relaxed text-gray-400">
           No Global Bootstrap Token configured yet — this bundle will only include the device report secret above.

@@ -17,7 +17,7 @@ A research pass over the backend (see §9 for the full breakdown) found that **m
 - **Agent Logs/Trace fetch-on-demand** — keyed by Applivery's own device `_id`, no platform branch anywhere.
 - **`installLocation`** on reported apps — plain optional string, not platform-typed (one stale Windows-only *comment*, nothing enforced).
 
-What genuinely needs backend work is narrow: **Event Watches** (`WATCH_PLATFORMS = ["windows"]` today, explicitly gated — §5) and the **Device Data Webhook panel's Bootstrap Token generation** (frontend-only — currently tells the admin "macOS has no mTLS support yet" — §1.4).
+What genuinely needs backend work is narrow: **Event Watches** (`WATCH_PLATFORMS = ["windows"]` today, explicitly gated — §5). The **Device Data Webhook panel's Bootstrap Token generation** (frontend-only, §1.1) was also a gap until real-device field testing (Aug 2026) surfaced it — the macOS `macosConfigSnippet`/`macosScriptSnippet` computeds in `DeviceDataWebhookPanel.vue` were never updated to include `bootstrap_token`/`register_url` after Phase 1 shipped the agent/backend side, so every macOS device enrolled through the generated script was silently mTLS-ineligible even when a workspace had a Global Bootstrap Token configured. Now fixed — the macOS snippet mirrors the Windows one's conditional inclusion exactly.
 
 This changes the shape of the roadmap: most of the work below is macOS-agent-side (Go daemon + new SwiftUI app), not backend.
 
@@ -33,11 +33,11 @@ Port `mtls_windows.go`'s design 1:1, swapping only the OS-specific keystore mech
 - **HTTP client factory** — one `mtlsHTTPClient()` (Go's `crypto/tls` `Certificates` field pointed at the loaded identity) deciding cert-vs-legacy-secret per call, same seam as Windows.
 - **Diagnostics** — port the `responseBodySnippet(resp)` fix from this session's Windows work (log the actual JSON error body on any non-2xx, not just the status code) from day one — it's what let us diagnose the Windows 401 storm in minutes instead of days; no reason to ship macOS without it.
 
-**Backend-side:** none. **Frontend-side:** `DeviceDataWebhookPanel.vue` currently tells the admin macOS gets "only the plain report secret" — once this phase ships, generate the macOS Managed Configuration (see §1.1 below) with `BootstrapToken` included, same as the Windows bundle.
+**Backend-side:** none. **Frontend-side: done** (Aug 2026) — `DeviceDataWebhookPanel.vue`'s `macosConfigSnippet` now includes `bootstrap_token`/`register_url` the same way `windowsRegSnippet`/`windowsScriptSnippet` always did, gated on the same `bootstrapTokenAvailable`/`registerBaseUrl` computeds (see §1.1 below).
 
 ### 1.1 Managed Configuration format
 
-Windows uses a flat JSON file; macOS MDM configuration profiles are natively `.mobileconfig` (XML plist), but this agent already reads a flat JSON file at `/Library/Preferences/es.mi-labs.soar.agent.json` rather than a real `com.apple.ManagedClient.preferences` domain — keep that pattern (it's simpler, and Applivery UEM's "Custom Settings" payload can push an arbitrary file to an arbitrary path same as any other MDM). Add `bootstrap_token` as a new key, generated fresh per-device or per-fleet exactly like Windows' equivalent flow.
+Windows uses a flat JSON file; macOS MDM configuration profiles are natively `.mobileconfig` (XML plist), but this agent already reads a flat JSON file at `/Library/Preferences/es.mi-labs.soar.agent.json` rather than a real `com.apple.ManagedClient.preferences` domain — keep that pattern (it's simpler, and Applivery UEM's "Custom Settings" payload can push an arbitrary file to an arbitrary path same as any other MDM). `bootstrap_token`/`register_url` are included as optional keys, generated fresh per-fleet from the workspace's Global Bootstrap Token exactly like Windows' equivalent flow — this was the one piece of Phase 1 that lagged behind the agent-side work; closed once the gap was reported from a real macOS device deployment.
 
 ---
 
