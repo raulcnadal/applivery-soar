@@ -165,6 +165,15 @@ export async function reportDeviceData(workspaceSlug: string, payload: DeviceRep
 
   await invalidateDevicesCacheFor(workspaceSlug);
 
+  // Event-driven re-evaluation — the "attribute change" trigger (see
+  // compliance.service.ts's triggerEventDrivenReEvaluation doc comment for
+  // the "audience change" half and why the two live in different files).
+  // Fire-and-forget: never awaited, never lets a slow/cooldown-blocked/
+  // credential-missing evaluation delay or fail this webhook's own
+  // response to the reporting agent.
+  const { triggerEventDrivenReEvaluation } = await import("../compliance/compliance.service");
+  triggerEventDrivenReEvaluation(workspaceSlug, `self-reported attribute update from "${deviceName}"`);
+
   return { status: "ok", serialNumber: payload.serialNumber, attributesStored: Object.keys(normalized).length };
 }
 

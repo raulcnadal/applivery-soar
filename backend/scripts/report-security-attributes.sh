@@ -34,7 +34,7 @@
 # INSTALL
 #   1. Copy this file somewhere stable, e.g. /usr/local/applivery/report-security-attributes.sh
 #   2. Fill in the three CONFIG values below (pre-filled automatically if
-#      you downloaded this from Settings > Device Data Webhook > Security
+#      you downloaded this from Settings > Applivery SOAR Agent > Security
 #      Attestation Reporting in the dashboard).
 #   3. Make it executable: chmod +x report-security-attributes.sh
 #   4. Schedule it as a LaunchDaemon (root context — needed to read the

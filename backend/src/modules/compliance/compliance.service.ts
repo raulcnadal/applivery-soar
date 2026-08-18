@@ -132,6 +132,27 @@ export async function updateCompliancePolicy(workspaceSlug: string, policyId: st
   await assertDestructiveAckIfNeeded(workspaceSlug, payload);
 
   const wasEnabled = existing.enabled;
+  // "Audience change" (and every other scoping change) — who this policy
+  // even evaluates against. Previously only the disabled->enabled
+  // transition below (justEnabled) triggered an immediate re-check; a
+  // routine edit that changed WHICH devices an already-enabled policy
+  // targets (re-pointing it at a different Device Audience, narrowing/
+  // widening targetPlatform or targetDeploymentModel, or editing the
+  // conditions/logic it actually checks) still silently waited out its own
+  // evaluationIntervalMinutes before the new scope took effect anywhere.
+  // Compared against the payload (not the post-update row) since this only
+  // needs to know whether the save is CHANGING scope, not what it changed
+  // to. JSON.stringify is good enough for the conditions array — it's
+  // always written back as a full replace from the same builder UI, never
+  // hand-edited, so there's no risk of a semantically-identical-but-
+  // differently-ordered array being misread as a change.
+  const scopeChanged =
+    existing.targetDeviceAudienceId !== (payload.targetDeviceAudienceId ?? null) ||
+    existing.targetPlatform !== (payload.targetPlatform ?? null) ||
+    existing.targetDeploymentModel !== (payload.targetDeploymentModel ?? null) ||
+    existing.segmentId !== (payload.segmentId ?? null) ||
+    existing.conditionLogic !== payload.conditionLogic ||
+    JSON.stringify(existing.conditions ?? []) !== JSON.stringify(payload.conditions ?? []);
   const updated = await prisma.compliancePolicy.update({
     where: { id: policyId },
     data: {
@@ -177,7 +198,7 @@ export async function updateCompliancePolicy(workspaceSlug: string, policyId: st
     targetType: "policy", targetId: policyId, targetName: updated.name,
     message: `Compliance policy "${updated.name}" updated`,
   });
-  return { updated, justEnabled: updated.enabled && !wasEnabled };
+  return { updated, justEnabled: updated.enabled && !wasEnabled, scopeChanged: updated.enabled && scopeChanged };
 }
 
 /** Port of `delete_compliance_policy` (main.py:10947). */
@@ -836,6 +857,38 @@ export async function forceEvaluateNow(workspaceSlug: string): Promise<Evaluatio
   }
   lastForcedEvaluationAt.set(workspaceSlug, now);
   return runComplianceEvaluation(bearer, workspaceSlug, null, "device-agent");
+}
+
+/**
+ * Event-driven re-evaluation — the "attribute change" half of trigger-on-
+ * change (the "audience/scope change" half lives in
+ * compliance.controller.ts's policy PUT handler, which has a live admin
+ * bearer to work with and so calls runComplianceEvaluation directly
+ * instead). Called from deviceData.service.ts's reportDeviceData right
+ * after a device's self-reported attributes are persisted — that request
+ * has no admin session (it's an unattended device-agent caller), so this
+ * reuses forceEvaluateNow's Automation Credential + per-workspace 60s
+ * cooldown exactly as-is rather than inventing a second bearer/cooldown
+ * concept. Fire-and-forget by design: the device-report webhook response
+ * already went out (or is about to) reporting the attributes were stored
+ * successfully regardless of whether a re-evaluation could actually run
+ * this instant, so a cooldown-active (429) or no-credential (503) result
+ * here is expected and unremarkable, not a failure of the report itself —
+ * only a genuinely unexpected error is worth a log line.
+ */
+export function triggerEventDrivenReEvaluation(workspaceSlug: string, reason: string): void {
+  forceEvaluateNow(workspaceSlug)
+    .then((summary) => {
+      if (summary.violationsFound > 0 || summary.recovered > 0) {
+        console.log(`[Compliance] Event-driven re-evaluation (${reason}) for ${workspaceSlug}: ${JSON.stringify(summary)}`);
+      }
+    })
+    .catch((e) => {
+      const statusCode = e instanceof HttpError ? e.statusCode : null;
+      if (statusCode !== 429 && statusCode !== 503) {
+        console.warn(`[Compliance] Event-driven re-evaluation (${reason}) failed for ${workspaceSlug}: ${e}`);
+      }
+    });
 }
 
 // ── Violations review queue (main.py:11429-11599) ──

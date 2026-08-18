@@ -29,7 +29,7 @@
 # INSTALL
 #   1. Copy this file somewhere stable, e.g. C:\ProgramData\Applivery\report-security-attributes.ps1
 #   2. Fill in the three CONFIG values below (pre-filled automatically if
-#      you downloaded this from Settings > Device Data Webhook > Security
+#      you downloaded this from Settings > Applivery SOAR Agent > Security
 #      Attestation Reporting in the dashboard).
 #   3. Schedule it with Task Scheduler, running as SYSTEM (required — several
 #      of these queries, e.g. Get-Tpm and the DeviceGuard WMI namespace,

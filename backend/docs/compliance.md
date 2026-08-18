@@ -12,7 +12,7 @@ The list is scoped by whatever [Segment](devices.md) is selected in the left pan
 
 **Evaluate now** (top right) runs every enabled policy immediately, ignoring each policy's own schedule, and shows a summary: devices checked, new violations, auto-fired count, queued-for-review count, recovered count, and anything blocked by a safety limit.
 
-Turning a policy's **Enabled** toggle on triggers an immediate background check of just that policy.
+Turning a policy's **Enabled** toggle on, or saving a change to which devices it targets (Device Audience, platform, deployment model, segment, or the conditions themselves), triggers an immediate background check of just that policy — a routine edit that changes neither still follows its normal schedule below. Separately, a device's own self-reported attribute update (from the [Applivery SOAR Agent](settings.md#applivery-soar-agent)) also kicks an immediate, workspace-wide re-check the moment it lands, subject to the same 60-second cooldown "Force evaluate" on the agent itself uses — so a disk-encryption or firewall change a device reports about itself doesn't have to wait out the schedule either.
 
 ## Policy Builder
 
@@ -29,7 +29,7 @@ Open by clicking **Create Compliance Policy** or editing an existing one.
 
 **Segment** — administrative/visibility scope only. It does **not** filter which devices get checked.
 
-**Evaluation frequency** — how often the background scheduler re-checks this policy (1–24 hours; blank = the 60-minute org default). "Evaluate now" always ignores this.
+**Evaluation frequency** — how often the background scheduler re-checks this policy (1–24 hours; blank = the 60-minute org default) if nothing else has already triggered a fresher check first. "Evaluate now" always ignores this, and so do the immediate on-enable/on-scope-change and on-attribute-report triggers described above.
 
 Near the bottom of the builder: **Apply to devices** — optionally scope evaluation to one Applivery Device Audience; membership is re-resolved on every run. Leave blank to check the whole fleet. Directly below it, a **Devices that will receive this policy** box shows, live, exactly which devices the selected audience currently resolves to — the same membership resolution the evaluation itself uses, so an empty or unexpected result here means the audience needs fixing (or a different one picking) before you save, not a surprise after. If it comes up empty for an audience you know has members, it also shows what Applivery's API itself returned for that audience, to help tell a permissions issue apart from a genuinely empty one.
 

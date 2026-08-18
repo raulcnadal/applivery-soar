@@ -25,7 +25,7 @@
 # INSTALL
 #   1. Copy this file somewhere stable, e.g. /usr/local/applivery/report-installed-apps.sh
 #   2. Fill in the three CONFIG values below (pre-filled automatically if
-#      you downloaded this from Settings > Device Data Webhook > App
+#      you downloaded this from Settings > Applivery SOAR Agent > App
 #      Inventory Reporting in the dashboard).
 #   3. Make it executable: chmod +x report-installed-apps.sh
 #   4. Schedule it — either a user LaunchAgent or a system LaunchDaemon.

@@ -104,7 +104,9 @@ permission. Supported on both Windows and macOS agents.
   host serving the dashboard without breaking normal browser access to it. This was tried and confirmed broken in practice before this
   two-domain design was adopted — see `backend/docs/mtls-agent-auth-roadmap.md` §5.5 for the full incident writeup and the corrected config.
   Applivery SOAR Agent's **Agent Base URL** reads this value back read-only, so there's exactly one place to change it.
-- **Certificates** — issued fleet, with per-device status (active/expiring-soon/expired/revoked/superseded) and a **Revoke** action.
+- **Issued Device Certificates** — a status-count summary (active/expiring-soon/expired/revoked/superseded) plus a **View all** button opening a
+  scrollable list of the full issued fleet, each with a **Revoke** action — kept out of a plain inline list so this section stays readable as the
+  fleet grows.
 - **Enforcement** — the cutover switch: once enabled, every device-caller route requires a valid client certificate and the legacy secret stops
   being accepted for that workspace.
   Roll out the fleet first, then flip this — see `backend/docs/mtls-agent-auth-roadmap.md` for the full runbook.

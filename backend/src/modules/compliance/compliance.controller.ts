@@ -197,15 +197,20 @@ complianceRouter.post("/api/compliance/policies", ...manageCompliance, asyncHand
 complianceRouter.put("/api/compliance/policies/:policyId", ...manageCompliance, asyncHandler(async (req, res) => {
   const workspaceSlug = workspaceOf(req);
   const payload = compliancePolicySchema.parse(req.body);
-  const { updated, justEnabled } = await updateCompliancePolicy(workspaceSlug, req.params.policyId, payload, actorOf(req));
+  const { updated, justEnabled, scopeChanged } = await updateCompliancePolicy(workspaceSlug, req.params.policyId, payload, actorOf(req));
 
-  // Same immediate-check logic as create, but only on the disabled->enabled
-  // transition (main.py:10936-10942) — a routine edit to an already-enabled
-  // policy still follows its normal schedule.
+  // Same immediate-check logic as create — originally only on the
+  // disabled->enabled transition (main.py:10936-10942), extended to also
+  // cover scopeChanged (updateCompliancePolicy's doc comment): an
+  // already-enabled policy whose Device Audience, platform, deployment
+  // model, segment, or conditions just changed shouldn't have to wait out
+  // its own evaluationIntervalMinutes for that new scope to actually take
+  // effect. A routine edit that changes neither still follows its normal
+  // schedule, unchanged.
   const authorization = req.header("Authorization");
-  if (justEnabled && authorization) {
+  if ((justEnabled || scopeChanged) && authorization) {
     void runComplianceEvaluation(authorization, workspaceSlug, [updated.id], actorOf(req)).catch((e) =>
-      console.warn(`[Compliance] Immediate on-enable evaluation failed for policy ${updated.id}: ${e}`),
+      console.warn(`[Compliance] Immediate ${justEnabled ? "on-enable" : "on-scope-change"} evaluation failed for policy ${updated.id}: ${e}`),
     );
   }
   res.json(updated);

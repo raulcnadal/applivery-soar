@@ -25,7 +25,7 @@
 # INSTALL
 #   1. Copy this file somewhere stable, e.g. C:\ProgramData\Applivery\report-installed-apps.ps1
 #   2. Fill in the three CONFIG values below (pre-filled automatically if
-#      you downloaded this from Settings > Device Data Webhook > App
+#      you downloaded this from Settings > Applivery SOAR Agent > App
 #      Inventory Reporting in the dashboard).
 #   3. Schedule it with Task Scheduler, running as SYSTEM so it works
 #      whether or not a user is logged in:
