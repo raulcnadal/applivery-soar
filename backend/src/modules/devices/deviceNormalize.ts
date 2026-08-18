@@ -16,10 +16,31 @@
 
 export type NormalizedPlatform = "android" | "apple" | "macos" | "windows" | "other";
 
-export function normalizePlatform(rawType: string): NormalizedPlatform {
+export function normalizePlatform(rawType: string, model?: string): NormalizedPlatform {
   const t = String(rawType ?? "").toLowerCase();
   if (t.includes("android")) return "android";
-  if (t.includes("apple") || t.includes("ios") || t.includes("ipad")) return "apple";
+  if (t.includes("apple") || t.includes("ios") || t.includes("ipad")) {
+    // Applivery's own `/mdm/devices` API only has ONE bucket for the whole
+    // Apple ecosystem -- its `type` field enum is literally
+    // ["android","apple","windows","aosp"], described as "Apple ecosystem"
+    // (confirmed against the live API schema). iPhone, iPad AND Mac all
+    // report type:"apple" -- there is no "macos" value coming from
+    // Applivery at all, so the `t.includes("mac")` branch below was
+    // unreachable dead code for every real device from this source, and
+    // EVERY Mac in the fleet normalized to platform:"apple", never
+    // "macos". That silently broke every macOS-scoped Compliance Policy
+    // (both the Device modal's "assigned policies" list and the real
+    // evaluation pass filter on `d.platform === "macos"`) and the Devices
+    // view's own "macOS" filter tab (same comparison) -- confirmed live:
+    // filtering by "macOS" showed 0 of 7 devices despite a real Mac being
+    // enrolled. The model string is the one field that actually survives
+    // normalization and reliably says Mac: real Apple hardware identifiers
+    // for Macs are always prefixed Mac/MacBook/iMac (or "VirtualMac" for a
+    // virtualized Mac), while iPhone/iPad models are "iPhone14,2"/
+    // "iPad13,4" etc -- so refine the umbrella "apple" bucket using it.
+    if (model && /mac/i.test(model)) return "macos";
+    return "apple";
+  }
   if (t.includes("mac")) return "macos";
   if (t.includes("win")) return "windows";
   return "other";
@@ -240,8 +261,13 @@ export function normalizeDeviceFull(
 ): NormalizedDevice {
   const devId = String(raw.id ?? raw._id ?? "");
   const rawPlatform = String(raw.type ?? raw.platform ?? "");
-  const platform = normalizePlatform(rawPlatform);
   const summary = raw.summary ?? {};
+  // Computed here (ahead of the `model` field further down) purely so
+  // normalizePlatform can use it to tell a Mac apart from an iPhone/iPad --
+  // see that function's doc comment for why the raw `type`/`platform`
+  // value alone can't do this.
+  const rawModel = String(summary.model || raw.model || raw.deviceModel || "");
+  const platform = normalizePlatform(rawPlatform, rawModel);
 
   let platformDeviceId: string;
   if (platform === "apple" || platform === "macos") {
@@ -320,7 +346,7 @@ export function normalizeDeviceFull(
     platformDeviceId,
     serialNumber,
     imei: summary.imei || raw.imei || "",
-    model: summary.model || raw.model || raw.deviceModel || "",
+    model: rawModel,
     manufacturer: summary.manufacturer || raw.manufacturer || raw.brand || "",
     osVersion: summary.osVersion || raw.osVersion || "",
     battery,
