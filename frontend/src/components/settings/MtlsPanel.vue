@@ -20,7 +20,7 @@
 // without the extra per-device minting step or the approval-queue mode a
 // bootstrap token doesn't need (unattended by design).
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { Alert, Button, Input } from "@applivery/bluesky-vue";
+import { Alert, Button, Input, Modal } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { useAuthStore } from "../../stores/auth";
 import { useMtlsStore } from "../../stores/mtls";
@@ -149,6 +149,17 @@ async function doRevokeCert(id: string, serialNumber: string) {
   await store.revokeCertificate(id, reason);
 }
 
+// Fleet-wide, so the inline card only ever shows a status-count summary —
+// the full scrollable list (see PolicyPickerModal.vue's max-h + overflow-y
+// pattern) lives in a dedicated Modal instead, since a growing fleet quickly
+// makes a plain inline list too tall for the Settings panel.
+const showCertsModal = ref(false);
+const certStatusCounts = computed(() => {
+  const counts: Record<string, number> = { active: 0, "expiring-soon": 0, expired: 0, revoked: 0, superseded: 0 };
+  for (const c of store.certificates) counts[c.status] = (counts[c.status] ?? 0) + 1;
+  return counts;
+});
+
 // ── Reverse-proxy config reference ──
 //
 // IMPORTANT, learned the hard way: ssl_verify_client / ssl_client_certificate are
@@ -246,7 +257,7 @@ function copyProxySnippet() {
 async function doToggleEnforcement() {
   const enabling = !store.enforcementEnabled;
   const msg = enabling
-    ? "Enable mTLS enforcement for this workspace? Every device on the 6 report/status routes must present a valid client certificate from this point forward — any device that hasn't registered yet goes dark until it does. The macOS Agent has no mTLS support yet, so this will also cut off every macOS device on this workspace, not just unregistered Windows ones."
+    ? "Enable mTLS enforcement for this workspace? Every device on the 6 report/status routes must present a valid client certificate from this point forward — any device that hasn't registered yet goes dark until it does."
     : "Disable mTLS enforcement? The legacy X-Device-Report-Secret becomes acceptable again on the 6 device-caller routes.";
   if (!confirm(msg)) return;
   try {
@@ -277,12 +288,14 @@ onMounted(async () => {
         Traefik, Caddy, HAProxy — any TLS-terminating proxy) must be configured to request and forward the client cert
         — see Reverse Proxy Configuration below. Fully additive until you flip enforcement on at the bottom.
       </p>
-      <Alert v-if="!canEdit()" type="info">Your role doesn't have the canManageMtlsCA permission — every control below is read-only.</Alert>
-      <Alert type="info">
-        Ready to push this to the fleet? <button type="button" class="underline font-semibold" @click="emit('goToTab', 'device-webhook')">Device Data Webhook</button>
-        combines the token/CA status here with the reporting toggles into one downloadable Managed Configuration bundle
-        — there's no separate download here.
-      </Alert>
+      <div class="space-y-2">
+        <Alert v-if="!canEdit()" type="info">Your role doesn't have the canManageMtlsCA permission — every control below is read-only.</Alert>
+        <Alert type="info">
+          Ready to push this to the fleet? <button type="button" class="underline font-semibold" @click="emit('goToTab', 'device-webhook')">Applivery SOAR Agent</button>
+          combines the token/CA status here with the reporting toggles into one downloadable Managed Configuration bundle
+          — there's no separate download here.
+        </Alert>
+      </div>
     </div>
 
     <!-- Certificate Authority -->
@@ -391,7 +404,7 @@ onMounted(async () => {
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
         <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
           One value, the SAME on every device — deploy it once via a single Managed Configuration push to the whole
-          fleet (Device Data Webhook's download includes it automatically once generated here). A device proves it's
+          fleet (the Applivery SOAR Agent panel's download includes it automatically once generated here). A device proves it's
           allowed to register with this token PLUS a live check that its own serial number is currently a known,
           enrolled device in this workspace's Applivery UEM fleet — only devices Applivery already knows about can
           ever register. Issued immediately on success, no admin approval step (a bootstrap token is unattended by
@@ -492,40 +505,59 @@ onMounted(async () => {
 
     <!-- Issued certificates -->
     <div>
-      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Issued Device Certificates</h3>
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-bold text-gray-900 dark:text-white">Issued Device Certificates</h3>
+        <Button v-if="store.certificates.length > 0" variant="ghost" size="sm" @click="showCertsModal = true">
+          View all ({{ store.certificates.length }})
+        </Button>
+      </div>
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2 max-w-2xl shadow-sm">
         <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
           The fleet-migration dashboard — check this covers every device before flipping enforcement on below.
         </p>
         <Alert v-if="store.certsError" type="danger">{{ store.certsError }}</Alert>
-        <div v-if="store.certificates.length > 0" class="space-y-1.5">
-          <div v-for="c in store.certificates" :key="c.id" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR[c.status]" />
-                <span class="text-xs font-mono truncate text-gray-900 dark:text-white">{{ c.serialNumber }}</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">{{ c.status }}</span>
-              </div>
-              <p class="text-[10px] text-gray-500 dark:text-gray-400">
-                Issued {{ fmt(c.issuedAt) }} · valid until {{ fmt(c.notAfter) }}
-                <template v-if="c.revokedAt"> · revoked {{ fmt(c.revokedAt) }} ({{ c.revokedReason }})</template>
-              </p>
-            </div>
-            <button
-              v-if="c.status === 'active' || c.status === 'expiring-soon'"
-              type="button"
-              class="p-1.5 rounded disabled:opacity-40 shrink-0"
-              style="color: #ef4444"
-              :disabled="!canEdit()"
-              @click="doRevokeCert(c.id, c.serialNumber)"
-            >
-              <component :is="ICONS.TrashBinMinimalistic" :size="13" weight="Linear" />
-            </button>
-          </div>
+        <div v-if="store.certificates.length > 0" class="flex flex-wrap items-center gap-1.5">
+          <span
+            v-for="status in (['active', 'expiring-soon', 'expired', 'revoked', 'superseded'] as const)"
+            v-show="certStatusCounts[status] > 0"
+            :key="status"
+            class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-gray-50 dark:bg-gray-900/50 text-gray-600 dark:text-gray-300"
+          >
+            <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR[status]" />
+            {{ certStatusCounts[status] }} {{ status }}
+          </span>
         </div>
         <p v-else-if="!store.certsLoading" class="text-xs text-gray-500 dark:text-gray-400">No devices have registered yet.</p>
       </div>
     </div>
+
+    <Modal :open="showCertsModal" title="Issued Device Certificates" size="lg" @close="showCertsModal = false">
+      <div class="space-y-1.5 max-h-[65vh] overflow-y-auto">
+        <div v-for="c in store.certificates" :key="c.id" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR[c.status]" />
+              <span class="text-xs font-mono truncate text-gray-900 dark:text-white">{{ c.serialNumber }}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">{{ c.status }}</span>
+            </div>
+            <p class="text-[10px] text-gray-500 dark:text-gray-400">
+              Issued {{ fmt(c.issuedAt) }} · valid until {{ fmt(c.notAfter) }}
+              <template v-if="c.revokedAt"> · revoked {{ fmt(c.revokedAt) }} ({{ c.revokedReason }})</template>
+            </p>
+          </div>
+          <button
+            v-if="c.status === 'active' || c.status === 'expiring-soon'"
+            type="button"
+            class="p-1.5 rounded disabled:opacity-40 shrink-0"
+            style="color: #ef4444"
+            :disabled="!canEdit()"
+            @click="doRevokeCert(c.id, c.serialNumber)"
+          >
+            <component :is="ICONS.TrashBinMinimalistic" :size="13" weight="Linear" />
+          </button>
+        </div>
+      </div>
+    </Modal>
 
     <!-- Enforcement cutover -->
     <div>
@@ -537,15 +569,11 @@ onMounted(async () => {
           device-caller routes stop accepting the legacy secret for this workspace entirely, and any device without a
           valid certificate goes dark until it registers. There's no partial/dual-accept mode once this is on.
         </p>
-        <Alert type="warning">
-          The macOS Agent has no mTLS support yet (still ReportSecret-only). Enabling enforcement on a workspace with
-          any macOS devices cuts them off entirely, not just unregistered Windows devices.
-        </Alert>
         <Alert v-if="store.enforcementError" type="danger">{{ store.enforcementError }}</Alert>
         <div class="flex items-center gap-2">
           <div class="w-2 h-2 rounded-full shrink-0" :class="store.enforcementEnabled ? 'bg-red-500' : 'bg-emerald-500'" />
           <span class="text-xs font-semibold text-gray-900 dark:text-white">
-            {{ store.enforcementEnabled ? "mTLS enforcement is ON — legacy secret rejected" : "mTLS enforcement is OFF — legacy secret still accepted" }}
+            {{ store.enforcementEnabled ? "mTLS enforcement is ON" : "mTLS enforcement is OFF — legacy secret still accepted" }}
           </span>
         </div>
         <div class="flex justify-end">

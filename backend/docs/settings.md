@@ -56,7 +56,7 @@ Background jobs (the compliance evaluator, snapshot capture, [scheduled report s
 
 No permission gate — any signed-in admin can set the automation credential to be their own session.
 
-## Device Data Webhook
+## Applivery SOAR Agent
 
 The single place to get the native Windows/macOS agent onto a device — agent binary download/publish, what it reports, and one combined Managed
 Configuration bundle, instead of assembling everything by hand.
@@ -86,7 +86,7 @@ Stays disabled until the device report secret exists. No permission gate on this
 
 Replaces the shared `X-Device-Report-Secret` with per-device client certificates — each device gets its own keypair and a short-lived cert that
 renews itself automatically. Fully additive/opt-in until enforcement is turned on. Every mutating control requires the `canManageMtlsCA`
-permission. Windows only today — the macOS Agent has no mTLS support yet.
+permission. Supported on both Windows and macOS agents.
 
 - **Certificate Authority** — generate one (choice of key algorithm, leaf validity) or upload an external CA cert + key. **Download CA
   certificate** grabs the public cert (no private key) as `soar-ca.pem`, ready to paste into a reverse proxy's `ssl_client_certificate`
@@ -95,7 +95,7 @@ permission. Windows only today — the macOS Agent has no mTLS support yet.
   register with this token PLUS a live check that its own serial number is currently a known, enrolled device in this workspace's Applivery UEM
   fleet — only devices Applivery already knows about can ever register. Issued immediately on success, no admin approval step. A device that
   already has an active certificate can never be silently re-registered by it. Deployed automatically as part of
-  [Device Data Webhook](#device-data-webhook)'s combined download once generated here.
+  [Applivery SOAR Agent](#applivery-soar-agent)'s combined download once generated here.
 - **Reverse Proxy Configuration** — the exact nginx/NPM config reference (with your workspace's actual header names) plus a live status check for
   whether the internal proxy secret is configured on this backend. Required before enforcement below will work — without it, every mTLS-gated
   request fails closed (503). **Requires a separate subdomain dedicated to agent traffic** — the **Agent subdomain** field here (e.g.
@@ -103,10 +103,10 @@ permission. Windows only today — the macOS Agent has no mTLS support yet.
   verification is a whole-domain setting in nginx (and most reverse proxies), never scoped to a URL path, so it cannot be added to the same proxy
   host serving the dashboard without breaking normal browser access to it. This was tried and confirmed broken in practice before this
   two-domain design was adopted — see `backend/docs/mtls-agent-auth-roadmap.md` §5.5 for the full incident writeup and the corrected config.
-  Device Data Webhook's **Agent Base URL** reads this value back read-only, so there's exactly one place to change it.
+  Applivery SOAR Agent's **Agent Base URL** reads this value back read-only, so there's exactly one place to change it.
 - **Certificates** — issued fleet, with per-device status (active/expiring-soon/expired/revoked/superseded) and a **Revoke** action.
 - **Enforcement** — the cutover switch: once enabled, every device-caller route requires a valid client certificate and the legacy secret stops
-  being accepted for that workspace. Cuts off any macOS device on the workspace entirely (no mTLS support), not just unregistered Windows ones.
+  being accepted for that workspace.
   Roll out the fleet first, then flip this — see `backend/docs/mtls-agent-auth-roadmap.md` for the full runbook.
 
 ## Log Export
@@ -259,8 +259,8 @@ Quick reference for which Settings section unblocks which feature elsewhere:
 | Feature | Depends on |
 |---|---|
 | [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service |
-| [Compliance](compliance.md) Self-Reported Attribute conditions | Device Data Webhook + a deployed self-report script |
-| [Compliance](compliance.md) App List conditions | App List inventory sync (Device Data Webhook script, or the paced background refresher) |
+| [Compliance](compliance.md) Self-Reported Attribute conditions | Applivery SOAR Agent + a deployed self-report script |
+| [Compliance](compliance.md) App List conditions | App List inventory sync (Applivery SOAR Agent script, or the paced background refresher) |
 | [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service |
 | [Devices](devices.md) Firewall Rule Sets section | A [Firewall Policy Library](workflows.md#firewall-policy-library) rule set actually applied via a workflow |
 | [Cases](cases.md) ticketing chips/sync | Integrations (Jira/ServiceNow) |

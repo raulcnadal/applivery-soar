@@ -147,8 +147,8 @@ onMounted(async () => {
         running (e.g. an EDR), a service/daemon active, a registry value or plist key set to a given value, an app
         installed at a given version, or the output of an arbitrary command. Each check's result becomes available
         immediately as a "Custom Check Result" condition inside Compliance Policies, scoped automatically to policies
-        targeting the matching platform. Requires the Applivery SOAR Agent (Settings &gt; Device Data Webhook) — the
-        legacy report scripts don't poll for custom checks.
+        targeting the matching platform. Requires the Applivery SOAR Agent, configured under Settings &gt; Applivery
+        SOAR Agent — the legacy report scripts don't poll for custom checks.
       </p>
       <Alert type="warning">
         The "Run a command" checker type executes exactly what you enter, directly on every device with that check

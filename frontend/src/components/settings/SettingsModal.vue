@@ -59,7 +59,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   { id: "backup", label: "Backup & Restore", icon: ICONS.Download },
   { id: "auditlog", label: "Audit Log", icon: ICONS.DocumentText },
   { id: "workspace-automation", label: "Workspace Automation", icon: ICONS.Refresh },
-  { id: "device-webhook", label: "Device Data Webhook", icon: ICONS.PlugCircle },
+  { id: "device-webhook", label: "Applivery SOAR Agent", icon: ICONS.PlugCircle },
   { id: "custom-checks", label: "Custom Device Checks", icon: ICONS.Checklist },
   { id: "event-watches", label: "Event-Driven Detection", icon: ICONS.Radar },
   { id: "mtls", label: "mTLS Authentication", icon: ICONS.Lock },

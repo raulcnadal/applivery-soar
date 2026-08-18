@@ -110,7 +110,7 @@ export async function clearAgentDownloadsToken(actorEmail: string): Promise<void
 async function getToken(): Promise<string> {
   const cfg = await loadConfig();
   if (!cfg.tokenEncrypted) {
-    throw new HttpError(400, "No GitHub token configured for agent downloads yet — set one in Settings > Device Data Webhook.");
+    throw new HttpError(400, "No GitHub token configured for agent downloads yet — set one in Settings > Applivery SOAR Agent.");
   }
   return decryptSecret(cfg.tokenEncrypted);
 }

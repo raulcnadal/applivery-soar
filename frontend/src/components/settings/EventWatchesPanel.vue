@@ -274,8 +274,8 @@ onMounted(async () => {
         debounce window below, 5 seconds by default) before calling SOAR back, so a burst of activity (e.g.
         installing an app) produces one clean notification, not hundreds. This <strong>supplements</strong> the
         existing report cycle, it never replaces it — a device that's offline or hasn't updated its agent keeps
-        working exactly as before. Requires the Applivery SOAR Agent (Settings &gt; Device Data Webhook) — the legacy
-        report scripts don't poll for these.
+        working exactly as before. Requires the Applivery SOAR Agent, configured under Settings &gt; Applivery SOAR
+        Agent — the legacy report scripts don't poll for these.
       </p>
       <Alert v-if="store.eventWatchesError" type="danger">{{ store.eventWatchesError }}</Alert>
       <Alert v-if="!canEdit()" type="info">Your role doesn't have manage access to Compliance — every control below is disabled.</Alert>

@@ -210,7 +210,7 @@ function buildToken(fingerprint: string): string {
 }
 
 function descriptionFor(fingerprint: string): string {
-  return `Auto-published from Settings > Device Data Webhook. ${buildToken(fingerprint)}`;
+  return `Auto-published from Settings > Applivery SOAR Agent. ${buildToken(fingerprint)}`;
 }
 
 // ── Step 1: the MDM asset — dedup by exact name + description token before uploading ──

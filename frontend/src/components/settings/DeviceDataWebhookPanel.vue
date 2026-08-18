@@ -119,7 +119,7 @@ const macosConfigSnippet = computed(() => {
     workspace_slug: auth.orgSlug,
     report_secret: store.status?.secret ?? "",
     interval_sec: reportIntervalSeconds.value,
-    report_bitlocker: includeSecurityAttestation.value,
+    report_filevault: includeSecurityAttestation.value,
     report_firewall: includeSecurityAttestation.value,
     report_apps: includeAppInventory.value,
   };

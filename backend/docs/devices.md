@@ -37,7 +37,7 @@ Click a device's **Risk** badge to open a "What's driving this score" popover li
 Select one or more rows via their checkboxes to reveal a bulk action bar:
 
 - **Run workflow…** — opens the [workflow device picker](workflows.md#running-a-workflow) and runs the chosen workflow against every selected device.
-- **Re-attest now** — pushes the Windows/macOS security-attestation self-report script immediately instead of waiting for its scheduled run (confirms first; reports "skipped" for platforms with no reporter, i.e. Android/iOS). See [Settings → Device Data Webhook](settings.md#device-data-webhook) for the underlying script.
+- **Re-attest now** — pushes the Windows/macOS security-attestation self-report script immediately instead of waiting for its scheduled run (confirms first; reports "skipped" for platforms with no reporter, i.e. Android/iOS). See [Settings → Applivery SOAR Agent](settings.md#applivery-soar-agent) for the underlying script.
 - **Add tag…** — applies one tag to every selected device.
 - **Move segment…** — moves all selected devices to a chosen segment.
 - **Clear** — deselects everything.
@@ -112,4 +112,4 @@ A tab switcher at the top of the Devices header ("Devices" / "Playground") switc
 - [Workflows](workflows.md) — running workflows against one or many devices, and the Firewall Policy Library referenced in the drawer.
 - [Cases](cases.md) — the cases linked from a device's Open Cases section.
 - [Apps](apps.md) — the fleet-wide Reported Apps table and App Catalog the Apps tab's per-device view is scoped from.
-- [Settings](settings.md) — Vulnerability Service, Device Data Webhook (self-report scripts), and OS Updates/Lifecycle catalogs that feed the badges on this page.
+- [Settings](settings.md) — Vulnerability Service, Applivery SOAR Agent (self-report scripts), and OS Updates/Lifecycle catalogs that feed the badges on this page.
