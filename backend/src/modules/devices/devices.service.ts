@@ -160,33 +160,25 @@ async function fetchDeviceAudienceMembershipMap(
     const audId = String(aud.id ?? aud._id ?? "");
     const audName = aud.name ?? "Unnamed audience";
     if (!audId) continue;
-    // GET .../device-audiences/:id/preview does NOT return a flat paginated
-    // list — per Applivery's own API reference, its 200 body is
-    // `{status, data: {emmDevices: [...], admDevices: [...], winDevices:
-    // [...], aosDevices: [...]}}`, one array per platform, each item's `id`
-    // being that platform's device id (matches the admDevice/emmDevice/
-    // winDevice fields on the unified device list, resolved via
-    // platformIdToUnifiedId below). fetchAllPages/extractItems only know how
-    // to unwrap `{items: [...]}` or a bare array, so calling it here always
-    // saw 0 items — every Device-Audience-scoped Compliance Policy silently
-    // matched zero devices (both the Device modal's "scoped policies" list
-    // and the actual evaluation pass in complianceEvaluate.ts, since both
-    // read this exact audienceMap). Fetching directly and flattening the
-    // four arrays ourselves is the fix.
+    // CORRECTION: an earlier version of this function assumed (from reading
+    // Applivery's API reference in isolation) that this endpoint's 200 body
+    // was `{status, data: {emmDevices, admDevices, winDevices, aosDevices}}`
+    // and hand-flattened those four arrays instead of using
+    // fetchAllPages/extractItems. Verified against the LIVE endpoint (via
+    // this same file's diagnoseDeviceAudiencePreview, deviceAudiences.
+    // service.ts — which has always used plain extractItems(res.data) here
+    // and correctly returns real members, confirmed against soar.mi-labs.es
+    // with rawMemberCount:1 for an audience Applivery's own preview UI also
+    // shows 1 member for) that assumption was wrong: the real response
+    // extractItems() already handles it (a flat/paginated item list), so
+    // the hand-flattening version always saw 0 items and made every
+    // Device-Audience-scoped Compliance Policy match zero devices — the
+    // exact bug it was meant to fix, just via a different code path.
+    // Reverted to fetchAllPages, matching the proven-working diagnostic
+    // code below.
     let previewItems: Array<Record<string, any>>;
     try {
-      const res = await appliveryClient.get<any>(`${orgBase}/mdm/device-audiences/${audId}/preview`, { headers, params: { limit: 500 } });
-      if (res.status !== 200) {
-        console.warn(`[Device Audiences] Failed to preview membership for "${audName}" (${audId}): HTTP ${res.status} — ${String(JSON.stringify(res.data)).slice(0, 300)}`);
-        continue;
-      }
-      const data = (res.data as any)?.data ?? {};
-      previewItems = [
-        ...((data.emmDevices as any[]) ?? []),
-        ...((data.admDevices as any[]) ?? []),
-        ...((data.winDevices as any[]) ?? []),
-        ...((data.aosDevices as any[]) ?? []),
-      ];
+      previewItems = await fetchAllPages(headers, `${orgBase}/mdm/device-audiences/${audId}/preview`);
     } catch (e) {
       console.warn(`[Device Audiences] Failed to preview membership for "${audName}" (${audId}): ${e}`);
       continue;
