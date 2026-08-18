@@ -225,6 +225,24 @@ async function fetchDeviceAudienceMembershipMap(
  * Vulnerability Service integration, and Cases (open-case lookup against
  * the `Case` table) — see the per-field loads below.
  */
+// Request coalescing for the expensive path below (fetchAllPages against
+// Applivery's fleet API + a per-device sequential pass computing vuln/apps
+// detail) — keyed by workspace only, deliberately ignoring `authorization`,
+// since every caller within a workspace resolves the same Automation
+// Credential (getAutomationBearer) or the same admin session either way.
+// Added after a real-device regression: a device's POST /api/device-data/
+// report invalidates this workspace's cache and (as of the event-driven
+// re-evaluation feature) fires a fire-and-forget forceEvaluateNow, which
+// itself calls getDevicesFull(refresh=true) — and the same device's very
+// next call, GET /api/device-data/agent-status moments later, used to see
+// the just-invalidated cache and kick off its OWN full independent refetch
+// concurrently with the first, roughly doubling an already-slow fleet pull
+// and pushing it past the agent's own HTTP client timeout (the "Unavailable
+// / stuck on reboot" bug). Now a second caller while a refresh is already
+// in flight just awaits that same promise instead of starting a redundant
+// one.
+const devicesFullInFlight = new Map<string, Promise<{ items: NormalizedDevice[]; total: number; fetchedAt: string }>>();
+
 export async function getDevicesFull(
   authorization: string,
   workspaceSlug: string,
@@ -237,6 +255,24 @@ export async function getDevicesFull(
     if (cached !== null) return cached;
   }
 
+  const inFlight = devicesFullInFlight.get(slugKey);
+  if (inFlight) return inFlight;
+
+  const fetchPromise = fetchDevicesFullUncached(authorization, workspaceSlug).finally(() => {
+    devicesFullInFlight.delete(slugKey);
+  });
+  devicesFullInFlight.set(slugKey, fetchPromise);
+  return fetchPromise;
+}
+
+// workspaceSlug is passed through raw (not the `slugKey` fallback) so
+// resolveOrgBase below sees exactly what getDevicesFull's caller passed in —
+// same as this logic's behavior before it was split out of getDevicesFull.
+async function fetchDevicesFullUncached(
+  authorization: string,
+  workspaceSlug: string,
+): Promise<{ items: NormalizedDevice[]; total: number; fetchedAt: string }> {
+  const slugKey = workspaceSlug || "global";
   const headers: Headers = { Authorization: authorization, "Content-Type": "application/json" };
   const orgBase = await resolveOrgBase(headers, workspaceSlug);
 
