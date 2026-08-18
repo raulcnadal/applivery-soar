@@ -160,9 +160,33 @@ async function fetchDeviceAudienceMembershipMap(
     const audId = String(aud.id ?? aud._id ?? "");
     const audName = aud.name ?? "Unnamed audience";
     if (!audId) continue;
+    // GET .../device-audiences/:id/preview does NOT return a flat paginated
+    // list — per Applivery's own API reference, its 200 body is
+    // `{status, data: {emmDevices: [...], admDevices: [...], winDevices:
+    // [...], aosDevices: [...]}}`, one array per platform, each item's `id`
+    // being that platform's device id (matches the admDevice/emmDevice/
+    // winDevice fields on the unified device list, resolved via
+    // platformIdToUnifiedId below). fetchAllPages/extractItems only know how
+    // to unwrap `{items: [...]}` or a bare array, so calling it here always
+    // saw 0 items — every Device-Audience-scoped Compliance Policy silently
+    // matched zero devices (both the Device modal's "scoped policies" list
+    // and the actual evaluation pass in complianceEvaluate.ts, since both
+    // read this exact audienceMap). Fetching directly and flattening the
+    // four arrays ourselves is the fix.
     let previewItems: Array<Record<string, any>>;
     try {
-      previewItems = await fetchAllPages(headers, `${orgBase}/mdm/device-audiences/${audId}/preview`);
+      const res = await appliveryClient.get<any>(`${orgBase}/mdm/device-audiences/${audId}/preview`, { headers, params: { limit: 500 } });
+      if (res.status !== 200) {
+        console.warn(`[Device Audiences] Failed to preview membership for "${audName}" (${audId}): HTTP ${res.status} — ${String(JSON.stringify(res.data)).slice(0, 300)}`);
+        continue;
+      }
+      const data = (res.data as any)?.data ?? {};
+      previewItems = [
+        ...((data.emmDevices as any[]) ?? []),
+        ...((data.admDevices as any[]) ?? []),
+        ...((data.winDevices as any[]) ?? []),
+        ...((data.aosDevices as any[]) ?? []),
+      ];
     } catch (e) {
       console.warn(`[Device Audiences] Failed to preview membership for "${audName}" (${audId}): ${e}`);
       continue;
