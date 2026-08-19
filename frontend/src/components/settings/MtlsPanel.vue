@@ -450,8 +450,8 @@ onMounted(async () => {
       </div>
     </div>
 
-    <Modal :open="showProxyModal" title="Reverse Proxy Configuration" size="lg" @close="showProxyModal = false">
-      <div class="space-y-3 max-h-[70vh] overflow-y-auto">
+    <Modal :open="showProxyModal" title="Reverse Proxy Configuration" size="lg" class="max-w-4xl" @close="showProxyModal = false">
+      <div class="space-y-3 max-h-[70vh] overflow-y-auto pr-4 -mr-6">
         <Alert type="warning">
           TLS client-certificate verification applies to an entire domain, not a URL path — nginx (and most reverse
           proxies) can't scope it to a location block. Adding it to your existing dashboard's proxy host breaks
