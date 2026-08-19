@@ -10,6 +10,7 @@ import { loadGdmfCatalog, refreshGdmfCatalog } from "./gdmfCatalog";
 import { loadAppleDeviceIdentifiers, refreshAppleDeviceIdentifiers } from "./appleDeviceIdentifiers";
 import { getMitreTechniques, refreshMitreCatalog } from "./mitreCatalog";
 import { getVulnServiceConfig, refreshVulnServiceNow, testVulnServiceConfig, updateVulnServiceConfig } from "./vulnService";
+import { getMispConfig, refreshMispNow, testMispConfig, updateMispConfig } from "./mispService";
 import { z } from "zod";
 
 /**
@@ -139,5 +140,48 @@ catalogsRouter.post(
     const authorization = req.header("Authorization");
     if (!authorization) throw new HttpError(401, "Missing credentials");
     res.json(await refreshVulnServiceNow(workspaceOf(req), authorization));
+  }),
+);
+
+// ── MISP Threat Intel connector (per-workspace, opt-in) — merges into the
+// same Apps/Device Vulnerability Service aggregate above rather than
+// surfacing as a separate section (see mispService.ts's doc comment). ──
+const mispConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  baseUrl: z.string().default(""),
+  apiKey: z.string().default(""),
+  verifySsl: z.boolean().default(true),
+  cpeGuesserBaseUrl: z.string().default(""),
+  refreshIntervalHours: z.number().default(12),
+});
+
+catalogsRouter.get(
+  "/api/misp/config",
+  ...readCompliance,
+  asyncHandler(async (req, res) => res.json(await getMispConfig(workspaceOf(req)))),
+);
+catalogsRouter.put(
+  "/api/misp/config",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const payload = mispConfigSchema.parse(req.body);
+    res.json(await updateMispConfig(workspaceOf(req), payload, req.dashboardUser?.sub ?? "unknown"));
+  }),
+);
+catalogsRouter.post(
+  "/api/misp/test",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const payload = z.object({ baseUrl: z.string().default(""), apiKey: z.string().default(""), verifySsl: z.boolean().default(true) }).parse(req.body);
+    res.json(await testMispConfig(workspaceOf(req), payload));
+  }),
+);
+catalogsRouter.post(
+  "/api/misp/refresh",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    if (!authorization) throw new HttpError(401, "Missing credentials");
+    res.json(await refreshMispNow(workspaceOf(req), authorization));
   }),
 );

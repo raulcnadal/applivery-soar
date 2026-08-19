@@ -1,0 +1,129 @@
+<script setup lang="ts">
+// "MISP" tab (docs/settings.md#misp-threat-intel) — opt-in, per-workspace.
+// Permission gate: requires canEditIntegrationSecrets to edit or test.
+// Results merge into the SAME Apps view / Device modal vulnerability
+// aggregate the Vulnerability Service populates — there's deliberately no
+// separate "MISP findings" section anywhere else in the product.
+import { Alert, Button, Input } from "@applivery/bluesky-vue";
+import { onMounted, reactive, ref, watch } from "vue";
+import { useCatalogsStore } from "../../stores/catalogs";
+import { useAuthStore } from "../../stores/auth";
+
+const store = useCatalogsStore();
+const auth = useAuthStore();
+
+const canEdit = () => auth.hasRiskyAction("canEditIntegrationSecrets");
+
+const form = reactive({ enabled: false, baseUrl: "", apiKey: "", verifySsl: true, cpeGuesserBaseUrl: "", refreshIntervalHours: 12 });
+const isSaving = ref(false);
+const saveError = ref<string | null>(null);
+const saved = ref(false);
+const isTesting = ref(false);
+const testError = ref<string | null>(null);
+const testResult = ref<string | null>(null);
+
+onMounted(async () => {
+  await store.fetchMispConfig();
+});
+
+watch(() => store.mispConfig, (cfg) => {
+  if (!cfg) return;
+  form.enabled = cfg.enabled;
+  form.baseUrl = cfg.baseUrl;
+  form.apiKey = "";
+  form.verifySsl = cfg.verifySsl;
+  form.cpeGuesserBaseUrl = cfg.cpeGuesserBaseUrl;
+  form.refreshIntervalHours = cfg.refreshIntervalHours;
+}, { immediate: true });
+
+async function save() {
+  isSaving.value = true;
+  saveError.value = null;
+  saved.value = false;
+  try {
+    await store.saveMispConfig({
+      enabled: form.enabled, baseUrl: form.baseUrl, apiKey: form.apiKey,
+      verifySsl: form.verifySsl, cpeGuesserBaseUrl: form.cpeGuesserBaseUrl, refreshIntervalHours: form.refreshIntervalHours,
+    });
+    saved.value = true;
+  } catch (err: any) {
+    saveError.value = err?.response?.data?.detail || "Failed to save.";
+  } finally {
+    isSaving.value = false;
+  }
+}
+
+async function test() {
+  isTesting.value = true;
+  testError.value = null;
+  testResult.value = null;
+  try {
+    const res = await store.testMispConfig({ baseUrl: form.baseUrl, apiKey: form.apiKey, verifySsl: form.verifySsl });
+    testResult.value = `Connected${res.version ? ` (MISP ${res.version})` : ""} — ${res.latencyMs}ms.`;
+  } catch (err: any) {
+    testError.value = err?.response?.data?.detail || "Test connection failed.";
+  } finally {
+    isTesting.value = false;
+  }
+}
+</script>
+
+<template>
+  <div class="space-y-4 max-w-lg">
+    <p class="text-xs text-gray-400">
+      Connects to your own MISP instance (misp-project.org) and cross-references CVEs shared there against every app and
+      OS version reported across the fleet — macOS, iOS, Android, and Windows. App/OS names are first translated into
+      CPE vendor:product identifiers (via cpe-guesser) before querying MISP, since MISP has no notion of "this specific
+      app version" on its own. Findings merge directly into the same risk score and CVE list the Vulnerability Catalog
+      and Vulnerability Service populate — there's no separate MISP section in the Apps view or Device modal.
+    </p>
+    <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — every control below is disabled.</Alert>
+    <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
+    <Alert v-if="saved" type="success">Saved.</Alert>
+
+    <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+      <input type="checkbox" v-model="form.enabled" :disabled="!canEdit()" /> Enabled
+    </label>
+    <Input v-model="form.baseUrl" label="MISP base URL" placeholder="https://misp.yourorg.com" :disabled="!canEdit()" />
+    <Input
+      v-model="form.apiKey"
+      type="password"
+      label="MISP API key"
+      :placeholder="store.mispConfig?.apiKey ? `Current: ${store.mispConfig.apiKey} — leave blank to keep it` : 'Enter automation API key'"
+      :disabled="!canEdit()"
+    />
+    <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+      <input type="checkbox" v-model="form.verifySsl" :disabled="!canEdit()" /> Verify TLS certificate
+      <span class="text-xs text-gray-400">(uncheck only for on-prem MISP instances using a self-signed cert)</span>
+    </label>
+    <Input
+      v-model="form.cpeGuesserBaseUrl"
+      label="CPE guesser base URL (optional)"
+      placeholder="Defaults to the public cpe-guesser.cve-search.org"
+      :disabled="!canEdit()"
+    />
+    <p class="text-xs text-gray-400 -mt-2">
+      Only app/OS names — never device, user, or network data — are sent here to resolve a CPE identifier before querying
+      MISP. Point this at a self-hosted cpe-guesser instance instead if sending app names to CIRCL's public service
+      isn't acceptable for your environment.
+    </p>
+    <Input v-model.number="form.refreshIntervalHours" type="number" label="Refresh interval (hours)" :disabled="!canEdit()" />
+
+    <div class="flex items-center gap-2">
+      <Button :loading="isSaving" :disabled="!canEdit()" @click="save">Save</Button>
+      <Button variant="ghost" :loading="isTesting" :disabled="!canEdit() || !form.baseUrl" @click="test">Test connection</Button>
+    </div>
+    <Alert v-if="testError" type="danger">{{ testError }}</Alert>
+    <Alert v-if="testResult" type="success">{{ testResult }}</Alert>
+
+    <div v-if="store.mispConfig?.enabled" class="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-2">
+      <p class="text-sm font-medium text-gray-700 dark:text-gray-200">Status</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">
+        Last refreshed: {{ store.mispConfig.lastRefreshAt ? new Date(store.mispConfig.lastRefreshAt).toLocaleString() : "Never" }}
+      </p>
+      <Alert v-if="store.mispConfig.lastRefreshError" type="danger">{{ store.mispConfig.lastRefreshError }}</Alert>
+      <pre v-if="store.mispConfig.lastRefreshStats" class="text-xs bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3 overflow-x-auto">{{ JSON.stringify(store.mispConfig.lastRefreshStats, null, 2) }}</pre>
+      <Button variant="ghost" :loading="store.isRefreshing" @click="store.refreshMispNow()">Refresh now</Button>
+    </div>
+  </div>
+</template>

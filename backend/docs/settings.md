@@ -189,6 +189,23 @@ Platform filter tabs, entry count, last-fetched time, **Refresh now**.
 
 **Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test; without it, every field and button here is disabled with an explanatory tooltip.
 
+## MISP
+
+**Opt-in, per-workspace.** Connects to a customer-deployed [MISP](https://www.misp-project.org) instance and cross-references CVEs shared there against every app and OS version reported across the fleet (macOS, iOS, Android, Windows). Results **merge directly into the same risk score and CVE list** the Vulnerability Catalog and Vulnerability Service populate in the Apps view and Device modal — there's no separate "MISP findings" section anywhere in the product. When the same CVE is found by both MISP and the Vulnerability Service, the Vulnerability Service's entry wins (it carries real CVSS/EPSS/KEV data a raw MISP CPE match can't supply); a MISP-only CVE is kept with a severity derived from its MISP event's own threat level (High/Medium/Low; Undefined is treated as Medium rather than silently dropped or downgraded).
+
+MISP has no built-in concept of "this app, this version" the way the Vulnerability Service does, so app/OS names are translated into a CPE vendor:product pair first via [cpe-guesser](https://github.com/cve-search/cpe-guesser) before querying MISP's `/attributes/restSearch` for a wildcard-matching `cpe`-typed attribute, then a second lookup pulls any `vulnerability`-typed (CVE-ID) attributes from the same MISP event(s) that CPE attribute belongs to.
+
+- **Enabled** toggle.
+- **MISP base URL** — e.g. `https://misp.yourorg.com`, no trailing slash.
+- **MISP API key** — an Automation API key from your MISP instance (My Profile → Auth Keys), not a user login password. Same masked-on-save/blank-to-keep behavior as the Vulnerability Service's token, encrypted at rest.
+- **Verify TLS certificate** — on by default; only turn off for an on-prem MISP instance using a self-signed certificate.
+- **CPE guesser base URL** (optional) — blank defaults to the public `cpe-guesser.cve-search.org` instance (run by CIRCL, the CVE-Search project). Only app/OS names are ever sent there, never device/user/network data, but it is a third-party network call — point this at a self-hosted cpe-guesser instance instead if that isn't acceptable for your environment.
+- **Refresh interval (hours)** — 1–72, default 12.
+- **Test connection** and **Save**. Test hits MISP's own lightweight `/servers/getVersion` endpoint to confirm reachability and that the API key is valid, without touching any event/attribute data.
+- Once enabled, a status panel shows last-refreshed time, a **Refresh now** button, and — after a refresh — stats: OS/app checks queried vs. failed, how many are still queued for the next tick, broken down by platform. Results are cached for 24h per app/OS combo, same as the Vulnerability Service; **Refresh now** always bypasses that cache. Unlike the Vulnerability Service's Worker, MISP has no bulk lookup endpoint — each combo costs a CPE guess plus up to two MISP calls, so a large fleet's first refresh queues up to 200 combos per tick rather than checking everything at once.
+
+**Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test.
+
 ## OS Lifecycle
 
 **Status/monitoring only.** Covers two independent data sources, each with its own Refresh now:
@@ -259,10 +276,10 @@ Quick reference for which Settings section unblocks which feature elsewhere:
 
 | Feature | Depends on |
 |---|---|
-| [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service |
+| [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service and/or MISP (conditions read the same merged status) |
 | [Compliance](compliance.md) Self-Reported Attribute conditions | Applivery SOAR Agent + a deployed self-report script |
 | [Compliance](compliance.md) App List conditions | App List inventory sync (Applivery SOAR Agent script, or the paced background refresher) |
-| [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service |
+| [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service and/or MISP (results merge into the same badge/section) |
 | [Devices](devices.md) Firewall Rule Sets section | A [Firewall Policy Library](workflows.md#firewall-policy-library) rule set actually applied via a workflow |
 | [Cases](cases.md) ticketing chips/sync | Integrations (Jira/ServiceNow) |
 | [Cases](cases.md) SLA badges | Case SLA |

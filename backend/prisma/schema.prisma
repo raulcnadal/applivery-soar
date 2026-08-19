@@ -995,6 +995,33 @@ model VulnServiceCache {
   @@unique([workspaceSlug, key])
 }
 
+model MispConfig {
+  workspaceSlug        String    @id
+  enabled              Boolean   @default(false)
+  baseUrl              String    @default("")
+  apiKeyEncrypted      String?
+  verifySsl            Boolean   @default(true)
+  // Optional override for the CPE-guessing service used to translate app/OS
+  // names into CPE vendor:product pairs before querying MISP — blank means
+  // "use the public cpe-guesser.cve-search.org instance". See mispService.ts.
+  cpeGuesserBaseUrl    String    @default("")
+  refreshIntervalHours Int       @default(12)
+  lastRefreshAt        DateTime?
+  lastRefreshError     String?
+  lastRefreshStats     Json?
+  updatedAt            DateTime  @updatedAt
+}
+
+model MispVulnCache {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  key           String
+  result        Json
+  cachedAt      DateTime @default(now())
+
+  @@unique([workspaceSlug, key])
+}
+
 model GlobalCatalog {
   source          String   @id
   payload         Json

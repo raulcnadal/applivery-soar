@@ -35,6 +35,7 @@ import SystemHealthPanel from "./SystemHealthPanel.vue";
 import OsUpdateCatalogPanel from "./OsUpdateCatalogPanel.vue";
 import VulnerabilityCatalogPanel from "./VulnerabilityCatalogPanel.vue";
 import VulnerabilityServicePanel from "./VulnerabilityServicePanel.vue";
+import MispPanel from "./MispPanel.vue";
 import OsLifecyclePanel from "./OsLifecyclePanel.vue";
 import AppleAppUpdatesPanel from "./AppleAppUpdatesPanel.vue";
 import IntegrationsPanel from "./IntegrationsPanel.vue";
@@ -72,6 +73,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   { id: "os-updates", label: "OS Updates", icon: ICONS.Cpu },
   { id: "vuln-catalog", label: "Vulnerability Catalog", icon: ICONS.Bug },
   { id: "vuln-service", label: "Vulnerability Service", icon: ICONS.ShieldWarning },
+  { id: "misp", label: "MISP", icon: ICONS.Radar },
   { id: "os-lifecycle", label: "OS Lifecycle", icon: ICONS.Hourglass },
   { id: "apple-app-updates", label: "App Updates (Apple)", icon: ICONS.Delivery },
   { id: "integrations", label: "Ticketing & Chat", icon: ICONS.ChatRound },
@@ -217,6 +219,7 @@ const activeTabMeta = computed(() => visibleTabs.value.find((t) => t.id === acti
           <OsUpdateCatalogPanel v-else-if="activeTab === 'os-updates'" />
           <VulnerabilityCatalogPanel v-else-if="activeTab === 'vuln-catalog'" />
           <VulnerabilityServicePanel v-else-if="activeTab === 'vuln-service'" />
+          <MispPanel v-else-if="activeTab === 'misp'" />
           <OsLifecyclePanel v-else-if="activeTab === 'os-lifecycle'" />
           <AppleAppUpdatesPanel v-else-if="activeTab === 'apple-app-updates'" />
           <IntegrationsPanel v-else-if="activeTab === 'integrations'" />

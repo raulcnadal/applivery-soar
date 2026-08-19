@@ -25,6 +25,7 @@ export const SYSTEM_HEALTH_JOBS: SystemHealthJobMeta[] = [
   { key: "catalog:os-update", label: "OS update catalog refresh (MSRC)", intervalSeconds: 86400 },
   { key: "catalog:vuln", label: "Vulnerability catalog refresh (EUVD)", intervalSeconds: 86400 },
   { key: "vuln_service_refresh", label: "Vulnerability Service refresh", intervalSeconds: 3600 },
+  { key: "misp_refresh", label: "MISP threat intel refresh", intervalSeconds: 3600 },
   { key: "catalog:os-lifecycle", label: "OS lifecycle refresh (endoflife.date)", intervalSeconds: 604800 },
   { key: "catalog:gdmf", label: "Apple Software Lookup Service refresh (GDMF)", intervalSeconds: 86400 },
   { key: "catalog:mitre", label: "MITRE ATT&CK catalog refresh", intervalSeconds: 86400 },

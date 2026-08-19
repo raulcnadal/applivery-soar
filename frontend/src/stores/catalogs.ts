@@ -41,6 +41,18 @@ export interface VulnServiceConfig {
   lastRefreshError: string | null;
   lastRefreshStats: Record<string, any> | null;
 }
+export interface MispConfig {
+  workspaceSlug: string;
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string; // masked
+  verifySsl: boolean;
+  cpeGuesserBaseUrl: string;
+  refreshIntervalHours: number;
+  lastRefreshAt: string | null;
+  lastRefreshError: string | null;
+  lastRefreshStats: Record<string, any> | null;
+}
 export interface AppleAppUpdatesStatus {
   targetDeviceCount: number;
   syncedCount: number;
@@ -61,6 +73,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   const osLifecycleCatalog = ref<OsLifecycleCatalog | null>(null);
   const gdmfCatalog = ref<GdmfCatalog | null>(null);
   const vulnServiceConfig = ref<VulnServiceConfig | null>(null);
+  const mispConfig = ref<MispConfig | null>(null);
   const appleAppUpdatesStatus = ref<AppleAppUpdatesStatus | null>(null);
 
   const isLoading = ref(false);
@@ -146,6 +159,29 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     }
   }
 
+  async function fetchMispConfig() {
+    const { api } = await import("../api/http");
+    mispConfig.value = (await api.get("/misp/config")).data;
+  }
+  async function saveMispConfig(payload: { enabled: boolean; baseUrl: string; apiKey: string; verifySsl: boolean; cpeGuesserBaseUrl: string; refreshIntervalHours: number }) {
+    const { api } = await import("../api/http");
+    mispConfig.value = (await api.put("/misp/config", payload)).data;
+  }
+  async function testMispConfig(payload: { baseUrl: string; apiKey: string; verifySsl: boolean }) {
+    const { api } = await import("../api/http");
+    return (await api.post("/misp/test", payload)).data as { status: string; latencyMs: number; version: string | null };
+  }
+  async function refreshMispNow() {
+    isRefreshing.value = true;
+    try {
+      const { api } = await import("../api/http");
+      await api.post("/misp/refresh");
+      await fetchMispConfig();
+    } finally {
+      isRefreshing.value = false;
+    }
+  }
+
   async function fetchAppleAppUpdatesStatus() {
     const { api } = await import("../api/http");
     appleAppUpdatesStatus.value = (await api.get("/apple-app-updates/status")).data;
@@ -161,13 +197,14 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   }
 
   return {
-    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, appleAppUpdatesStatus,
+    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, appleAppUpdatesStatus,
     isLoading, isRefreshing, error,
     fetchOsUpdateCatalog, refreshOsUpdateCatalog,
     fetchVulnCatalog, refreshVulnCatalog,
     fetchOsLifecycleCatalog, refreshOsLifecycleCatalog,
     fetchGdmfCatalog, refreshGdmfCatalog,
     fetchVulnServiceConfig, saveVulnServiceConfig, testVulnServiceConfig, refreshVulnServiceNow,
+    fetchMispConfig, saveMispConfig, testMispConfig, refreshMispNow,
     fetchAppleAppUpdatesStatus, refreshAppleAppUpdates,
   };
 });
