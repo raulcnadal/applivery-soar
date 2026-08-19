@@ -210,9 +210,16 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
     // appleAppUpdates is only ever populated on the serverFetch slot — the
     // SOAR Agent's self-report never sets it (Applivery-only signal).
     const iastore = await loadInstalledAppsStore(slugKey);
+    // "apple" OR "macos" — appleAppUpdates is populated for both (Applivery's
+    // Applications API covers iOS/iPadOS/macOS alike, see fetchAndStoreInstalledApps's
+    // platformPath === "apple" gate), but the entry's own `platform` field is
+    // now the device's real normalized platform (installedApps.service.ts),
+    // which correctly distinguishes a Mac from an iPhone/iPad — matching the
+    // same apple/macos pairing used everywhere else a device's Apple-family
+    // platform is checked (e.g. devices.service.ts's appleAppUpdateStatus).
     const appleEntries = Object.entries(iastore)
       .map(([did, record]) => [did, record?.serverFetch] as [string, any])
-      .filter(([, e]) => e && e.platform === "apple" && e.appleAppUpdates);
+      .filter(([, e]) => e && (e.platform === "apple" || e.platform === "macos") && e.appleAppUpdates);
     let devicesWithPending = 0;
     let totalPendingInstances = 0;
     const appFrequency: Record<string, number> = {};

@@ -291,7 +291,22 @@ export async function fetchAndStoreInstalledApps(headers: Headers, orgBase: stri
   const entry: InstalledAppsEntry = {
     identifiers: error === null ? Array.from(identifiers).sort() : existingEntry?.identifiers ?? [],
     apps: error === null ? versionedApps.sort((a, b) => a.identifier.localeCompare(b.identifier)) : existingEntry?.apps ?? [],
-    platform: platformPath,
+    // device.platform, NOT platformPath — platformPath is the Applivery URL
+    // routing segment (deliberately collapses "macos" into "apple" so the
+    // right /mdm/apple/... endpoint gets called, see platformPathSegment's
+    // own doc comment) and was previously reused here as the entry's stored
+    // semantic platform too. That meant every Mac's UEM-fetched app-inventory
+    // entry got permanently tagged platform:"apple" instead of "macos" — the
+    // Apps view's own "macOS" filter (ReportedAppsPanel.vue, which groups by
+    // exactly this field) then showed 0 results for a fleet whose macOS app
+    // data came entirely from Applivery UEM, because every one of those
+    // entries was silently bucketed under "iOS/iPadOS" instead. The exact
+    // same class of bug already got fixed once for device.platform itself
+    // (see deviceNormalize.ts's own doc comment on this) — this was the same
+    // "apple" umbrella leaking into a field that needs to distinguish real
+    // Macs from iOS/iPadOS, just in the app-inventory entry instead of the
+    // device record.
+    platform: device.platform,
     fetchedAt: error === null ? new Date().toISOString() : existingEntry?.fetchedAt ?? new Date().toISOString(),
     error,
     source: "server_fetch",
