@@ -34,13 +34,14 @@ Recurring delivery only supports **email** and the **chat webhook** notification
 
 ## Template tab
 
-Opens a **Custom HTML Template** editor — a raw code textarea, not a visual/WYSIWYG editor, and there's no live preview. Use Jinja2 syntax to inject data (e.g. `{{ Report_Title }}`); leave it blank to use the built-in default template.
+Opens a **Custom HTML Template** editor — a raw code textarea, not a visual/WYSIWYG editor. Use Jinja2 syntax to inject data (e.g. `{{ Report_Title }}`); leave it blank to use the built-in default template. Two links above the editor:
 
-The **default template** defines the PDF's whole visual identity: a blue top bar with your logo/wordmark and workspace name, a metadata bar (workspace, sources analyzed, applied filters), one card per selected data section (chart image + optional table), and a fixed footer. Available template variables: `Workspace_Name`, `Report_Title`, `Generated_Date`, `Time_Lapse`, `metadata`, and `report_sections` (each with a title, chart image, optional table, and full-width flag).
+- **Download default template** — downloads the built-in template's actual source (in the same Jinja2-subset grammar described below), as a real starting point rather than reverse-engineering the grammar from this doc alone.
+- **Preview current template** — opens a new tab rendering whichever template is currently active (your saved custom one, or the built-in default if none is set) against sample data, so you can see roughly what a real report will look like without waiting for the next scheduled run or spending a Generate Now.
 
-Whatever you type is saved per-workspace and used verbatim for every future report/schedule in that workspace until you change it. **Reset to Default** clears it back to the built-in template (confirm-gated). **Apply & Save** / **Close** — the actual save happens through the app's normal state-save, not a dedicated button beyond closing the modal.
+The **default template** defines the PDF's whole visual identity: a blue top bar with your logo/wordmark and workspace name, a metadata bar (workspace, sources analyzed, applied filters), one card per selected data section (chart image + optional table), and a fixed footer. Available template variables: `Workspace_Name`, `Report_Title`, `Generated_Date`, `Time_Lapse`, `metadata`, and `report_sections` (each with a title, chart image, optional table, and full-width flag) — a custom template only ever gets `html_table` for a section, never a chart image; bring your own visualization if you need one.
 
-**Practical tip**: if report generation suddenly starts failing for everyone in a workspace right after someone edits this tab, the most likely cause is a broken custom template — reopen the Template tab and click Reset to Default to confirm.
+This is a single, deployment-wide setting — not per-workspace, despite living under a specific workspace's Settings — saved once and used verbatim for every future report/schedule across every workspace until you change it again. **Reset to Default** clears it back to the built-in template (confirm-gated). **Apply & Save** validates the template server-side before persisting it (balanced `{% for %}`/`{% if %}` blocks, only supported loop sources, looks like a real HTML document, and actually renders against sample data without throwing) — a broken template is now rejected right in this modal with a specific error, rather than silently breaking the next scheduled report.
 
 ## Settings this view depends on
 
@@ -51,7 +52,7 @@ Whatever you type is saved per-workspace and used verbatim for every future repo
 
 ## Generation failures
 
-If a report fails to generate, you'll see a generic "Failed to generate report" message — the app doesn't currently distinguish between a network error, a broken custom template, or a server-side rendering problem. If it's failing for the whole workspace, check the Template tab first (see above), then confirm SMTP/webhook settings if delivery (not generation) is what's failing.
+If a report fails to generate, you'll see a generic "Failed to generate report" message — the app doesn't currently distinguish between a network error, a broken custom template, or a server-side rendering problem. A broken custom template specifically is now caught at save time (see Template tab above), so this is less likely than it used to be — but if it's failing across every workspace right after someone edits the Template tab, reopen it, use **Preview current template** to check, and **Reset to Default** if needed. Otherwise confirm SMTP/webhook settings if delivery (not generation) is what's failing.
 
 ## Related guides
 

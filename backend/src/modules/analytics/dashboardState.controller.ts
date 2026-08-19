@@ -4,8 +4,10 @@ import { verifyDashboardToken } from "../../middleware/auth.middleware";
 import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
 import { asyncHandler } from "../../utils/asyncHandler";
+import { HttpError } from "../../utils/httpError";
 import { encryptSecret } from "../../utils/secretCipher";
 import { decryptSmtpConfig } from "../../services/smtpConfig";
+import { validateCustomReportTemplate } from "../reports/reportTemplate";
 
 /**
  * Port of the "STORAGE ENDPOINTS" / "UNIFIED STATE PERSISTENCE" sections
@@ -119,6 +121,17 @@ dashboardStateRouter.post(
   asyncHandler(async (req, res) => {
     const slugKey = slugKeyFrom(req.header("X-Workspace-Slug"));
     const payload = statePayloadSchema.parse(req.body ?? {});
+
+    // Reject a broken custom HTML report template before it ever reaches the
+    // DB — the alternative is it silently breaks the next scheduled report
+    // run, which nobody's watching in real time (see reportTemplate.ts's
+    // validateCustomReportTemplate doc comment for exactly what this catches
+    // and what it deliberately can't).
+    if (typeof payload.customReportTemplate === "string") {
+      const result = validateCustomReportTemplate(payload.customReportTemplate);
+      if (!result.valid) throw new HttpError(400, result.error || "Custom report template failed validation.");
+    }
+
     const existingRow = await prisma.workspaceState.findUnique({ where: { workspaceSlug: slugKey } });
     const existing = stateResponseShape(existingRow);
 

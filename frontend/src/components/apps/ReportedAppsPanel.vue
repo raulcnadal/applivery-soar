@@ -70,10 +70,10 @@ const filtered = computed(() => {
 // click again to reverse, a third click clears back to the default
 // (deviceCount desc, same as getReportedAppsOverview's own server-side
 // order) ordering.
-type SortKey = "version" | "source" | "update" | "risk";
+type SortKey = "platform" | "version" | "source" | "update" | "risk";
 const sortBy = ref<SortKey | null>(null);
 const sortDir = ref<"asc" | "desc">("desc");
-const DEFAULT_SORT_DIR: Record<SortKey, "asc" | "desc"> = { version: "asc", source: "asc", update: "desc", risk: "desc" };
+const DEFAULT_SORT_DIR: Record<SortKey, "asc" | "desc"> = { platform: "asc", version: "asc", source: "asc", update: "desc", risk: "desc" };
 
 function versionCompare(a: string, b: string): number {
   const toParts = (v: string) => v.split(/[.\s]+/).map((s) => parseInt(s, 10));
@@ -106,6 +106,8 @@ const sorted = computed(() => {
   const copy = [...filtered.value];
   copy.sort((a, b) => {
     switch (key) {
+      case "platform":
+        return dir * (PLATFORM_LABELS[a.platform] || a.platform).localeCompare(PLATFORM_LABELS[b.platform] || b.platform);
       case "version": {
         // A single-version app sorts by its actual version number; an app
         // with drifted versions across the fleet sorts by how many
@@ -280,8 +282,17 @@ onMounted(async () => {
     </Alert>
 
     <div v-else class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 overflow-hidden overflow-x-auto">
-      <div class="hidden sm:grid grid-cols-[1fr_90px_60px_110px_100px_90px_70px_70px_24px] gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700 min-w-[900px]">
+      <div class="hidden sm:grid grid-cols-[1fr_90px_90px_60px_110px_100px_90px_70px_70px_24px] gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700 min-w-[980px]">
         <span>App</span>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 uppercase tracking-wider text-left"
+          :style="{ color: sortBy === 'platform' ? '#0241E3' : undefined }"
+          title="Which platform this app was reported on — useful when browsing All platforms"
+          @click.stop="toggleSort('platform')"
+        >
+          Platform <component :is="ICONS.SortVertical" :size="10" weight="Linear" />
+        </button>
         <button
           v-for="col in [
             { key: 'version', label: 'Version' },
@@ -327,7 +338,7 @@ onMounted(async () => {
           v-for="app in sorted"
           :key="appKey(app)"
           type="button"
-          class="w-full grid grid-cols-2 sm:grid-cols-[1fr_90px_60px_110px_100px_90px_70px_70px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40 sm:min-w-[900px]"
+          class="w-full grid grid-cols-2 sm:grid-cols-[1fr_90px_90px_60px_110px_100px_90px_70px_70px_24px] gap-2 items-center px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-900/40 sm:min-w-[980px]"
           @click="selectedApp = app"
         >
           <div class="min-w-0 col-span-2 sm:col-span-1">
@@ -342,8 +353,10 @@ onMounted(async () => {
                 :title="`Last live fetch error: ${firstFetchError(app)}`"
               />
             </p>
-            <p class="text-[11px] text-gray-400 truncate">{{ PLATFORM_LABELS[app.platform] || app.platform }} · {{ app.identifier }}</p>
+            <p class="text-[11px] text-gray-400 truncate sm:hidden">{{ PLATFORM_LABELS[app.platform] || app.platform }} · {{ app.identifier }}</p>
+            <p class="text-[11px] text-gray-400 truncate hidden sm:block">{{ app.identifier }}</p>
           </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 truncate whitespace-nowrap">{{ PLATFORM_LABELS[app.platform] || app.platform }}</div>
           <div class="text-xs text-gray-700 dark:text-gray-300 truncate" :title="app.versions.join(', ')">{{ versionLabel(app) }}</div>
           <div class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ typeLabel(app) }}</div>
           <div>

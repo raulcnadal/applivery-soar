@@ -134,17 +134,24 @@ export async function generateReportPdf(payload: ReportPayload, authorization: s
     }
   }
 
-  // Literal port of `_load_state(x_workspace_slug).get("customReportTemplate")`
-  // — reads the state row for the REPORT'S OWN workspace slug, not 'global'.
-  // Preserved as-is even though this means a template saved via Settings
-  // (which the frontend always writes to the 'global' row — see
-  // dashboardState.controller.ts) will only ever be found here if this
-  // deployment's real workspace slug happens to be 'global' too; that's a
-  // pre-existing inconsistency in the original, not something introduced by
-  // this port.
+  // FIXED (was: `_load_state(x_workspace_slug).get("customReportTemplate")`,
+  // reading the state row for the REPORT'S OWN workspace slug). The
+  // Reporting > Template modal is a single, deployment-wide setting with no
+  // per-workspace selector — its store (frontend/src/stores/dashboardState.ts)
+  // always sends `X-Workspace-Slug: global` on every /api/state read AND
+  // write (dashboardState.controller.ts's GLOBAL_HEADERS), so a saved custom
+  // template only ever lands in the "global" WorkspaceState row. Reading it
+  // back here by the report's own (real Applivery org) workspace slug meant
+  // an admin's saved template was silently never applied to any actual
+  // generated report unless that deployment's real workspace slug happened
+  // to literally be the string "global" — confirmed live: Reporting >
+  // Template's own "Preview current template" link would show the saved
+  // custom template while every real scheduled/on-demand report kept
+  // silently using the built-in default. Now reads the same "global" row the
+  // Template modal actually writes to, matching what Settings shows/promises.
   let customTemplate: string | null = null;
   try {
-    const stateRow = await prisma.workspaceState.findUnique({ where: { workspaceSlug } });
+    const stateRow = await prisma.workspaceState.findUnique({ where: { workspaceSlug: "global" } });
     customTemplate = stateRow?.customReportTemplate ?? null;
   } catch {
     /* no custom template available */

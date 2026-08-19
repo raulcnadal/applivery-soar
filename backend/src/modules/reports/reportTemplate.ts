@@ -116,6 +116,213 @@ function renderLoopBody(body: string, itemVar: string, item: Record<string, any>
   return out;
 }
 
+// ── Sample data — shared by the Template preview endpoint (reports.controller.ts's
+// GET /api/reports/template/preview) and validateCustomReportTemplate below,
+// so both exercise the exact same representative shape a real report would
+// produce, without needing a live Applivery credential or a real workspace's
+// data. Two sources (one with a trend, one without) is enough to exercise
+// every branch buildSections has (trend chart, donut/legend, plain table).
+export const SAMPLE_REPORT_DATA: Record<string, WidgetResponse> = {
+  device_compliance: {
+    chartData: [
+      { name: "Compliant", value: 42 },
+      { name: "Non-compliant", value: 3 },
+      { name: "Unknown", value: 5 },
+    ],
+    trendData: { labels: ["Jun", "Jul", "Aug"], series: [88, 91, 93], os_totals: { apple: 12, android: 8, windows: 30 } },
+    scorecardValue: 93,
+    items: [],
+    orgProfile: {},
+  },
+  platform_distribution: {
+    chartData: [
+      { name: "Windows", value: 28 },
+      { name: "macOS", value: 17 },
+      { name: "Apple", value: 5 },
+    ],
+    trendData: { labels: [], series: [], os_totals: { apple: 5, android: 0, windows: 28 } },
+    scorecardValue: 50,
+    items: [],
+    orgProfile: {},
+  },
+};
+
+// Same field names buildReportHtml's custom-template branch actually passes
+// to renderCustomTemplate (Workspace_Name/Report_Title/Generated_Date/
+// Time_Lapse top-level, metadata[].label/.value, report_sections[].section_title/
+// .image_source/.html_table/.is_full_width) — kept in sync with that call
+// site by hand since renderCustomTemplate's grammar is fixed/closed rather
+// than driven by a shared schema.
+const SAMPLE_TEMPLATE_VARS: Record<string, any> = {
+  Workspace_Name: "Sample Workspace",
+  Report_Title: "Analytics Report",
+  Generated_Date: "2026-01-01 09:00",
+  Time_Lapse: "Last 30 days",
+  metadata: [
+    { label: "Workspace Slug", value: "sample-workspace" },
+    { label: "Sources Analyzed", value: "2" },
+    { label: "Applied Filters", value: "None" },
+  ],
+  report_sections: [
+    {
+      section_title: "Device Compliance",
+      image_source: null,
+      html_table: "<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody><tr><td>Compliant</td><td>42</td></tr><tr><td>Non-compliant</td><td>3</td></tr></tbody></table>",
+      is_full_width: false,
+    },
+    {
+      section_title: "Platform Distribution",
+      image_source: null,
+      html_table: "<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody><tr><td>Windows</td><td>28</td></tr><tr><td>macOS</td><td>17</td></tr></tbody></table>",
+      is_full_width: true,
+    },
+  ],
+};
+
+export interface TemplateValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+// The only loop sources renderCustomTemplate's regex actually understands —
+// see its own doc comment ("Not a general template engine"). Any other
+// `{% for x in whatever %}` isn't an error to the renderer itself (the regex
+// simply doesn't match it, so the tag is left as literal un-rendered text in
+// the output — a scheduled report that "generates fine" but has raw
+// `{% for ... %}` text baked into the PDF is a real, previously-reported-
+// as-confusing failure mode this check exists to catch before save instead
+// of after the next scheduled run).
+const SUPPORTED_LOOP_SOURCES = new Set(["metadata", "report_sections"]);
+
+/**
+ * Validates a custom HTML report template BEFORE it's allowed to save
+ * (dashboardState.controller.ts's POST /api/state) — the whole point being
+ * that a broken template should fail loudly in Settings, not silently in a
+ * scheduled report nobody's watching run. Checks, in order (cheapest/most
+ * common mistake first):
+ *
+ *  1. Balanced {% for %}/{% endfor %} and {% if %}/{% endif %} tags — an
+ *     unclosed block is the single most likely typo, and renderCustomTemplate's
+ *     regex-based approach doesn't error on one; it just silently drops
+ *     everything from the unclosed tag to the next matching tag (or renders
+ *     nothing at all), a genuinely hard failure to notice by eyeballing a
+ *     preview once and then not looking again for a month.
+ *  2. Every {% for x in LIST %} uses a LIST this renderer actually supports
+ *     (see SUPPORTED_LOOP_SOURCES above).
+ *  3. Looks like an actual HTML document (has a <!DOCTYPE html> or <html>
+ *     tag) rather than a bare fragment or plain text pasted by mistake —
+ *     scheduled reports need a full standalone page, not a snippet.
+ *  4. Actually renders without throwing, against SAMPLE_TEMPLATE_VARS above
+ *     — the same renderCustomTemplate() call real report generation makes,
+ *     just with representative sample data instead of a live pull. A typo'd
+ *     variable name (`{{ Report_Titel }}`) can't be caught this way — it
+ *     silently renders as an empty string in both this check and the real
+ *     thing, same as Jinja2's own default undefined-variable behavior — but
+ *     an actual renderer exception (a regex construction failure, etc.) is.
+ *
+ * Blank/whitespace-only input is always valid — it means "fall back to the
+ * built-in default template" (buildReportHtml's own customTemplate.trim()
+ * check), not "empty custom template".
+ */
+export function validateCustomReportTemplate(template: string): TemplateValidationResult {
+  const trimmed = template.trim();
+  if (!trimmed) return { valid: true };
+
+  const forOpens = (trimmed.match(/\{%\s*for\s+\w+\s+in\s+\w+\s*%\}/g) ?? []).length;
+  const forCloses = (trimmed.match(/\{%\s*endfor\s*%\}/g) ?? []).length;
+  if (forOpens !== forCloses) {
+    return { valid: false, error: `Unbalanced {% for %} / {% endfor %} tags — found ${forOpens} opening tag(s) and ${forCloses} closing tag(s).` };
+  }
+  const ifOpens = (trimmed.match(/\{%\s*if\s+[\w.]+\s*%\}/g) ?? []).length;
+  const ifCloses = (trimmed.match(/\{%\s*endif\s*%\}/g) ?? []).length;
+  if (ifOpens !== ifCloses) {
+    return { valid: false, error: `Unbalanced {% if %} / {% endif %} tags — found ${ifOpens} opening tag(s) and ${ifCloses} closing tag(s).` };
+  }
+
+  const forTagRe = /\{%\s*for\s+\w+\s+in\s+(\w+)\s*%\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = forTagRe.exec(trimmed))) {
+    if (!SUPPORTED_LOOP_SOURCES.has(match[1])) {
+      return {
+        valid: false,
+        error: `"{% for x in ${match[1]} %}" isn't a supported loop — this template engine only understands "{% for x in metadata %}" and "{% for x in report_sections %}".`,
+      };
+    }
+  }
+
+  if (!/<!doctype\s+html/i.test(trimmed) && !/<html[\s>]/i.test(trimmed)) {
+    return { valid: false, error: "This doesn't look like a full HTML document (no <!DOCTYPE html> or <html> tag) — scheduled reports need a complete standalone page, not a fragment." };
+  }
+
+  try {
+    renderCustomTemplate(trimmed, SAMPLE_TEMPLATE_VARS);
+  } catch (e) {
+    return { valid: false, error: `Template failed to render: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  return { valid: true };
+}
+
+// ── Downloadable starting point for "Custom HTML Template" (Reporting >
+// Template) — deliberately NOT the literal markup buildReportHtml's default
+// path below generates: that path inlines live Chart.js <canvas> rendering,
+// base64-embedded fonts, and JS driving the charts, none of which a custom
+// template can use (buildReportHtml's own doc comment: a custom template
+// only ever gets report_sections[].html_table, never a chart image or
+// canvas). This is instead a real, minimal, fully valid template written in
+// the actual supported grammar (SUPPORTED_LOOP_SOURCES, {{ Var }}
+// substitution) — something an admin can download, tweak, and re-upload as
+// a genuine starting point rather than reverse-engineering the grammar from
+// the docs paragraph alone.
+export const DEFAULT_CUSTOM_TEMPLATE_SOURCE = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; background:#F4F7FB; margin:0; padding:0; color:#263238; }
+  .top-bar { background:#0E4FF5; padding:24px 40px; }
+  .top-bar .header-badge { color:#fff; font-size:15px; font-weight:600; }
+  .report-container { padding:40px; box-sizing:border-box; }
+  .report-title { color:#0E4FF5; font-size:32px; font-weight:700; margin:0 0 10px 0; }
+  .report-date { color:#64748B; font-size:15px; }
+  .metadata-bar { background:#fff; border-radius:10px; padding:24px 30px; display:flex; flex-wrap:wrap; gap:40px; border:1px solid #EAECEF; margin:24px 0 40px 0; }
+  .meta-item { display:flex; flex-direction:column; }
+  .meta-label { font-size:12px; text-transform:uppercase; color:#94A3B8; font-weight:600; margin-bottom:6px; }
+  .meta-value { font-size:16px; color:#263238; font-weight:600; }
+  .card { background:#fff; border-radius:10px; padding:32px; border:1px solid #EAECEF; margin-bottom:32px; break-inside:avoid; page-break-inside:avoid; }
+  .card h2 { margin-top:0; font-size:18px; color:#0E4FF5; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; padding:12px; background:#F8FAFC; border-bottom:2px solid #CBD5E1; }
+  td { padding:12px; border-bottom:1px solid #F1F5F9; }
+  .footer { background:#0E4FF5; color:#fff; padding:16px 40px; font-size:12px; }
+</style>
+</head>
+<body>
+  <div class="top-bar"><span class="header-badge">{{ Workspace_Name }} — Automated Report</span></div>
+  <div class="report-container">
+    <h1 class="report-title">{{ Report_Title }}</h1>
+    <div class="report-date">Generated on: {{ Generated_Date }} | Time Lapse: {{ Time_Lapse }}</div>
+
+    <div class="metadata-bar">
+      {% for m in metadata %}
+      <div class="meta-item"><span class="meta-label">{{ m.label }}</span><span class="meta-value">{{ m.value }}</span></div>
+      {% endfor %}
+    </div>
+
+    {% for s in report_sections %}
+    <div class="card">
+      <h2>{{ s.section_title }}</h2>
+      {% if s.html_table %}
+      {{ s.html_table | safe }}
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="footer">&copy; Applivery S.L. — Applivery SOAR</div>
+</body>
+</html>
+`;
+
 function titleCase(s: string): string {
   return s.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
 }

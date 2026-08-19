@@ -17,23 +17,86 @@ const store = useDashboardStateStore();
 const ui = useUiStore();
 const draft = ref("");
 const isSaving = ref(false);
+const saveError = ref<string | null>(null);
+const isDownloadingDefault = ref(false);
 
 watch(
   () => props.open,
   (open) => {
     if (open) {
       draft.value = store.customReportTemplate;
+      saveError.value = null;
     }
   },
 );
 
 async function applyAndSave() {
   isSaving.value = true;
+  saveError.value = null;
   try {
     await store.saveCustomReportTemplate(draft.value);
     emit("close");
+  } catch (err: any) {
+    // Server-side validation (validateCustomReportTemplate, reportTemplate.ts)
+    // rejects a broken template with a 400 + a specific `detail` message —
+    // surfaced here, inside the modal, rather than relying on
+    // store.error/ReportingView's page-level banner, which sits BEHIND this
+    // modal's own overlay and would be invisible while it's open.
+    saveError.value = err?.response?.data?.detail || "Failed to save template.";
   } finally {
     isSaving.value = false;
+  }
+}
+
+// Downloads the built-in default template's source (the actual supported
+// Jinja2-subset grammar, not the live-Chart.js runtime markup a custom
+// template can't use — see backend reportTemplate.ts's
+// DEFAULT_CUSTOM_TEMPLATE_SOURCE doc comment) as a real starting point.
+async function downloadDefaultTemplate() {
+  isDownloadingDefault.value = true;
+  try {
+    const { api } = await import("../../api/http");
+    const res = await api.get("/reports/template/default", { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "text/html" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "default-report-template.html";
+    a.click();
+    URL.revokeObjectURL(url);
+  } finally {
+    isDownloadingDefault.value = false;
+  }
+}
+
+const isPreviewing = ref(false);
+const previewError = ref<string | null>(null);
+
+// Opens a live render of whichever template is currently ACTIVE (the saved
+// custom one if set, otherwise the built-in default) against sample data in
+// a new tab. The preview endpoint sits behind verifyDashboardToken, which
+// only reads the X-Dashboard-Token header (auth.middleware.ts) — a bare
+// `window.open`/`<a href>` to it would 401 with no header attached, same
+// reason compliance.ts's exportViolationsCsv/workflows.ts/cases.ts already
+// go through the `api` client (whose request interceptor stamps that header)
+// instead. Unlike those, this needs the *response itself* opened as a page,
+// not downloaded — so a blank tab opens synchronously (inside the click
+// handler, before the first await, so no browser treats it as a blocked
+// popup) and its location is set to an object URL for the fetched HTML once
+// the authenticated request resolves.
+async function previewCurrentTemplate() {
+  const win = window.open("", "_blank", "noopener");
+  isPreviewing.value = true;
+  previewError.value = null;
+  try {
+    const { api } = await import("../../api/http");
+    const res = await api.get("/reports/template/preview", { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "text/html" }));
+    if (win) win.location.href = url;
+  } catch (err: any) {
+    win?.close();
+    previewError.value = err?.response?.data?.detail || "Failed to load template preview.";
+  } finally {
+    isPreviewing.value = false;
   }
 }
 
@@ -59,11 +122,31 @@ function close() {
             <p class="text-xs mt-1 text-gray-400">
               Use Jinja2 syntax to inject data (e.g., <code class="text-blue-500" v-pre>{{ Report_Title }}</code>). Leave blank to fall back to default.
             </p>
+            <div class="flex items-center gap-4 mt-2">
+              <button
+                type="button"
+                :disabled="isDownloadingDefault"
+                class="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-70 transition-opacity disabled:opacity-40 text-brand-600 dark:text-brand-400"
+                @click="downloadDefaultTemplate"
+              >
+                <component :is="ICONS.Download" :size="13" weight="Linear" /> {{ isDownloadingDefault ? "Downloading…" : "Download default template" }}
+              </button>
+              <button
+                type="button"
+                :disabled="isPreviewing"
+                class="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-70 transition-opacity disabled:opacity-40 text-brand-600 dark:text-brand-400"
+                @click="previewCurrentTemplate"
+              >
+                <component :is="ICONS.Eye" :size="13" weight="Linear" /> {{ isPreviewing ? "Loading preview…" : "Preview current template" }}
+              </button>
+            </div>
           </div>
           <button class="text-gray-400 hover:text-red-500 transition-colors" aria-label="Close" @click="close">
             <component :is="ICONS.CloseCircle" :size="20" weight="Linear" />
           </button>
         </div>
+
+        <div v-if="previewError" class="mx-6 mt-4 px-3 py-2 rounded-lg text-xs shrink-0" :style="{ backgroundColor: `${DANGER}10`, color: DANGER }">{{ previewError }}</div>
 
         <div class="p-6 overflow-hidden flex-1 flex flex-col bg-gray-50/50 dark:bg-black/20">
           <textarea
@@ -75,6 +158,8 @@ function close() {
             spellcheck="false"
           />
         </div>
+
+        <div v-if="saveError" class="mx-6 mb-0 px-3 py-2 rounded-lg text-xs shrink-0" :style="{ backgroundColor: `${DANGER}10`, color: DANGER }">{{ saveError }}</div>
 
         <div class="p-6 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between flex-wrap gap-3 shrink-0">
           <button class="px-5 py-2.5 rounded-lg font-bold text-sm transition-colors hover:bg-red-500/10" :style="{ color: DANGER }" @click="resetToDefault">Reset to Default</button>
