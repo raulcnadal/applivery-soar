@@ -185,7 +185,7 @@ Platform filter tabs, entry count, last-fetched time, **Refresh now**.
 - **API token** — once saved, the field never shows the real value again, only a masked hint with the last 4 characters; leave it blank on future edits to keep the existing token, or type a new one to replace it. The token is encrypted at rest server-side.
 - **Refresh interval (hours)** — 1–72, default 6.
 - **Test connection** and **Save**.
-- Once enabled, a status panel shows last-refreshed time, a **Refresh now** button, and — after a refresh — stats: OS/app checks queried vs. failed, how many are still queued for the next tick, and how many stale cache entries were evicted (apps uninstalled, or OS versions changed).
+- Once enabled, a status panel shows last-refreshed time, a **Refresh now** button, and — after a refresh — stats: OS/app checks queried vs. failed, how many are still queued for the next tick, and how many stale cache entries were evicted (apps uninstalled, or OS versions changed). Results are cached for 24h per app/OS combo, so the automatic hourly background check normally has nothing new to query — **Refresh now** always bypasses that cache and re-checks every combo currently in the fleet, which is the button to use when troubleshooting why a device or app isn't showing risk. The stats also break `appsTotal`/`appsMapped`/`appsUnmapped` down by platform, so a gap specific to one platform (e.g. every macOS app maps but iOS/Android/Windows don't) is visible directly in the JSON rather than only in the aggregate counts.
 
 **Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test; without it, every field and button here is disabled with an explanatory tooltip.
 

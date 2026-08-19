@@ -140,8 +140,20 @@ async function postWithRetry(url: string, headers: Record<string, string>, body:
  * caller's own Applivery session (admin's live token for a manual refresh
  * in this phase — the automation-credential-driven unattended loop is
  * TODO(Phase6)).
+ *
+ * `force`: bypasses the 24h cache-freshness check entirely (both OS and
+ * apps), so every combo currently in the fleet gets re-queried against the
+ * Worker regardless of how recently it was last checked. Off for the
+ * scheduled hourly tick (runVulnServiceRefresherTick below), which should
+ * keep respecting each workspace's own refreshIntervalHours rather than
+ * hammering the Worker every tick — on for a manual "Refresh now" click
+ * (refreshVulnServiceNow), since a fully-cached fleet otherwise makes that
+ * button silently do nothing for up to 24h, which is exactly what made this
+ * genuinely hard to debug: appsQueried/appsRemaining both read 0 not
+ * because nothing was ever queried, but because everything already had a
+ * cache row, however that row's own `result.mapped` value turned out.
  */
-export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bearer: string): Promise<Record<string, any>> {
+export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bearer: string, force = false): Promise<Record<string, any>> {
   const { getDevicesFull } = await import("../devices/devices.service");
   const { loadInstalledAppsStore, installedAppsRecordEntries } = await import("../appLists/installedApps.service");
 
@@ -180,7 +192,16 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
     }
   }
 
-  const isFresh = (fetchedAt: Date | undefined | null) => Boolean(fetchedAt) && Date.now() - fetchedAt!.getTime() < CACHE_TTL_MS;
+  const isFresh = (fetchedAt: Date | undefined | null) => !force && Boolean(fetchedAt) && Date.now() - fetchedAt!.getTime() < CACHE_TTL_MS;
+
+  // Total combos currently in the fleet, broken down by platform, computed
+  // independent of caching/force — this alone answers "are non-macOS apps
+  // even being enumerated at all" (they were, per the original bug report:
+  // appsTotal was 1136 with only 4 macOS apps ever showing risk, which is
+  // only explicable by SOME of those 1136 being non-macOS combos that
+  // either never got queried or got queried and came back unmapped).
+  const appsTotalByPlatform: Record<string, number> = {};
+  for (const combo of appCombos.values()) appsTotalByPlatform[combo.platform] = (appsTotalByPlatform[combo.platform] ?? 0) + 1;
 
   // Evict cache entries for combos no longer present anywhere in the fleet.
   let evicted = 0;
@@ -216,6 +237,15 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
 
   const toQuery = Array.from(appCombos.entries()).filter(([key]) => !isFresh(cacheByKey.get(key)?.cachedAt));
   const batchToQuery = toQuery.slice(0, MAX_APPS_PER_TICK);
+  // mapped/unmapped, by platform, for whatever actually got queried this
+  // call — a combo can come back 200 OK and still be `mapped: false`
+  // (Worker reached, request well-formed, it just has no CVE data for that
+  // identifier/version/platform) which `appsErrors` alone can't distinguish
+  // from "never queried at all". This is the piece that turns "appsQueried
+  // is 0" from a dead end into an actual answer once a manual (forced)
+  // refresh populates it.
+  const appsMappedByPlatform: Record<string, number> = {};
+  const appsUnmappedByPlatform: Record<string, number> = {};
   if (batchToQuery.length) {
     try {
       const results: any[] = [];
@@ -226,7 +256,7 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
         results.push(...(res.data?.results ?? []));
       }
       for (let i = 0; i < batchToQuery.length; i++) {
-        const [key] = batchToQuery[i];
+        const [key, combo] = batchToQuery[i];
         const result = results[i];
         await prisma.vulnServiceCache.upsert({
           where: { workspaceSlug_key: { workspaceSlug, key } },
@@ -234,6 +264,8 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
           update: { result, cachedAt: new Date() },
         });
         appsQueried += 1;
+        const bucket = result?.mapped ? appsMappedByPlatform : appsUnmappedByPlatform;
+        bucket[combo.platform] = (bucket[combo.platform] ?? 0) + 1;
       }
     } catch (e) {
       appsErrors += batchToQuery.length;
@@ -244,8 +276,12 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
   const stats = {
     osQueried, osErrors, osTotal: osCombos.size,
     appsQueried, appsErrors, appsTotal: appCombos.size,
+    appsTotalByPlatform,
+    appsMappedByPlatform,
+    appsUnmappedByPlatform,
     appsRemaining: Math.max(0, toQuery.length - batchToQuery.length),
     cacheEvicted: evicted,
+    forced: force,
     refreshedAt: new Date().toISOString(),
   };
   await prisma.vulnServiceConfig.update({
@@ -259,13 +295,21 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
   return stats;
 }
 
-/** POST /api/vuln-service/refresh (main.py:17224) — uses the calling admin's own session. */
+/**
+ * POST /api/vuln-service/refresh (main.py:17224) — uses the calling admin's
+ * own session. Always forces a full re-query (bypasses the 24h cache),
+ * unlike the scheduled tick below: an admin pressing "Refresh now" wants an
+ * actual fresh answer, not "everything's within its TTL, nothing to do" —
+ * which is exactly what silently happened before this: a click here could
+ * report appsQueried/appsRemaining both 0 with no indication that meant
+ * "already cached" rather than "nothing wrong to find".
+ */
 export async function refreshVulnServiceNow(workspaceSlug: string, authorization: string) {
   const cfg = await loadConfigRow(workspaceSlug);
   if (!cfg?.enabled || !cfg.baseUrl || !cfg.apiTokenEncrypted) {
     throw new HttpError(400, "Vulnerability Service isn't configured/enabled for this workspace yet.");
   }
-  return refreshVulnServiceForWorkspace(workspaceSlug, authorization);
+  return refreshVulnServiceForWorkspace(workspaceSlug, authorization, true);
 }
 
 /**
