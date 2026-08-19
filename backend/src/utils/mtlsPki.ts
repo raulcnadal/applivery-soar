@@ -209,6 +209,25 @@ export async function signDeviceCsr(params: {
   return { certPem: cert.toString("pem"), serialHex, notBefore, notAfter };
 }
 
+/**
+ * SHA-256 thumbprint of a PEM-encoded certificate, colon-separated uppercase
+ * hex (the conventional display format, matching what a browser's own
+ * certificate viewer shows) — for admin-facing display only (Settings > mTLS
+ * > Issued Device Certificates). Returns null if the stored PEM can't be
+ * parsed, which should never happen for a certificate this system issued
+ * itself, but this reads straight back from the database rather than
+ * trusting that invariant blindly.
+ */
+export async function getCertificateThumbprint(certPem: string): Promise<string | null> {
+  try {
+    const cert = new x509.X509Certificate(certPem);
+    const digest = await cert.getThumbprint({ name: "SHA-256" });
+    return Buffer.from(digest).toString("hex").toUpperCase().replace(/(.{2})(?=.)/g, "$1:");
+  } catch {
+    return null;
+  }
+}
+
 /** Builds an unsigned-request-ready CSR — used only by tests/tooling to simulate an agent's registration call; the real agent does this in Go (roadmap §6). */
 export async function createTestCsr(cn: string): Promise<{ csrPem: string; privateKeyPem: string }> {
   const keys = await generateEcKeyPair();

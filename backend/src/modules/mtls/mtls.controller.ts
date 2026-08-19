@@ -77,7 +77,7 @@ mtlsRouter.delete("/api/mtls/bootstrap-token", ...manageMtls, asyncHandler(async
 // ── Issued certificates ──
 
 mtlsRouter.get("/api/mtls/certificates", ...readMtls, asyncHandler(async (req, res) => {
-  res.json({ items: await listCertificates(workspaceOf(req)) });
+  res.json({ items: await listCertificates(workspaceOf(req), req.header("Authorization")) });
 }));
 
 mtlsRouter.post("/api/mtls/certificates/:id/revoke", ...manageMtls, asyncHandler(async (req, res) => {

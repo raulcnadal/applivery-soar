@@ -1,18 +1,20 @@
 import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
 import { HttpError } from "../../utils/httpError";
+import { getCertificateThumbprint } from "../../utils/mtlsPki";
 
 /**
  * Issued device certificates — the fleet-migration/status dashboard an admin
- * uses to know when it's safe to flip the cutover (roadmap §7), and the
- * table verifyMtlsIdentity (middleware/mtlsIdentity.middleware.ts) consults
- * on every mTLS-gated request.
+ * uses to know when it's safe to flip the cutover, and the table
+ * verifyMtlsIdentity (middleware/mtlsIdentity.middleware.ts) consults on
+ * every mTLS-gated request.
  */
 
 export interface CertificateStatus {
   id: string;
   serialNumber: string;
   serialHex: string;
+  thumbprint: string | null;
   status: "active" | "expiring-soon" | "expired" | "revoked" | "superseded";
   notBefore: string;
   notAfter: string;
@@ -20,6 +22,9 @@ export interface CertificateStatus {
   revokedAt: string | null;
   revokedReason: string | null;
   issuedAt: string;
+  deviceId: string | null;
+  deviceDisplayName: string | null;
+  employeeName: string | null;
 }
 
 const EXPIRING_SOON_WINDOW_MS = 14 * 24 * 60 * 60 * 1000; // 14 days — a coarse dashboard signal, independent of any given CA's configured renewal-trigger fraction
@@ -33,23 +38,59 @@ function computeStatus(row: { notAfter: Date; supersededAt: Date | null; revoked
   return "active";
 }
 
-export async function listCertificates(workspaceSlug: string): Promise<CertificateStatus[]> {
+/**
+ * Matches each issued certificate's serial number (the device's own
+ * Applivery serial, not the certificate's X.509 serial) against the live
+ * fleet to show a real device name and assigned employee instead of a bare
+ * serial number. `authorization` is optional and this match is entirely
+ * best-effort: a missing/failed live lookup (no Automation Credential yet, a
+ * transient API error) just falls back to showing the serial number alone —
+ * it never blocks the certificate list itself from loading.
+ */
+async function matchDevicesBySerial(workspaceSlug: string, authorization: string | undefined): Promise<Map<string, { id: string; displayName: string | null; employeeName: string | null }>> {
+  const matches = new Map<string, { id: string; displayName: string | null; employeeName: string | null }>();
+  if (!authorization) return matches;
+  try {
+    const { getDevicesFull } = await import("../devices/devices.service");
+    const devicesResp = await getDevicesFull(authorization, workspaceSlug, false);
+    for (const d of devicesResp.items) {
+      if (!d.serialNumber) continue;
+      const mdmUser = d.mdmUser as { name?: string; email?: string } | null;
+      matches.set(d.serialNumber, { id: d.id, displayName: d.displayName ?? null, employeeName: mdmUser?.name || mdmUser?.email || null });
+    }
+  } catch {
+    /* best-effort — see doc comment above */
+  }
+  return matches;
+}
+
+export async function listCertificates(workspaceSlug: string, authorization?: string): Promise<CertificateStatus[]> {
   const rows = await prisma.deviceCertificate.findMany({
     where: { workspaceSlug },
     orderBy: { issuedAt: "desc" },
   });
-  return rows.map((row: (typeof rows)[number]) => ({
-    id: row.id,
-    serialNumber: row.serialNumber,
-    serialHex: row.serialHex,
-    status: computeStatus(row),
-    notBefore: row.notBefore.toISOString(),
-    notAfter: row.notAfter.toISOString(),
-    supersededAt: row.supersededAt?.toISOString() ?? null,
-    revokedAt: row.revokedAt?.toISOString() ?? null,
-    revokedReason: row.revokedReason,
-    issuedAt: row.issuedAt.toISOString(),
-  }));
+  const deviceBySerial = await matchDevicesBySerial(workspaceSlug, authorization);
+  return Promise.all(
+    rows.map(async (row: (typeof rows)[number]) => {
+      const device = deviceBySerial.get(row.serialNumber) ?? null;
+      return {
+        id: row.id,
+        serialNumber: row.serialNumber,
+        serialHex: row.serialHex,
+        thumbprint: await getCertificateThumbprint(row.certPem),
+        status: computeStatus(row),
+        notBefore: row.notBefore.toISOString(),
+        notAfter: row.notAfter.toISOString(),
+        supersededAt: row.supersededAt?.toISOString() ?? null,
+        revokedAt: row.revokedAt?.toISOString() ?? null,
+        revokedReason: row.revokedReason,
+        issuedAt: row.issuedAt.toISOString(),
+        deviceId: device?.id ?? null,
+        deviceDisplayName: device?.displayName ?? null,
+        employeeName: device?.employeeName ?? null,
+      };
+    }),
+  );
 }
 
 export async function issueCertificateRecord(params: {

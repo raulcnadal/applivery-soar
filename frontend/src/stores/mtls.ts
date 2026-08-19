@@ -33,6 +33,7 @@ export interface CertificateStatus {
   id: string;
   serialNumber: string;
   serialHex: string;
+  thumbprint: string | null;
   status: "active" | "expiring-soon" | "expired" | "revoked" | "superseded";
   notBefore: string;
   notAfter: string;
@@ -40,6 +41,9 @@ export interface CertificateStatus {
   revokedAt: string | null;
   revokedReason: string | null;
   issuedAt: string;
+  deviceId: string | null;
+  deviceDisplayName: string | null;
+  employeeName: string | null;
 }
 
 export interface GlobalBootstrapTokenStatus {

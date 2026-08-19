@@ -96,20 +96,19 @@ permission. Supported on both Windows and macOS agents.
   fleet — only devices Applivery already knows about can ever register. Issued immediately on success, no admin approval step. A device that
   already has an active certificate can never be silently re-registered by it. Deployed automatically as part of
   [Applivery SOAR Agent](#applivery-soar-agent)'s combined download once generated here.
-- **Reverse Proxy Configuration** — the exact nginx/NPM config reference (with your workspace's actual header names) plus a live status check for
-  whether the internal proxy secret is configured on this backend. Required before enforcement below will work — without it, every mTLS-gated
-  request fails closed (503). **Requires a separate subdomain dedicated to agent traffic** — the **Agent subdomain** field here (e.g.
-  `agents.yourdomain.com`, saved via its own **Save** button, `canManageMtlsCA`-gated) is the single source of truth: TLS client-certificate
-  verification is a whole-domain setting in nginx (and most reverse proxies), never scoped to a URL path, so it cannot be added to the same proxy
-  host serving the dashboard without breaking normal browser access to it. This was tried and confirmed broken in practice before this
-  two-domain design was adopted — see `backend/docs/mtls-agent-auth-roadmap.md` §5.5 for the full incident writeup and the corrected config.
-  Applivery SOAR Agent's **Agent Base URL** reads this value back read-only, so there's exactly one place to change it.
+- **Reverse Proxy Configuration** — a status card plus a **View configuration** button opening the exact nginx/NPM config reference (with your
+  workspace's actual header names) and a live status check for whether the internal proxy secret is configured on this backend. Required before
+  enforcement below will work — without it, every mTLS-gated request fails closed (503). **Requires a separate subdomain dedicated to agent
+  traffic** — the **Agent subdomain** field inside that modal (e.g. `agents.yourdomain.com`, saved via its own **Save** button,
+  `canManageMtlsCA`-gated) is the single source of truth: TLS client-certificate verification is a whole-domain setting in nginx (and most
+  reverse proxies), never scoped to a URL path, so it cannot be added to the same proxy host serving the dashboard without breaking normal
+  browser access to it. Applivery SOAR Agent's **Agent Base URL** reads this value back read-only, so there's exactly one place to change it.
 - **Issued Device Certificates** — a status-count summary (active/expiring-soon/expired/revoked/superseded) plus a **View all** button opening a
-  scrollable list of the full issued fleet, each with a **Revoke** action — kept out of a plain inline list so this section stays readable as the
-  fleet grows.
+  scrollable list of the full issued fleet, each row showing the matched device name, its serial number, the certificate's SHA-256 thumbprint,
+  the assigned employee (from Applivery's own device record, when known), and a **Revoke** action — kept out of a plain inline list so this
+  section stays readable as the fleet grows.
 - **Enforcement** — the cutover switch: once enabled, every device-caller route requires a valid client certificate and the legacy secret stops
-  being accepted for that workspace.
-  Roll out the fleet first, then flip this — see `backend/docs/mtls-agent-auth-roadmap.md` for the full runbook.
+  being accepted for that workspace. Roll out the fleet first, then flip this.
 
 ## Log Export
 

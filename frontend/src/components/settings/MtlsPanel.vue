@@ -154,6 +154,7 @@ async function doRevokeCert(id: string, serialNumber: string) {
 // pattern) lives in a dedicated Modal instead, since a growing fleet quickly
 // makes a plain inline list too tall for the Settings panel.
 const showCertsModal = ref(false);
+const showProxyModal = ref(false);
 const certStatusCounts = computed(() => {
   const counts: Record<string, number> = { active: 0, "expiring-soon": 0, expired: 0, revoked: 0, superseded: 0 };
   for (const c of store.certificates) counts[c.status] = (counts[c.status] ?? 0) + 1;
@@ -162,18 +163,14 @@ const certStatusCounts = computed(() => {
 
 // ── Reverse-proxy config reference ──
 //
-// IMPORTANT, learned the hard way: ssl_verify_client / ssl_client_certificate are
-// TLS-handshake directives. Nginx has never supported scoping them to a `location` —
-// they only take effect at http/server scope (nginx trac #400, #498, both still open).
-// The client-certificate negotiation happens for the WHOLE domain, before nginx even
-// knows which path was requested. Adding these directives to your EXISTING dashboard
-// proxy host — even "just" inside a location block — makes every connection to that
-// domain go through client-cert negotiation, which breaks normal browser access to the
-// dashboard (confirmed by Nginx Proxy Manager's own tracker: jc21/nginx-proxy-manager#175).
-//
-// The only correct fix is a SEPARATE subdomain/vhost dedicated to agent traffic, so the
-// dashboard domain never carries any client-cert directive at all. Point every agent's
-// Managed Configuration BaseURL (Device Data Webhook > Agent Base URL) at that subdomain.
+// ssl_verify_client / ssl_client_certificate are TLS-handshake directives —
+// nginx (and most reverse proxies) can't scope them to a single location/path,
+// only to the whole domain. Adding them to the existing dashboard proxy host
+// would put every connection to that domain through client-cert negotiation,
+// breaking normal browser access to the dashboard. The fix is a SEPARATE
+// subdomain/vhost dedicated to agent traffic, so the dashboard domain never
+// carries a client-cert directive at all — every agent's Managed
+// Configuration BaseURL points at that subdomain instead.
 
 // Editable, saved to the backend (single source of truth — Device Data
 // Webhook reads this back read-only). Local draft starts from whatever's
@@ -207,25 +204,18 @@ const proxySnippet = computed(() => {
 #
 # Details tab: Forward Hostname/Port — same target as your existing SOAR proxy host.
 #
-# CONFIRMED WORKING RECIPE ON NPM — use its own UI structure, don't hand-write a location
-# block into the host-level Advanced field. NPM's "Advanced" gear icon on the Details tab
-# and each entry under the "Custom Locations" tab are SEPARATE text fields that NPM
-# assembles itself; pasting a location{} block into the host-level field (this repo's
-# earlier guidance) was found to intermittently fail to save with no visible error.
+# Use NPM's own UI structure below, not a hand-written location{} block in the host-level
+# Advanced field — the "Advanced" gear icon on the Details tab and each entry under
+# "Custom Locations" are separate fields that NPM assembles itself.
 #
 # STEP 1 — Details tab's own "Advanced" gear icon (server-level only, no location block):
 ssl_verify_client optional;   # "optional" not "on" — registration has no cert yet, and
                                # reporting is only cert-gated once Enforcement below is on;
                                # the backend decides per request whether one is required.
-                               # ("on" also works once every device has a cert, but has no
-                               # fallback for anything that can't present one at all.)
 ssl_client_certificate /data/soar-ca.pem;   # download above (Certificate Authority > Download CA
-                               # certificate). Path is read INSIDE the NPM container — /app is
-                               # NPM's own app code directory, not a volume (its docker-compose
-                               # only persists ./data:/data and ./letsencrypt:/etc/letsencrypt),
-                               # so a file placed there can vanish on container recreate even
-                               # though it reads fine right now. Bind-mount the file under /data
-                               # (or wherever your compose file actually persists) instead.
+                               # certificate). Path is read inside the NPM container — bind-mount
+                               # the file under a volume your compose file actually persists
+                               # (e.g. /data), not NPM's own non-persisted app directory.
                                # Verify: docker exec <npm-container> ls -la /data/soar-ca.pem
 
 # STEP 2 — Custom Locations tab — Add Location:
@@ -235,18 +225,12 @@ ssl_client_certificate /data/soar-ca.pem;   # download above (Certificate Author
 #   generates that itself from the Location field above):
 proxy_set_header ${c.headerCertVerified} $ssl_client_verify;
 proxy_set_header ${c.headerCertCn}       $ssl_client_s_dn;
-                               # $ssl_client_s_dn_cn is NOT a real nginx variable — nginx only
-                               # exposes the full subject DN via $ssl_client_s_dn (e.g.
-                               # "CN=<value>"). The backend parses the bare CN back out of this
-                               # DN string automatically, so use the real variable above.
+                               # nginx only exposes the full subject DN via $ssl_client_s_dn
+                               # (e.g. "CN=<value>") — the backend parses the CN back out of it.
 proxy_set_header ${c.headerProxySecret} "<the MTLS_INTERNAL_PROXY_SECRET value>";
                                # Pull this value directly from the backend's own environment —
                                # e.g. docker exec <soar-backend-container> printenv MTLS_INTERNAL_PROXY_SECRET
-                               # — and paste that output as-is. Retyping/re-pasting it by hand
-                               # across multiple edits is exactly how this gets silently corrupted
-                               # (a duplicated middle fragment, in one real incident) and every
-                               # request then fails a 401 with no hint that the secret is the
-                               # actual mismatch, since it's checked before the certificate.`;
+                               # — and paste that output as-is rather than retyping it by hand.`;
 });
 function copyProxySnippet() {
   copyToClipboard(proxySnippet.value);
@@ -446,62 +430,68 @@ onMounted(async () => {
 
     <!-- Reverse proxy configuration -->
     <div>
-      <h3 class="text-sm font-bold mb-2 text-gray-900 dark:text-white">Reverse Proxy Configuration</h3>
-      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-3 max-w-2xl shadow-sm">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-bold text-gray-900 dark:text-white">Reverse Proxy Configuration</h3>
+        <Button variant="ghost" size="sm" @click="showProxyModal = true">View configuration</Button>
+      </div>
+      <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2 max-w-2xl shadow-sm">
         <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
           The proxy in front of this backend terminates the mTLS handshake and forwards the verified client identity
-          as headers — the backend trusts and validates those headers rather than re-terminating TLS itself. Required
-          before enforcement below will actually work; without it every mTLS-gated request fails closed (503).
+          as headers. Required before enforcement below will actually work; without it every mTLS-gated request
+          fails closed (503).
         </p>
+        <Alert v-if="store.proxyConfigError" type="danger">{{ store.proxyConfigError }}</Alert>
+        <div v-if="store.proxyConfig" class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full shrink-0" :class="store.proxyConfig.proxySecretConfigured ? 'bg-emerald-500' : 'bg-red-500'" />
+          <span class="text-xs font-semibold text-gray-900 dark:text-white">
+            {{ store.proxyConfig.proxySecretConfigured ? "Internal proxy secret is configured on this backend" : "Internal proxy secret is NOT configured — mTLS-gated requests fail closed" }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <Modal :open="showProxyModal" title="Reverse Proxy Configuration" size="lg" @close="showProxyModal = false">
+      <div class="space-y-3 max-h-[70vh] overflow-y-auto">
         <Alert type="warning">
           TLS client-certificate verification applies to an entire domain, not a URL path — nginx (and most reverse
           proxies) can't scope it to a location block. Adding it to your existing dashboard's proxy host breaks
           normal browser access to the dashboard. It must live on a <strong>separate subdomain</strong> dedicated to
           agent traffic — see the reference config below.
         </Alert>
-        <Alert v-if="store.proxyConfigError" type="danger">{{ store.proxyConfigError }}</Alert>
-        <div v-if="store.proxyConfig" class="space-y-2">
+        <Alert v-if="store.agentSubdomainError" type="danger">{{ store.agentSubdomainError }}</Alert>
+        <div>
+          <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Agent subdomain</label>
           <div class="flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full shrink-0" :class="store.proxyConfig.proxySecretConfigured ? 'bg-emerald-500' : 'bg-red-500'" />
-            <span class="text-xs font-semibold text-gray-900 dark:text-white">
-              {{ store.proxyConfig.proxySecretConfigured ? "Internal proxy secret is configured on this backend" : "Internal proxy secret is NOT configured — mTLS-gated requests fail closed" }}
-            </span>
+            <Input
+              v-model="agentSubdomainInput"
+              type="text"
+              :disabled="!canEdit()"
+              class="flex-1 font-mono text-[11px]"
+              @update:model-value="agentSubdomainDirty = true"
+            />
+            <Button size="sm" variant="ghost" :disabled="!canEdit() || !agentSubdomainDirty" :loading="store.agentSubdomainBusy" @click="doSaveAgentSubdomain">Save</Button>
           </div>
-          <Alert v-if="store.agentSubdomainError" type="danger">{{ store.agentSubdomainError }}</Alert>
-          <div>
-            <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Agent subdomain</label>
-            <div class="flex items-center gap-2">
-              <Input
-                v-model="agentSubdomainInput"
-                type="text"
-                :disabled="!canEdit()"
-                class="flex-1 font-mono text-[11px]"
-                @update:model-value="agentSubdomainDirty = true"
-              />
-              <Button size="sm" variant="ghost" :disabled="!canEdit() || !agentSubdomainDirty" :loading="store.agentSubdomainBusy" @click="doSaveAgentSubdomain">Save</Button>
-            </div>
-            <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
-              A new hostname you create a DNS record and a separate Nginx Proxy Manager proxy host for — never your
-              existing dashboard domain. This is the single source of truth: once saved, every agent's Managed
-              Configuration
-              <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'device-webhook')">Agent Base URL</button>
-              picks it up automatically (read-only there).
-            </p>
-          </div>
-          <p class="text-[10px] leading-relaxed text-gray-400">
-            Reference config for nginx/NPM (Traefik/Caddy/HAProxy need the same three values via their own
-            equivalents: trust the SOAR CA cert, forward the verification result + client cert CN as headers, inject
-            the shared secret). The internal proxy secret's actual value is never shown here — it's set as the
-            <span class="font-mono">MTLS_INTERNAL_PROXY_SECRET</span> environment variable on this backend's own
-            deployment, which you already control.
+          <p class="text-[10px] mt-1 leading-relaxed text-gray-400">
+            A new hostname you create a DNS record and a separate Nginx Proxy Manager proxy host for — never your
+            existing dashboard domain. This is the single source of truth: once saved, every agent's Managed
+            Configuration
+            <button type="button" class="underline decoration-dotted" @click="emit('goToTab', 'device-webhook')">Agent Base URL</button>
+            picks it up automatically (read-only there).
           </p>
-          <div class="flex items-start gap-1.5">
-            <code class="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white">{{ proxySnippet }}</code>
-            <Button size="sm" variant="ghost" @click="copyProxySnippet">Copy</Button>
-          </div>
+        </div>
+        <p class="text-[10px] leading-relaxed text-gray-400">
+          Reference config for nginx/NPM (Traefik/Caddy/HAProxy need the same three values via their own
+          equivalents: trust the SOAR CA cert, forward the verification result + client cert CN as headers, inject
+          the shared secret). The internal proxy secret's actual value is never shown here — it's set as the
+          <span class="font-mono">MTLS_INTERNAL_PROXY_SECRET</span> environment variable on this backend's own
+          deployment, which you already control.
+        </p>
+        <div class="flex items-start gap-1.5">
+          <code class="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white">{{ proxySnippet }}</code>
+          <Button size="sm" variant="ghost" @click="copyProxySnippet">Copy</Button>
         </div>
       </div>
-    </div>
+    </Modal>
 
     <!-- Issued certificates -->
     <div>
@@ -537,11 +527,17 @@ onMounted(async () => {
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR[c.status]" />
-              <span class="text-xs font-mono truncate text-gray-900 dark:text-white">{{ c.serialNumber }}</span>
+              <span class="text-xs font-semibold truncate text-gray-900 dark:text-white">{{ c.deviceDisplayName || "Unmatched device" }}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">{{ c.status }}</span>
             </div>
+            <p class="text-[10px] font-mono truncate text-gray-500 dark:text-gray-400">
+              S/N {{ c.serialNumber }}
+              <template v-if="c.thumbprint">
+                · SHA-256 <span :title="c.thumbprint">{{ c.thumbprint }}</span>
+              </template>
+            </p>
             <p class="text-[10px] text-gray-500 dark:text-gray-400">
-              Issued {{ fmt(c.issuedAt) }} · valid until {{ fmt(c.notAfter) }}
+              <template v-if="c.employeeName">{{ c.employeeName }} · </template>Issued {{ fmt(c.issuedAt) }} · valid until {{ fmt(c.notAfter) }}
               <template v-if="c.revokedAt"> · revoked {{ fmt(c.revokedAt) }} ({{ c.revokedReason }})</template>
             </p>
           </div>

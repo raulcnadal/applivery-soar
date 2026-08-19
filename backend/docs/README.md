@@ -71,7 +71,7 @@ Losing `./pgdata` loses every Compliance Policy, Workflow, Case, Role, and Setti
 
 ### Background jobs at scale
 
-Background jobs (the compliance evaluator, workflow-wait resumer, ticket sync, intelligence-catalog refreshers, and more — 17 in total) run in-process by default, which is correct and sufficient for a single `soar-backend` replica. If you scale `soar-backend` out (`docker compose up --scale soar-backend=3`), set `REDIS_URL` so these jobs run through the bundled `soar-redis` service instead — otherwise every replica's own copy of each job would fire independently, and the compliance evaluator, workflow resumer, etc. would all run multiple times per tick instead of once.
+Background jobs (the compliance evaluator, workflow-wait resumer, ticket sync, intelligence-catalog refreshers, and more — 20 in total) run in-process by default, which is correct and sufficient for a single `soar-backend` replica. If you scale `soar-backend` out (`docker compose up --scale soar-backend=3`), set `REDIS_URL` so these jobs run through the bundled `soar-redis` service instead — otherwise every replica's own copy of each job would fire independently, and the compliance evaluator, workflow resumer, etc. would all run multiple times per tick instead of once.
 
 ### Building without the bundled Postgres service
 

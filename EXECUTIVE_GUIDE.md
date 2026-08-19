@@ -175,7 +175,7 @@ The built-in Compliance Policy Template Gallery ships 61 pre-built, ready-to-ado
 
 ## 6. Operational resilience
 
-A background health-monitoring system tracks every one of the platform's eighteen automated jobs — the compliance evaluator, the report scheduler, the ticket-sync loop, every intelligence-catalog refresher, the geofencing location refresher, and more — recording a heartbeat on every run and surfacing status (healthy, errored, or overdue) in a single dedicated view, with configurable email alerting on failure and recovery. This gives an operations team the same "is the automation actually working" visibility for the platform's own internals that the platform itself provides for the device fleet.
+A background health-monitoring system tracks every one of the platform's twenty automated jobs — the compliance evaluator, the report scheduler, the ticket-sync loop, every intelligence-catalog refresher, the geofencing location refresher, and more — recording a heartbeat on every run and surfacing status (healthy, errored, or overdue) in a single dedicated view, with configurable email alerting on failure and recovery. This gives an operations team the same "is the automation actually working" visibility for the platform's own internals that the platform itself provides for the device fleet.
 
 ## 7. Summary
 
