@@ -4,7 +4,7 @@ import { decryptSecret, encryptSecret } from "../../utils/secretCipher";
 import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
-import { getMispCacheRow, getMispCacheRows, isMispCacheFresh, isMispEnabled } from "./mispService";
+import { getEnabledVulnSourcePlugins, mergeRawVulnResults, type VulnSourceCacheRow } from "./vulnSources";
 
 /**
  * Vulnerability Service (Applivery-hosted CVE matching, CloudFlare Worker)
@@ -357,14 +357,14 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
   const workerPlatform = PLATFORM_MAP[device.platform];
   if (!workerPlatform) return null;
 
-  const mispOn = await isMispEnabled(workspaceSlug);
+  const plugins = await getEnabledVulnSourcePlugins(workspaceSlug);
   const osKey = device.osVersion ? `${workerPlatform}|${device.osVersion}` : null;
   const osRow = osKey ? await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key: osKey } } }) : null;
-  const osMispRow = osKey && mispOn ? await getMispCacheRow(workspaceSlug, osKey) : null;
   const isFresh = (cachedAt: Date | undefined | null) => Boolean(cachedAt) && Date.now() - cachedAt!.getTime() < CACHE_TTL_MS;
   const osVulnMatch = osRow && isFresh(osRow.cachedAt) ? (osRow.result as Record<string, any>) : null;
-  const osMispMatch = osMispRow && isMispCacheFresh(osMispRow.cachedAt) ? (osMispRow.result as Record<string, any>) : null;
-  const osMerged = osVulnMatch || osMispMatch ? mergeRawResults(osVulnMatch, osMispMatch) : null;
+  const osExtraRows = osKey ? await Promise.all(plugins.map((p) => p.getCacheRow(workspaceSlug, osKey))) : [];
+  const osExtraMatches = osExtraRows.map((r, i) => (r && plugins[i].isCacheFresh(r.cachedAt) ? (r.result as Record<string, any>) : null));
+  const osMerged = osVulnMatch || osExtraMatches.some(Boolean) ? mergeRawVulnResults(...osExtraMatches, osVulnMatch) : null;
   const osMatch: Record<string, any> | null = osMerged?.mapped ? osMerged : null;
 
   const appResults: Array<Record<string, any>> = [];
@@ -379,13 +379,13 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
       if (seenAppKeys.has(key)) continue;
       seenAppKeys.add(key);
       const row = await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
-      const mispRow = mispOn ? await getMispCacheRow(workspaceSlug, key) : null;
-      const latest = [row?.cachedAt, mispRow?.cachedAt].filter(Boolean) as Date[];
+      const extraRows = await Promise.all(plugins.map((p) => p.getCacheRow(workspaceSlug, key)));
+      const latest = [row?.cachedAt, ...extraRows.map((r) => r?.cachedAt)].filter(Boolean) as Date[];
       if (latest.length) appTimestamps.push(new Date(Math.max(...latest.map((d) => d.getTime()))).toISOString());
       const vulnMatch = row && isFresh(row.cachedAt) ? (row.result as any) : null;
-      const mispMatch = mispRow && isMispCacheFresh(mispRow.cachedAt) ? (mispRow.result as any) : null;
-      if (vulnMatch || mispMatch) {
-        const merged = mergeRawResults(vulnMatch, mispMatch);
+      const extraMatches = extraRows.map((r, i) => (r && plugins[i].isCacheFresh(r.cachedAt) ? (r.result as any) : null));
+      if (vulnMatch || extraMatches.some(Boolean)) {
+        const merged = mergeRawVulnResults(...extraMatches, vulnMatch);
         if (merged.mapped) appResults.push(merged);
       }
     }
@@ -462,33 +462,15 @@ function isFreshCache(cachedAt: Date | undefined | null): boolean {
 }
 
 /**
- * Merges a Vulnerability Service Worker result with a MISP result for the
- * SAME (identifier, version, platform) key — the "merge into the same
- * aggregate" the user chose over a separate MISP section. CVEs are deduped
- * by ID; when both sources report the same CVE, the Worker's entry wins
- * (it carries real CVSS/EPSS/KEV data MISP's raw CPE match can't supply) —
- * a MISP-only CVE is kept as-is with its MISP-event-derived severity.
+ * Turns a VulnServiceCache row plus zero or more same-key rows from OTHER
+ * registered vuln sources (MISP, VulnCheck, ... — see vulnSources.ts) into
+ * the per-version shape both functions below share. The Worker's own row is
+ * passed last into mergeRawVulnResults so it wins CVE-id collisions (it
+ * carries real CVSS/EPSS/KEV data a raw CPE match from another source can't
+ * supply); a source-only CVE is kept as-is with that source's own severity.
  */
-function mergeRawResults(vulnResult: any, mispResult: any): { mapped: boolean; cve_list: Array<Record<string, any>> } {
-  const byId = new Map<string, Record<string, any>>();
-  for (const source of [mispResult, vulnResult]) {
-    // vulnResult processed second so it overwrites any MISP-only stub for
-    // the same CVE ID with the richer entry.
-    if (!source?.mapped) continue;
-    for (const c of source.cve_list ?? []) {
-      const id = String(c.cve_id ?? c.id ?? "").toUpperCase();
-      if (!id) continue;
-      byId.set(id, c);
-    }
-  }
-  return { mapped: Boolean(vulnResult?.mapped) || Boolean(mispResult?.mapped), cve_list: Array.from(byId.values()) };
-}
-
-/** Turns a VulnServiceCache row plus an optional same-key MispVulnCache row into the per-version shape both functions below share. */
-function toVersionVulnInfo(row: { result: unknown; cachedAt: Date } | null, mispRow?: { result: unknown; cachedAt: Date } | null): AppVersionVulnInfo {
-  const vulnResult = row ? (row.result as any) : null;
-  const mispResult = mispRow ? (mispRow.result as any) : null;
-  const merged = mergeRawResults(vulnResult, mispResult);
+function toVersionVulnInfo(row: { result: unknown; cachedAt: Date } | null, extraRows: Array<VulnSourceCacheRow | null> = []): AppVersionVulnInfo {
+  const merged = mergeRawVulnResults(...extraRows.map((r) => r?.result as any), row?.result as any);
   const cveList = merged.cve_list;
   const counts: Record<string, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
   let hasKev = false;
@@ -498,7 +480,7 @@ function toVersionVulnInfo(row: { result: unknown; cachedAt: Date } | null, misp
     if (c.is_kev) hasKev = true;
     maxEpss = Math.max(maxEpss, c.epss_score ?? 0);
   }
-  const cachedTimestamps = [row?.cachedAt, mispRow?.cachedAt].filter(Boolean) as Date[];
+  const cachedTimestamps = [row?.cachedAt, ...extraRows.map((r) => r?.cachedAt)].filter(Boolean) as Date[];
   const cachedAt = cachedTimestamps.length ? new Date(Math.max(...cachedTimestamps.map((d) => d.getTime()))) : new Date();
   return {
     checked: true, mapped: merged.mapped, counts, hasKev, maxEpss: Math.round(maxEpss * 10000) / 10000,
@@ -549,8 +531,8 @@ export async function computeReportedAppsVulnSummaries(
   apps: Array<{ identifier: string; platform: string; versions: string[] }>,
 ): Promise<Map<string, AppVulnSummary>> {
   const cfg = await loadConfigRow(workspaceSlug);
-  const mispOn = await isMispEnabled(workspaceSlug);
-  if (!cfg?.enabled && !mispOn) return new Map();
+  const plugins = await getEnabledVulnSourcePlugins(workspaceSlug);
+  if (!cfg?.enabled && plugins.length === 0) return new Map();
 
   const keyToAppVersion = new Map<string, { appKey: string; version: string }>();
   for (const app of apps) {
@@ -564,31 +546,39 @@ export async function computeReportedAppsVulnSummaries(
   if (keyToAppVersion.size === 0) return new Map();
 
   type VulnCacheRow = Awaited<ReturnType<typeof prisma.vulnServiceCache.findMany>>[number];
-  type MispCacheRow = Awaited<ReturnType<typeof getMispCacheRows>>[number];
 
   const keys = Array.from(keyToAppVersion.keys());
   const rows: VulnCacheRow[] = cfg?.enabled ? await prisma.vulnServiceCache.findMany({ where: { workspaceSlug, key: { in: keys } } }) : [];
-  const mispRows: MispCacheRow[] = mispOn ? await getMispCacheRows(workspaceSlug, keys) : [];
-  const mispRowByKey = new Map<string, MispCacheRow>(mispRows.map((r) => [r.key, r]));
-  const seenKeys = new Set<string>(rows.map((r) => r.key));
+  const rowByKey = new Map<string, VulnCacheRow>(rows.map((r) => [r.key, r]));
+
+  // One getCacheRows call per registered, enabled plugin (MISP, VulnCheck,
+  // ...), each producing its own key -> row map.
+  const pluginRows = await Promise.all(plugins.map((p) => p.getCacheRows(workspaceSlug, keys)));
+  const pluginRowByKeyMaps = pluginRows.map((rowsForPlugin) => new Map(rowsForPlugin.map((r) => [r.key, r])));
+
+  // Union of every key ANY source has a row for — a plugin-only mapping
+  // with no Vulnerability Service row at all still needs a pass below.
+  const allKnownKeys = new Set<string>(rows.map((r) => r.key));
+  for (const m of pluginRowByKeyMaps) for (const k of m.keys()) allKnownKeys.add(k);
 
   const byVersionByApp = new Map<string, Record<string, AppVersionVulnInfo>>();
-  const applyRow = (key: string, row: VulnCacheRow | null) => {
+  for (const key of allKnownKeys) {
     const mapping = keyToAppVersion.get(key);
-    if (!mapping) return;
-    const mispRow = mispRowByKey.get(key) ?? null;
-    if ((!row || !isFreshCache(row.cachedAt)) && (!mispRow || !isMispCacheFresh(mispRow.cachedAt))) return;
+    if (!mapping) continue;
+    const row = rowByKey.get(key) ?? null;
+    const rowFresh = row && isFreshCache(row.cachedAt) ? row : null;
+    const freshExtraRows = pluginRowByKeyMaps.map((m, i) => {
+      const r = m.get(key);
+      return r && plugins[i].isCacheFresh(r.cachedAt) ? r : null;
+    });
+    if (!rowFresh && !freshExtraRows.some(Boolean)) continue;
     let byVersion = byVersionByApp.get(mapping.appKey);
     if (!byVersion) {
       byVersion = {};
       byVersionByApp.set(mapping.appKey, byVersion);
     }
-    byVersion[mapping.version] = toVersionVulnInfo(row && isFreshCache(row.cachedAt) ? row : null, mispRow && isMispCacheFresh(mispRow.cachedAt) ? mispRow : null);
-  };
-  for (const row of rows) applyRow(row.key, row);
-  // Keys with a MISP hit but no (fresh) Vulnerability Service row at all —
-  // otherwise a MISP-only mapping would never get visited above.
-  for (const key of mispRowByKey.keys()) if (!seenKeys.has(key)) applyRow(key, null);
+    byVersion[mapping.version] = toVersionVulnInfo(rowFresh, freshExtraRows);
+  }
 
   const summaries = new Map<string, AppVulnSummary>();
   for (const [appKey, byVersion] of byVersionByApp) {
@@ -619,18 +609,23 @@ export async function computeReportedAppsVulnSummaries(
  * per-app cache reads immediately above, and that whole response is cached
  * for DEVICES_CACHE_TTL_SECONDS (15 min), not recomputed per request.
  * `vulnServiceEnabled` mirrors the caller's own vulnServiceCfg.enabled check
- * for computeVulnServiceStatus: false skips every cache lookup here too (a
- * device with 80 self-reported apps would otherwise add 80 no-op queries
- * per fleet-cache refresh for a workspace that never turned the integration
- * on) and every app gets `vuln: null` at zero extra DB cost — the tab still
- * shows the plain installed-apps inventory either way.
+ * for computeVulnServiceStatus: false skips every VulnServiceCache lookup
+ * here too (a device with 80 self-reported apps would otherwise add 80
+ * no-op queries per fleet-cache refresh for a workspace that never turned
+ * the integration on). Every OTHER registered vuln source (MISP, VulnCheck,
+ * ...) resolves its own enabled flag internally via
+ * getEnabledVulnSourcePlugins, same as computeVulnServiceStatus/
+ * computeReportedAppsVulnSummaries — so a workspace with only e.g. VulnCheck
+ * turned on and the Worker off still gets `vuln` populated here without
+ * this function's signature needing a new boolean param per source added.
+ * If every source is off, every app gets `vuln: null` at zero extra DB
+ * cost — the tab still shows the plain installed-apps inventory either way.
  */
 export async function computeDeviceAppsDetail(
   workspaceSlug: string,
   device: NormalizedDevice,
   appsEntries: InstalledAppsEntry[],
   vulnServiceEnabled: boolean,
-  mispEnabled = false,
 ): Promise<Array<{
   identifier: string;
   name: string | null;
@@ -644,7 +639,8 @@ export async function computeDeviceAppsDetail(
   vuln: AppVersionVulnInfo | null;
 }>> {
   if (appsEntries.length === 0) return [];
-  const workerPlatform = vulnServiceEnabled || mispEnabled ? PLATFORM_MAP[device.platform] : null;
+  const plugins = await getEnabledVulnSourcePlugins(workspaceSlug);
+  const workerPlatform = vulnServiceEnabled || plugins.length > 0 ? PLATFORM_MAP[device.platform] : null;
 
   // Merge contributions from every entry (slot) down to one bucket per
   // identifier before building output rows — same two-pass shape as
@@ -677,10 +673,10 @@ export async function computeDeviceAppsDetail(
     if (workerPlatform && primary.version) {
       const key = `${identifier.toLowerCase()}|${primary.version}|${workerPlatform}`;
       const row = vulnServiceEnabled ? await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } }) : null;
-      const mispRow = mispEnabled ? await getMispCacheRow(workspaceSlug, key) : null;
+      const extraRows = await Promise.all(plugins.map((p) => p.getCacheRow(workspaceSlug, key)));
       const freshRow = row && isFreshCache(row.cachedAt) ? row : null;
-      const freshMispRow = mispRow && isMispCacheFresh(mispRow.cachedAt) ? mispRow : null;
-      if (freshRow || freshMispRow) vuln = toVersionVulnInfo(freshRow, freshMispRow);
+      const freshExtraRows = extraRows.map((r, i) => (r && plugins[i].isCacheFresh(r.cachedAt) ? r : null));
+      if (freshRow || freshExtraRows.some(Boolean)) vuln = toVersionVulnInfo(freshRow, freshExtraRows);
     }
     out.push({
       identifier,

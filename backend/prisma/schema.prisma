@@ -1025,6 +1025,32 @@ model MispVulnCache {
   @@unique([workspaceSlug, key])
 }
 
+model VulncheckConfig {
+  workspaceSlug        String    @id
+  enabled              Boolean   @default(false)
+  apiKeyEncrypted      String?
+  // Optional override for the CPE-guessing service — same purpose/default
+  // as MispConfig.cpeGuesserBaseUrl (see cpeTranslate.ts). No baseUrl field
+  // here unlike MispConfig/VulnServiceConfig: VulnCheck is a fixed SaaS API
+  // (api.vulncheck.com), not something a customer self-hosts.
+  cpeGuesserBaseUrl    String    @default("")
+  refreshIntervalHours Int       @default(12)
+  lastRefreshAt        DateTime?
+  lastRefreshError     String?
+  lastRefreshStats     Json?
+  updatedAt            DateTime  @updatedAt
+}
+
+model VulncheckCache {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  key           String
+  result        Json
+  cachedAt      DateTime @default(now())
+
+  @@unique([workspaceSlug, key])
+}
+
 model GlobalCatalog {
   source          String   @id
   payload         Json

@@ -206,6 +206,19 @@ MISP has no built-in concept of "this app, this version" the way the Vulnerabili
 
 **Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test.
 
+## VulnCheck
+
+**Opt-in, per-workspace.** Connects to [VulnCheck](https://vulncheck.com)'s hosted CVE intelligence API (free community tier — no self-hosting, unlike MISP) and cross-references CVEs against every app and OS version reported across the fleet, using the same CPE-translation approach as MISP (see [MISP](#misp) above for how that works). Also pulls VulnCheck's own KEV (Known Exploited Vulnerabilities) feed once per refresh to flag `is_kev` on matched CVEs — a second, independent KEV source alongside the Vulnerability Service's own KEV data. Results **merge into the same risk score and CVE list** the Vulnerability Catalog, Vulnerability Service, and MISP populate — no separate VulnCheck section, same "merge into the same aggregate" design as MISP.
+
+- **Enabled** toggle.
+- **VulnCheck API key** — free signup at [console.vulncheck.com](https://console.vulncheck.com). Same masked-on-save/blank-to-keep behavior as the other connectors' secrets, encrypted at rest.
+- **CPE guesser base URL** (optional) — same shared translation step and same public-instance-by-default/self-hosted-override tradeoff as MISP's own field.
+- **Refresh interval (hours)** — 1–72, default 12.
+- **Test connection** and **Save**. Test runs a minimal, cheap KEV index query to confirm reachability and that the API key is valid.
+- Once enabled, a status panel shows last-refreshed time, a **Refresh now** button, and refresh stats (OS/app checks queried vs. failed, distinct CVEs enriched this run, by platform). Results are cached for 24h per app/OS combo, same as the Vulnerability Service and MISP; **Refresh now** always bypasses that cache. Cheaper per combo than MISP (one CPE search call instead of up to three), and CVE enrichment/KEV lookups are deduplicated across the whole refresh batch rather than repeated per combo.
+
+**Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test.
+
 ## OS Lifecycle
 
 **Status/monitoring only.** Covers two independent data sources, each with its own Refresh now:
@@ -276,10 +289,10 @@ Quick reference for which Settings section unblocks which feature elsewhere:
 
 | Feature | Depends on |
 |---|---|
-| [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service and/or MISP (conditions read the same merged status) |
+| [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service, MISP, and/or VulnCheck (conditions read the same merged status) |
 | [Compliance](compliance.md) Self-Reported Attribute conditions | Applivery SOAR Agent + a deployed self-report script |
 | [Compliance](compliance.md) App List conditions | App List inventory sync (Applivery SOAR Agent script, or the paced background refresher) |
-| [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service and/or MISP (results merge into the same badge/section) |
+| [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service, MISP, and/or VulnCheck (results merge into the same badge/section) |
 | [Devices](devices.md) Firewall Rule Sets section | A [Firewall Policy Library](workflows.md#firewall-policy-library) rule set actually applied via a workflow |
 | [Cases](cases.md) ticketing chips/sync | Integrations (Jira/ServiceNow) |
 | [Cases](cases.md) SLA badges | Case SLA |

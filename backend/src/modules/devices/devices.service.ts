@@ -24,7 +24,7 @@ import { loadGdmfCatalog } from "../catalogs/gdmfCatalog";
 import { loadAppleDeviceIdentifiers } from "../catalogs/appleDeviceIdentifiers";
 import { loadInstalledAppsStore, installedAppsRecordEntries } from "../appLists/installedApps.service";
 import { getVulnServiceConfig, computeVulnServiceStatus, computeDeviceAppsDetail } from "../catalogs/vulnService";
-import { getMispConfig } from "../catalogs/mispService";
+import { anyVulnSourceEnabled } from "../catalogs/vulnSources";
 import { loadDevicePushDataCache } from "./deviceData.service";
 import { LOCATION_CACHE_KEY } from "../analytics/locationsSync.service";
 import { executeMdmAction } from "../workflows/mdmActionExecutor";
@@ -374,7 +374,7 @@ async function fetchDevicesFullUncached(
 
   // Intelligence catalogs — loaded once per fleet-wide call, same batching
   // philosophy. Port of main.py:3521-3550.
-  const [osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, appleIdCatalog, installedAppsStore, vulnServiceCfg, mispCfg] = await Promise.all([
+  const [osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, appleIdCatalog, installedAppsStore, vulnServiceCfg, anyOtherVulnSourceOn] = await Promise.all([
     loadOsUpdateCatalog(),
     loadVulnCatalog(),
     loadOsLifecycleCatalog(),
@@ -382,7 +382,7 @@ async function fetchDevicesFullUncached(
     loadAppleDeviceIdentifiers(),
     loadInstalledAppsStore(slugKey),
     getVulnServiceConfig(slugKey),
-    getMispConfig(slugKey),
+    anyVulnSourceEnabled(slugKey),
   ]);
 
   for (const d of normalized) {
@@ -432,17 +432,18 @@ async function fetchDevicesFullUncached(
     const serverFetchEntry = appsRecord?.serverFetch ?? null;
     const appsEntries = installedAppsRecordEntries(appsRecord);
     d.appleAppUpdateStatus = d.platform === "apple" || d.platform === "macos" ? serverFetchEntry?.appleAppUpdates ?? null : null;
-    // computeVulnServiceStatus merges in MISP results itself (checks MISP's
-    // own enabled flag internally), so the gate here only needs to skip the
-    // call entirely when NEITHER source is on.
-    d.vulnServiceStatus = vulnServiceCfg.enabled || mispCfg.enabled ? await computeVulnServiceStatus(slugKey, d, appsEntries) : null;
+    // computeVulnServiceStatus merges in every OTHER registered vuln source
+    // itself (MISP, VulnCheck, ... — checks each one's own enabled flag
+    // internally via vulnSources.ts), so the gate here only needs to skip
+    // the call entirely when NEITHER the Worker nor any of them is on.
+    d.vulnServiceStatus = vulnServiceCfg.enabled || anyOtherVulnSourceOn ? await computeVulnServiceStatus(slugKey, d, appsEntries) : null;
     // Backs the Device modal's Apps tab — every app this device reports,
     // each paired with its own cached CVE result when one exists. The app
     // list itself is always populated (plain installed-apps inventory);
-    // vulnServiceCfg.enabled/mispCfg.enabled only gate whether
-    // computeDeviceAppsDetail spends a cache lookup per app trying to attach
-    // CVE data to each.
-    d.installedAppsDetail = await computeDeviceAppsDetail(slugKey, d, appsEntries, vulnServiceCfg.enabled, mispCfg.enabled);
+    // vulnServiceEnabled only gates the Worker's own cache lookups here —
+    // computeDeviceAppsDetail resolves every other source's enabled flag
+    // internally, same as the two functions above.
+    d.installedAppsDetail = await computeDeviceAppsDetail(slugKey, d, appsEntries, vulnServiceCfg.enabled);
 
     Object.assign(d, computeDeviceRisk(d, openCases, activeViolations));
   }

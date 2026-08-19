@@ -53,6 +53,16 @@ export interface MispConfig {
   lastRefreshError: string | null;
   lastRefreshStats: Record<string, any> | null;
 }
+export interface VulncheckConfig {
+  workspaceSlug: string;
+  enabled: boolean;
+  apiKey: string; // masked
+  cpeGuesserBaseUrl: string;
+  refreshIntervalHours: number;
+  lastRefreshAt: string | null;
+  lastRefreshError: string | null;
+  lastRefreshStats: Record<string, any> | null;
+}
 export interface AppleAppUpdatesStatus {
   targetDeviceCount: number;
   syncedCount: number;
@@ -74,6 +84,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   const gdmfCatalog = ref<GdmfCatalog | null>(null);
   const vulnServiceConfig = ref<VulnServiceConfig | null>(null);
   const mispConfig = ref<MispConfig | null>(null);
+  const vulncheckConfig = ref<VulncheckConfig | null>(null);
   const appleAppUpdatesStatus = ref<AppleAppUpdatesStatus | null>(null);
 
   const isLoading = ref(false);
@@ -182,6 +193,29 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     }
   }
 
+  async function fetchVulncheckConfig() {
+    const { api } = await import("../api/http");
+    vulncheckConfig.value = (await api.get("/vulncheck/config")).data;
+  }
+  async function saveVulncheckConfig(payload: { enabled: boolean; apiKey: string; cpeGuesserBaseUrl: string; refreshIntervalHours: number }) {
+    const { api } = await import("../api/http");
+    vulncheckConfig.value = (await api.put("/vulncheck/config", payload)).data;
+  }
+  async function testVulncheckConfig(payload: { apiKey: string }) {
+    const { api } = await import("../api/http");
+    return (await api.post("/vulncheck/test", payload)).data as { status: string; latencyMs: number };
+  }
+  async function refreshVulncheckNow() {
+    isRefreshing.value = true;
+    try {
+      const { api } = await import("../api/http");
+      await api.post("/vulncheck/refresh");
+      await fetchVulncheckConfig();
+    } finally {
+      isRefreshing.value = false;
+    }
+  }
+
   async function fetchAppleAppUpdatesStatus() {
     const { api } = await import("../api/http");
     appleAppUpdatesStatus.value = (await api.get("/apple-app-updates/status")).data;
@@ -197,7 +231,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   }
 
   return {
-    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, appleAppUpdatesStatus,
+    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, vulncheckConfig, appleAppUpdatesStatus,
     isLoading, isRefreshing, error,
     fetchOsUpdateCatalog, refreshOsUpdateCatalog,
     fetchVulnCatalog, refreshVulnCatalog,
@@ -205,6 +239,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     fetchGdmfCatalog, refreshGdmfCatalog,
     fetchVulnServiceConfig, saveVulnServiceConfig, testVulnServiceConfig, refreshVulnServiceNow,
     fetchMispConfig, saveMispConfig, testMispConfig, refreshMispNow,
+    fetchVulncheckConfig, saveVulncheckConfig, testVulncheckConfig, refreshVulncheckNow,
     fetchAppleAppUpdatesStatus, refreshAppleAppUpdates,
   };
 });

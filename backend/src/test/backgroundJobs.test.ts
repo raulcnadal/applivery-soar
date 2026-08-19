@@ -4,14 +4,15 @@ import { runComplianceSchedulerTick } from "../modules/compliance/complianceJobs
 import { runInstalledAppsRefresherTick } from "../modules/appLists/installedAppsJobs";
 import { runLocationRefresherTick } from "../modules/geofencing/locationJobs";
 
-// The full 17 loops from migration-plan.md §5, plus four disclosed
+// The full 17 loops from migration-plan.md §5, plus five disclosed
 // post-migration additions: the geofencing location refresher
 // (locationJobs.ts), the Apple hardware-identifier resolver
 // (appleDeviceIdentifiers.ts), event-driven detection's notify metrics
-// rotation (eventWatches.service.ts), and the MISP threat intel refresher
-// (mispService.ts) — this list is the sign-off artifact itself, not just a
-// test fixture: if a jobKey here doesn't appear in JOBS, that loop either
-// was never wired in or got silently dropped.
+// rotation (eventWatches.service.ts), the MISP threat intel refresher
+// (mispService.ts), and the VulnCheck threat intel refresher
+// (vulncheckService.ts) — this list is the sign-off artifact itself, not
+// just a test fixture: if a jobKey here doesn't appear in JOBS, that loop
+// either was never wired in or got silently dropped.
 const EXPECTED_JOB_KEYS = [
   "compliance_scheduler",
   "report_scheduler",
@@ -28,6 +29,7 @@ const EXPECTED_JOB_KEYS = [
   "catalog:vuln",
   "vuln_service_refresh",
   "misp_refresh",
+  "vulncheck_refresh",
   "catalog:os-lifecycle",
   "catalog:gdmf",
   "catalog:apple-device-identifiers",
@@ -36,9 +38,9 @@ const EXPECTED_JOB_KEYS = [
   "event_notify_metrics_rotation",
 ];
 
-describe("all 17 background jobs from migration-plan.md §5 (+4 disclosed additions) are registered", () => {
-  it("JOBS has exactly 21 entries", () => {
-    expect(JOBS.length).toBe(21);
+describe("all 17 background jobs from migration-plan.md §5 (+5 disclosed additions) are registered", () => {
+  it("JOBS has exactly 22 entries", () => {
+    expect(JOBS.length).toBe(22);
   });
 
   it("every expected jobKey is present exactly once", () => {

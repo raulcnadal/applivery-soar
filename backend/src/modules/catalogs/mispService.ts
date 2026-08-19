@@ -389,3 +389,18 @@ export async function getMispCacheRows(workspaceSlug: string, keys: string[]) {
 export function isMispCacheFresh(cachedAt: Date | undefined | null): boolean {
   return Boolean(cachedAt) && Date.now() - cachedAt!.getTime() < CACHE_TTL_MS;
 }
+
+/** Registered with vulnSources.ts's generic plugin loop — see that file's doc comment. */
+export const mispVulnSourcePlugin: import("./vulnSources").VulnSourcePlugin = {
+  name: "misp",
+  isEnabled: isMispEnabled,
+  getCacheRow: async (workspaceSlug, key) => {
+    const row = await getMispCacheRow(workspaceSlug, key);
+    return row ? { key, result: row.result, cachedAt: row.cachedAt } : null;
+  },
+  getCacheRows: async (workspaceSlug, keys) => {
+    const rows: Awaited<ReturnType<typeof getMispCacheRows>> = await getMispCacheRows(workspaceSlug, keys);
+    return rows.map((r) => ({ key: r.key, result: r.result, cachedAt: r.cachedAt }));
+  },
+  isCacheFresh: isMispCacheFresh,
+};

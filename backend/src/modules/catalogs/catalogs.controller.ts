@@ -11,6 +11,7 @@ import { loadAppleDeviceIdentifiers, refreshAppleDeviceIdentifiers } from "./app
 import { getMitreTechniques, refreshMitreCatalog } from "./mitreCatalog";
 import { getVulnServiceConfig, refreshVulnServiceNow, testVulnServiceConfig, updateVulnServiceConfig } from "./vulnService";
 import { getMispConfig, refreshMispNow, testMispConfig, updateMispConfig } from "./mispService";
+import { getVulncheckConfig, refreshVulncheckNow, testVulncheckConfig, updateVulncheckConfig } from "./vulncheckService";
 import { z } from "zod";
 
 /**
@@ -183,5 +184,45 @@ catalogsRouter.post(
     const authorization = req.header("Authorization");
     if (!authorization) throw new HttpError(401, "Missing credentials");
     res.json(await refreshMispNow(workspaceOf(req), authorization));
+  }),
+);
+
+// ── VulnCheck connector (per-workspace, opt-in) — third source merged into
+// the same Vulnerability aggregate via vulnSources.ts's plugin registry. ──
+const vulncheckConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  apiKey: z.string().default(""),
+  cpeGuesserBaseUrl: z.string().default(""),
+  refreshIntervalHours: z.number().default(12),
+});
+
+catalogsRouter.get(
+  "/api/vulncheck/config",
+  ...readCompliance,
+  asyncHandler(async (req, res) => res.json(await getVulncheckConfig(workspaceOf(req)))),
+);
+catalogsRouter.put(
+  "/api/vulncheck/config",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const payload = vulncheckConfigSchema.parse(req.body);
+    res.json(await updateVulncheckConfig(workspaceOf(req), payload, req.dashboardUser?.sub ?? "unknown"));
+  }),
+);
+catalogsRouter.post(
+  "/api/vulncheck/test",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const payload = z.object({ apiKey: z.string().default("") }).parse(req.body);
+    res.json(await testVulncheckConfig(workspaceOf(req), payload));
+  }),
+);
+catalogsRouter.post(
+  "/api/vulncheck/refresh",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    if (!authorization) throw new HttpError(401, "Missing credentials");
+    res.json(await refreshVulncheckNow(workspaceOf(req), authorization));
   }),
 );
