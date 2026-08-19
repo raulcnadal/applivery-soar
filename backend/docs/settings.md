@@ -235,9 +235,9 @@ Ticketing and chat integrations — notifies chat channels and/or opens a ticket
 
 Lets an analyst working a [Case](cases.md) manually look up an IOC (IP, domain, URL, file hash, email) — an on-demand lookup, not an automatic scan (this app has no network-flow/process telemetry to scan against).
 
-**Types**: VirusTotal (API key; IPs/domains/URLs/hashes), AbuseIPDB (API key; IPs only), Have I Been Pwned (API key — requires HIBP's paid tier, no free option; emails only), Generic REST (a URL template with a `{{ ioc }}` placeholder, plus one optional header).
+**Type**: VirusTotal (API key; IPs/domains/URLs/hashes) — the only remaining provider. AbuseIPDB, Have I Been Pwned, and Generic REST were retired: an audit found the automatic IOC-extraction-from-note-text flow they fed almost never fires in this product (it only ever scans analyst-typed note text, never the structured titles the two automated case sources — compliance violations, workflow triggers — generate), and they had no other use here. VirusTotal stays both for that on-demand lookup and as the intended engine for a planned separate feature: hashing installed binaries (Windows `.exe`, macOS `.dmg`, Android `.apk`) to flag sideloaded/unverified/malicious software once the agents collect those hashes.
 
-Common fields: Name, Type (locked once created), Enabled. **Test** runs a known-safe lookup (`8.8.8.8` for VT/AbuseIPDB/Generic, HIBP's official test account for HIBP).
+Common fields: Name, Type (locked once created), Enabled. **Test** runs a known-safe lookup (`8.8.8.8`).
 
 **Permission gate**: `canEditIntegrationSecrets`.
 

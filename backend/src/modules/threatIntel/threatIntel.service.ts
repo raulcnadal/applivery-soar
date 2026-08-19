@@ -12,16 +12,15 @@ import { THREAT_INTEL_PROVIDER_TYPES, type ThreatIntelProviderPayload, type Thre
  */
 
 const THREAT_INTEL_SECRET_FIELDS: Record<string, readonly string[]> = {
-  virustotal: ["apiKey"], abuseipdb: ["apiKey"], hibp: ["apiKey"],
+  virustotal: ["apiKey"],
 };
 
 // Which IOC types each provider type can look up — main.py's
-// THREAT_INTEL_PROVIDER_IOC_SUPPORT (main.py:13968-13977).
+// THREAT_INTEL_PROVIDER_IOC_SUPPORT (main.py:13968-13977). AbuseIPDB/HIBP/
+// Generic REST removed — see threatIntel.schemas.ts's doc comment on
+// THREAT_INTEL_PROVIDER_TYPES for why.
 const THREAT_INTEL_PROVIDER_IOC_SUPPORT: Record<string, readonly string[]> = {
   virustotal: ["ip", "domain", "md5", "sha1", "sha256", "url"],
-  abuseipdb: ["ip"],
-  hibp: ["email"],
-  generic_rest: ["ip", "domain", "md5", "sha1", "sha256", "url", "unknown"],
 };
 
 function encryptThreatIntelConfig(type: string, config: Record<string, any>): Record<string, any> {
@@ -180,50 +179,6 @@ async function lookupVirustotal(cfg: Record<string, any>, iocType: string, iocVa
   return { verdict, score: malicious, detail: `${malicious}/${total} engines flagged malicious, ${suspicious} suspicious`, link: `https://www.virustotal.com/gui/${guiPath}` };
 }
 
-async function lookupAbuseipdb(cfg: Record<string, any>, iocValue: string) {
-  const apiKey = cfg.apiKey;
-  if (!apiKey) throw new Error("AbuseIPDB integration is missing an API key");
-  const headers = { Key: apiKey, Accept: "application/json" };
-  const res = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(iocValue)}&maxAgeInDays=90`, { headers });
-  if (!res.ok) throw new Error(`AbuseIPDB returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const data = (await res.json()) as any;
-  const score = data?.data?.abuseConfidenceScore ?? 0;
-  const verdict = score >= 75 ? "malicious" : score >= 25 ? "suspicious" : "clean";
-  const reports = data?.data?.totalReports ?? 0;
-  return { verdict, score, detail: `Abuse confidence ${score}/100 from ${reports} report${reports !== 1 ? "s" : ""}`, link: `https://www.abuseipdb.com/check/${iocValue}` };
-}
-
-async function lookupHibp(cfg: Record<string, any>, iocValue: string) {
-  const apiKey = cfg.apiKey;
-  if (!apiKey) throw new Error("Have I Been Pwned integration is missing an API key");
-  const headers = { "hibp-api-key": apiKey, "User-Agent": "Applivery-SOAR" };
-  const res = await fetch(`https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(iocValue)}?truncateResponse=false`, { headers });
-  if (res.status === 404) return { verdict: "clean", score: 0, detail: "Not found in any known breach", link: "https://haveibeenpwned.com/" };
-  if (res.status === 429) throw new Error("Have I Been Pwned rate limit hit — its API is throttled per API-key subscription tier");
-  if (!res.ok) throw new Error(`Have I Been Pwned returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const breaches = ((await res.json()) as any[]) ?? [];
-  const breachNames = breaches.map((b) => b.Name || b.Title || "Unknown breach");
-  const hasPasswordExposure = breaches.some((b) => (b.DataClasses ?? []).includes("Passwords"));
-  const verdict = hasPasswordExposure ? "malicious" : breaches.length ? "suspicious" : "clean";
-  const nameList = breachNames.slice(0, 5).join(", ") + (breachNames.length > 5 ? "…" : "");
-  return {
-    verdict, score: breaches.length,
-    detail: `Found in ${breaches.length} breach${breaches.length !== 1 ? "es" : ""}: ${nameList}` + (hasPasswordExposure ? " (includes exposed passwords)" : ""),
-    link: "https://haveibeenpwned.com/",
-  };
-}
-
-async function lookupGenericRest(cfg: Record<string, any>, iocValue: string) {
-  const template = cfg.urlTemplate;
-  if (!template) throw new Error("No URL template configured");
-  const encoded = encodeURIComponent(iocValue);
-  const url = String(template).replace("{{ ioc }}", encoded).replace("{{ioc}}", encoded);
-  const res = await fetch(url, { headers: cfg.headers ?? {} });
-  if (!res.ok) throw new Error(`Provider returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const text = await res.text();
-  return { verdict: "unknown", score: null, detail: text.slice(0, 300), link: null };
-}
-
 const THREAT_INTEL_CACHE_TTL_SECONDS = 6 * 3600; // 6 hours
 
 /**
@@ -255,11 +210,7 @@ export async function runThreatIntelLookup(workspaceSlug: string, iocValue: stri
       verdict: "unknown", score: null, detail: "", link: null, checkedAt: nowIso, checkedBy: actor, cached: false,
     };
     try {
-      let result: { verdict: string; score: number | null; detail: string; link: string | null };
-      if (provider.type === "virustotal") result = await lookupVirustotal(provider.config, iocType, iocValue);
-      else if (provider.type === "abuseipdb") result = await lookupAbuseipdb(provider.config, iocValue);
-      else if (provider.type === "hibp") result = await lookupHibp(provider.config, iocValue);
-      else result = await lookupGenericRest(provider.config, iocValue);
+      const result = await lookupVirustotal(provider.config, iocType, iocValue);
       Object.assign(entry, result);
     } catch (e) {
       entry.verdict = "error"; entry.score = null; entry.detail = String(e instanceof Error ? e.message : e).slice(0, 300); entry.link = null;
@@ -282,22 +233,15 @@ export async function runThreatIntelLookup(workspaceSlug: string, iocValue: stri
   return results;
 }
 
-const TEST_LOOKUP_TARGETS: Record<string, string> = {
-  virustotal: "8.8.8.8", abuseipdb: "8.8.8.8", generic_rest: "8.8.8.8",
-  hibp: "account-exists@hibp-integration-tests.com", // HIBP's own official test account — always returns a fixed set of breaches
-};
+const TEST_LOOKUP_TARGETS: Record<string, string> = { virustotal: "8.8.8.8" };
 
 export async function testThreatIntelProvider(workspaceSlug: string, providerId: string) {
   const row = await prisma.threatIntelProvider.findFirst({ where: { workspaceSlug, id: providerId } });
   if (!row) throw new HttpError(404, "Provider not found");
   const cfg = decryptThreatIntelConfig(row.type, (row.config as Record<string, any>) ?? {});
   try {
-    let result;
-    if (row.type === "virustotal") result = await lookupVirustotal(cfg, "ip", TEST_LOOKUP_TARGETS.virustotal);
-    else if (row.type === "abuseipdb") result = await lookupAbuseipdb(cfg, TEST_LOOKUP_TARGETS.abuseipdb);
-    else if (row.type === "hibp") result = await lookupHibp(cfg, TEST_LOOKUP_TARGETS.hibp);
-    else if (row.type === "generic_rest") result = await lookupGenericRest(cfg, TEST_LOOKUP_TARGETS.generic_rest);
-    else throw new Error(`Unknown provider type '${row.type}'`);
+    if (row.type !== "virustotal") throw new Error(`Unknown provider type '${row.type}'`);
+    const result = await lookupVirustotal(cfg, "ip", TEST_LOOKUP_TARGETS.virustotal);
     return { status: "ok", result };
   } catch (e) {
     throw new HttpError(400, `Test failed: ${e instanceof Error ? e.message : String(e)}`);

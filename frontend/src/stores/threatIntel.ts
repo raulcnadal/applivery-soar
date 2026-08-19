@@ -6,7 +6,7 @@ import { ref } from "vue";
 export interface ThreatIntelProvider {
   id: string;
   name: string;
-  type: string; // virustotal | abuseipdb | hibp | generic_rest
+  type: string; // virustotal — only remaining provider type, see backend threatIntel.schemas.ts
   enabled: boolean;
   config: Record<string, any>;
   createdBy: string | null;

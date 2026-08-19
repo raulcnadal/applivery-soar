@@ -612,13 +612,16 @@ model Integration {
 }
 
 // Port of main.py:13965-14000 (ThreatIntelProviderPayload/CRUD). config's
-// apiKey (virustotal/abuseipdb/hibp only — generic_rest has no single secret
-// field) is Fernet-encrypted at rest, mirroring _encrypt_threat_intel_config.
+// apiKey is Fernet-encrypted at rest, mirroring _encrypt_threat_intel_config.
+// Originally also supported abuseipdb/hibp/generic_rest — retired (see
+// threatIntel.schemas.ts's THREAT_INTEL_PROVIDER_TYPES doc comment) since an
+// audit found the Cases IOC auto-enrichment flow they fed almost never
+// fires in this product, and they had no other use.
 model ThreatIntelProvider {
   id            String   @id @default(uuid())
   workspaceSlug String
   name          String
-  type          String // virustotal | abuseipdb | hibp | generic_rest
+  type          String // virustotal
   enabled       Boolean  @default(true)
   config        Json
   createdBy     String?

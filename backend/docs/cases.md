@@ -71,10 +71,7 @@ Compliance-sourced cases inherit the source policy's technique tags when they fi
 
 Type an IP, domain, URL, file hash, or email into the Threat Intel box and click **Enrich**. The type is auto-detected and dispatched in parallel to every enabled provider that supports it:
 
-- **VirusTotal** — IP, domain, file hashes, URL.
-- **AbuseIPDB** — IP only.
-- **HaveIBeenPwned** — email only.
-- **Generic REST** — a configurable passthrough for anything else.
+- **VirusTotal** — IP, domain, file hashes, URL. The only remaining provider type — AbuseIPDB/HaveIBeenPwned/Generic REST were retired (see [Settings → Threat Intel](settings.md#threat-intel)).
 
 Each result shows the verdict (Malicious/Suspicious/Clean/Unknown/Lookup failed), a link to the provider, how long ago it was checked, and a "Cached" pill if served from the 6-hour lookup cache (with a one-click force re-check). Configure providers under [Settings → Threat Intel](settings.md#threat-intel) — without at least one enabled, the Enrich box returns an error telling you to add one there.
 

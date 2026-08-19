@@ -15,16 +15,18 @@ const store = useThreatIntelStore();
 const auth = useAuthStore();
 const canManage = () => auth.hasRiskyAction("canEditIntegrationSecrets");
 
+// Only VirusTotal remains — AbuseIPDB/HIBP/Generic REST were retired
+// (see backend threatIntel.schemas.ts's doc comment): an audit found the
+// Cases IOC auto-enrichment flow they fed almost never fires in this
+// product, and they had no other use. VirusTotal stays for its file-hash
+// lookup, the intended engine for a planned separate installed-binary
+// reputation feature.
 const TYPE_META: Record<string, { label: string; hint: string }> = {
   virustotal: { label: "VirusTotal", hint: "Looks up file hashes, IPs, domains, and URLs." },
-  abuseipdb: { label: "AbuseIPDB", hint: "Looks up IP reputation/abuse reports." },
-  hibp: { label: "Have I Been Pwned", hint: "Looks up whether an email has appeared in a known breach." },
-  generic_rest: { label: "Generic REST", hint: "GETs a URL template with the IOC substituted in, with optional custom headers." },
 };
-const TYPE_OPTIONS = Object.entries(TYPE_META).map(([value, meta]) => ({ value, label: meta.label }));
 
 const editing = ref<ThreatIntelProvider | null | undefined>(undefined);
-const form = reactive({ name: "", type: "virustotal", enabled: true, apiKey: "", urlTemplate: "", headers: "" });
+const form = reactive({ name: "", type: "virustotal", enabled: true, apiKey: "" });
 const isSaving = ref(false);
 const saveError = ref<string | null>(null);
 
@@ -33,16 +35,13 @@ const testResultByRow = reactive<Record<string, string>>({});
 
 function openNew() {
   editing.value = null;
-  Object.assign(form, { name: "", type: "virustotal", enabled: true, apiKey: "", urlTemplate: "", headers: "" });
+  Object.assign(form, { name: "", type: "virustotal", enabled: true, apiKey: "" });
   saveError.value = null;
 }
 function openEdit(p: ThreatIntelProvider) {
   editing.value = p;
   const cfg = p.config ?? {};
-  Object.assign(form, {
-    name: p.name, type: p.type, enabled: p.enabled,
-    apiKey: cfg.apiKey ?? "", urlTemplate: cfg.urlTemplate ?? "", headers: cfg.headers ? JSON.stringify(cfg.headers) : "",
-  });
+  Object.assign(form, { name: p.name, type: p.type, enabled: p.enabled, apiKey: cfg.apiKey ?? "" });
   saveError.value = null;
 }
 function closeEditor() {
@@ -55,11 +54,6 @@ async function remove(p: ThreatIntelProvider) {
 }
 
 function buildConfig(): Record<string, any> {
-  if (form.type === "generic_rest") {
-    let headers: Record<string, string> = {};
-    try { headers = form.headers ? JSON.parse(form.headers) : {}; } catch { /* ignore malformed JSON */ }
-    return { urlTemplate: form.urlTemplate, headers };
-  }
   return { apiKey: form.apiKey };
 }
 
@@ -108,16 +102,8 @@ onMounted(async () => {
     <form v-if="editing !== undefined" class="p-4 rounded-xl mb-3 space-y-3 border border-brand-200 dark:border-brand-800 bg-white dark:bg-gray-800" :class="canManage() ? '' : 'opacity-60 pointer-events-none'" @submit.prevent="save">
       <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
       <Input v-model="form.name" label="Name" :disabled="!canManage()" />
-      <Input :model-value="form.type" type="select" :options="TYPE_OPTIONS" label="Type" :disabled="!canManage()" @update:model-value="form.type = $event as string" />
-      <p class="text-[11px] text-gray-400 -mt-2">{{ TYPE_META[form.type]?.hint }}</p>
-
-      <template v-if="form.type === 'generic_rest'">
-        <Input v-model="form.urlTemplate" label="URL template" placeholder="https://api.example.com/lookup?q={{ ioc }}" :disabled="!canManage()" />
-        <Input v-model="form.headers" label="Headers (JSON, optional)" :disabled="!canManage()" />
-      </template>
-      <template v-else>
-        <Input v-model="form.apiKey" type="password" label="API key" :disabled="!canManage()" />
-      </template>
+      <p class="text-[11px] text-gray-400">{{ TYPE_META.virustotal.label }} — {{ TYPE_META.virustotal.hint }}</p>
+      <Input v-model="form.apiKey" type="password" label="API key" :disabled="!canManage()" />
 
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"><input type="checkbox" v-model="form.enabled" :disabled="!canManage()" /> Enabled</label>
 
