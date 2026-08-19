@@ -83,17 +83,36 @@ const previewError = ref<string | null>(null);
 // handler, before the first await, so no browser treats it as a blocked
 // popup) and its location is set to an object URL for the fetched HTML once
 // the authenticated request resolves.
+//
+// Deliberately NOT passing "noopener": per spec (and Firefox in practice,
+// always) a window.open() call with noopener set can return null for the
+// reference itself, not just suppress the child page's window.opener —
+// which silently broke this entirely (`if (win) ...` never ran, so the
+// blank tab just sat there forever with no error, no matter what the
+// template content was). There's no actual tab-nabbing risk to protect
+// against here anyway: this tab never navigates to a third-party URL, only
+// to a same-origin blob: URL this script creates itself, and we need the
+// two-way reference specifically to set that location once the fetch
+// resolves.
 async function previewCurrentTemplate() {
-  const win = window.open("", "_blank", "noopener");
+  const win = window.open("", "_blank");
+  // Belt-and-suspenders: a real popup blocker (as opposed to the noopener
+  // footgun above) can still return null even for a synchronous, in-gesture
+  // call, depending on the browser's own settings — surface that instead of
+  // silently doing nothing, since there's no tab left to show an error in.
+  if (!win) {
+    previewError.value = "Your browser blocked the preview tab — allow popups for this site and try again.";
+    return;
+  }
   isPreviewing.value = true;
   previewError.value = null;
   try {
     const { api } = await import("../../api/http");
     const res = await api.get("/reports/template/preview", { responseType: "blob" });
     const url = URL.createObjectURL(new Blob([res.data], { type: "text/html" }));
-    if (win) win.location.href = url;
+    win.location.href = url;
   } catch (err: any) {
-    win?.close();
+    win.close();
     previewError.value = err?.response?.data?.detail || "Failed to load template preview.";
   } finally {
     isPreviewing.value = false;
