@@ -157,6 +157,20 @@ model WorkspaceState {
   // read-only, so there is exactly one place to change it and every agent's
   // BaseURL derives from the same value.
   agentSubdomain                    String?
+  // Which Applivery Smart Attribute (matched by NAME against
+  // NormalizedDevice.smartAttributes[].name — see deviceNormalize.ts) holds
+  // an OS patch-level value the customer has already populated on the
+  // Applivery side: Android SPL date ("2026-05-05"), Apple dotted
+  // version + build ("26.6.2 (25G82)"), Windows full build
+  // ("10.0.28000.2704"). Configured once here (Settings > Workspace
+  // Automation), then normalizeDeviceFull() reads it onto every device's
+  // own osPatchLevel field at fetch time — so CVE-matching connectors
+  // (osvAndroidService.ts, sofaService.ts) and Compliance Policy's
+  // "OS Patch Level" condition (complianceFields.ts) never need to know
+  // the attribute's name themselves, only that device.osPatchLevel may be
+  // populated. Null/unset means no mapping configured — every consumer
+  // falls back to its previous, coarser device.osVersion-based behavior.
+  osPatchLevelSmartAttributeName    String?
   updatedAt                         DateTime  @updatedAt
 }
 

@@ -51,6 +51,28 @@ function compareVersionTuples(a: number[], b: number[]): number {
   return 0;
 }
 
+/**
+ * Tuple-ify an OS Patch Level value (osPatchLevelMapping.service.ts) for
+ * comparison, platform-aware since the format differs per OS: Android SPL
+ * dates ("2026-05-05") and Windows builds ("10.0.28000.2704") already split
+ * cleanly on `-`/`.` via versionTuple, but Apple's "26.6.2 (25G82)" needs
+ * its trailing build parenthetical stripped first — otherwise "(25g82)"
+ * parses as a non-numeric (zero) tuple segment and misaligns comparison
+ * against a target value that doesn't include one. A device with no
+ * osPatchLevel value at all (no mapping configured, or this device just
+ * doesn't carry the attribute) tuples to [0], which fails closed against
+ * any real target — same "missing data doesn't pass a minimum-level check"
+ * behavior as every other condition here.
+ */
+function patchLevelTuple(platform: string, raw: unknown): number[] {
+  const s = String(raw ?? "").trim();
+  if (platform === "apple" || platform === "macos") {
+    const m = s.match(/^([\d]+(?:\.[\d]+)*)/);
+    return versionTuple(m ? m[1] : s);
+  }
+  return versionTuple(s);
+}
+
 export function getByPath(obj: any, path: string): any {
   let cur = obj;
   for (const part of (path ?? "").split(".")) {
@@ -309,6 +331,14 @@ export function evaluateCondition(
     if (field === "osVersion") {
       const actual = versionTuple(device.osVersion);
       const target = versionTuple(value);
+      const cmp = compareVersionTuples(actual, target);
+      if (operator === "lessThan") return cmp < 0;
+      if (operator === "greaterThan") return cmp > 0;
+      return cmp === 0;
+    }
+    if (field === "osPatchLevel") {
+      const actual = patchLevelTuple(device.platform, device.osPatchLevel);
+      const target = patchLevelTuple(device.platform, value);
       const cmp = compareVersionTuples(actual, target);
       if (operator === "lessThan") return cmp < 0;
       if (operator === "greaterThan") return cmp > 0;

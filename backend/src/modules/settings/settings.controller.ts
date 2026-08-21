@@ -4,6 +4,7 @@ import { verifyDashboardToken } from "../../middleware/auth.middleware";
 import { requirePermission } from "../../middleware/rbac.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { clearAutomationCredential, getAutomationCredentialStatus, setAutomationCredential } from "./automationCredential.service";
+import { getOsPatchLevelMapping, setOsPatchLevelMapping } from "./osPatchLevelMapping.service";
 import { clearDeviceReportSecret, getDeviceReportSecretStatus, rotateDeviceReportSecret } from "./deviceReportSecret.service";
 import { testSmtp } from "./smtp.service";
 import { testNotificationsWebhook } from "./notificationsWebhook.service";
@@ -54,6 +55,25 @@ settingsRouter.post("/api/settings/automation-credential", ...manageSettings, as
 settingsRouter.delete("/api/settings/automation-credential", ...manageSettings, asyncHandler(async (req, res) => {
   await clearAutomationCredential(workspaceOf(req), actorOf(req));
   res.json({ status: "ok" });
+}));
+
+// ── OS Patch Level Smart Attribute mapping (Settings > Workspace
+// Automation) — which Applivery Smart Attribute name to surface as every
+// device's osPatchLevel, feeding CVE-matching precision (Android/OSV.dev,
+// Apple/SOFA) and a new Compliance Policy condition. See
+// osPatchLevelMapping.service.ts's doc comment. ──
+
+const osPatchLevelMappingPayloadSchema = z.object({
+  smartAttributeName: z.string().nullable(),
+});
+
+settingsRouter.get("/api/settings/os-patch-level-mapping", ...readSettings, asyncHandler(async (req, res) => {
+  res.json(await getOsPatchLevelMapping(workspaceOf(req)));
+}));
+
+settingsRouter.put("/api/settings/os-patch-level-mapping", ...manageSettings, asyncHandler(async (req, res) => {
+  const payload = osPatchLevelMappingPayloadSchema.parse(req.body);
+  res.json(await setOsPatchLevelMapping(workspaceOf(req), actorOf(req), payload.smartAttributeName));
 }));
 
 // ── Device-report webhook secret (main.py:7799-7843) ──

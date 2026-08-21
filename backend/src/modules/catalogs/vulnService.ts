@@ -4,7 +4,7 @@ import { decryptSecret, encryptSecret } from "../../utils/secretCipher";
 import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
-import { getEnabledVulnSourcePlugins, mergeRawVulnResults, type VulnSourceCacheRow } from "./vulnSources";
+import { extractLeadingVersion, filterCvesByPatchLevel, getEnabledVulnSourcePlugins, mergeRawVulnResults, type VulnSourceCacheRow } from "./vulnSources";
 import { computeAppIntegrityStatus, type AppIntegrityInfo } from "./binaryIntegrityService";
 
 /**
@@ -359,13 +359,36 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
   if (!workerPlatform) return null;
 
   const plugins = await getEnabledVulnSourcePlugins(workspaceSlug);
-  const osKey = device.osVersion ? `${workerPlatform}|${device.osVersion}` : null;
+  // Apple platforms: prefer a version extracted from OS Patch Level (Settings
+  // > Workspace Automation's Smart Attribute mapping — e.g. "26.6.2 (25G82)"
+  // -> "26.6.2") over device.osVersion when available, since it's a value
+  // the customer has deliberately populated for exactly this purpose and may
+  // be fresher/more precise than Applivery's own osVersion sync. This
+  // benefits every OS-level source uniformly (MISP/VulnCheck's CPE version
+  // match gets a more precise input; SOFA's exact-ProductVersion lookup
+  // does too) without any of them needing to know about the mapping
+  // themselves. Android and Windows keep using device.osVersion here
+  // unchanged — Android's OS Patch Level is an SPL date, not a version
+  // string (used instead for the CVE-list narrowing below, via
+  // filterCvesByPatchLevel), and Windows's osVersion already carries the
+  // full build the customer's Smart Attribute would otherwise duplicate.
+  const effectiveOsVersion =
+    (workerPlatform === "macos" || workerPlatform === "ios") && device.osPatchLevel
+      ? extractLeadingVersion(device.osPatchLevel) ?? device.osVersion
+      : device.osVersion;
+  const osKey = effectiveOsVersion ? `${workerPlatform}|${effectiveOsVersion}` : null;
   const osRow = osKey ? await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key: osKey } } }) : null;
   const isFresh = (cachedAt: Date | undefined | null) => Boolean(cachedAt) && Date.now() - cachedAt!.getTime() < CACHE_TTL_MS;
   const osVulnMatch = osRow && isFresh(osRow.cachedAt) ? (osRow.result as Record<string, any>) : null;
   const osExtraRows = osKey ? await Promise.all(plugins.map((p) => p.getCacheRow(workspaceSlug, osKey))) : [];
   const osExtraMatches = osExtraRows.map((r, i) => (r && plugins[i].isCacheFresh(r.cachedAt) ? (r.result as Record<string, any>) : null));
-  const osMerged = osVulnMatch || osExtraMatches.some(Boolean) ? mergeRawVulnResults(...osExtraMatches, osVulnMatch) : null;
+  const osMergedRaw = osVulnMatch || osExtraMatches.some(Boolean) ? mergeRawVulnResults(...osExtraMatches, osVulnMatch) : null;
+  // Narrow to only CVEs this exact device hasn't patched yet, when a real
+  // OS Patch Level value is available (Settings > Workspace Automation) —
+  // see filterCvesByPatchLevel's doc comment. No-op when device.osPatchLevel
+  // is null, so this changes nothing for workspaces that haven't configured
+  // the Smart Attribute mapping.
+  const osMerged = osMergedRaw ? { ...osMergedRaw, cve_list: filterCvesByPatchLevel(osMergedRaw.cve_list, workerPlatform, device.osPatchLevel) } : null;
   const osMatch: Record<string, any> | null = osMerged?.mapped ? osMerged : null;
 
   const appResults: Array<Record<string, any>> = [];

@@ -50,6 +50,14 @@ export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   // unconditionally since "Common (all platforms)" policies still need it.
   { key: "platform", label: "Platform", type: "select", operators: ["equals", "notEquals"], options: ["apple", "macos", "android", "windows"] },
   { key: "osVersion", label: "OS version", type: "string", operators: ["lessThan", "greaterThan", "equals"] },
+  // Only meaningful once Settings > Workspace Automation's OS Patch Level
+  // Smart Attribute mapping is configured (osPatchLevelMapping.service.ts)
+  // — device.osPatchLevel is null otherwise, so this condition simply never
+  // matches for an unconfigured workspace rather than erroring. Value
+  // format is platform-dependent (Android SPL date, Apple version+build,
+  // Windows full build) — see complianceEvaluate.ts's "osPatchLevel" branch
+  // for the platform-aware comparison this drives.
+  { key: "osPatchLevel", label: "OS Patch Level", type: "string", operators: ["lessThan", "greaterThan", "equals"] },
   { key: "lastSeenDaysAgo", label: "Days since last check-in", type: "number", operators: ["greaterThan", "lessThan"] },
   { key: "daysSinceEnrollment", label: "Time since enrollment", type: "duration", operators: ["greaterThan", "lessThan"] },
   { key: "battery", label: "Battery %", type: "number", operators: ["lessThan", "greaterThan"] },

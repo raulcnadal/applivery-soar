@@ -169,6 +169,19 @@ export interface NormalizedDevice {
   model: string;
   manufacturer: string;
   osVersion: string;
+  // Value of whichever Applivery Smart Attribute Settings > Workspace
+  // Automation has mapped as the OS Patch Level source (see
+  // osPatchLevelMapping.service.ts) — read off this same device's own
+  // smartAttributes[] below, not a separate API call. Null when no mapping
+  // is configured, or when this device simply doesn't carry that attribute.
+  // Format is platform-dependent (populated by the customer on Applivery's
+  // side): Android SPL date ("2026-05-05"), Apple dotted version + build
+  // ("26.6.2 (25G82)"), Windows full build ("10.0.28000.2704"). Feeds
+  // osvAndroidService.ts/sofaService.ts for exact CVE-matching precision
+  // and Compliance Policy's "OS Patch Level" condition
+  // (complianceFields.ts/complianceEvaluate.ts) — both fall back to the
+  // coarser osVersion-based behavior when this is null.
+  osPatchLevel: string | null;
   battery: number | null;
   // Added for the merged device modal (Devices view + Playground/Dashboard
   // "insight" entry points) — previously only read off the raw Applivery
@@ -251,6 +264,11 @@ export interface NormalizedDevice {
  *   attestation script, matched by serial number) — see
  *   deviceData.service.ts's loadDevicePushDataCache (Phase 8). Empty for any
  *   device that has never self-reported.
+ * @param osPatchLevelAttrName The Smart Attribute name Settings > Workspace
+ *   Automation has mapped as the OS Patch Level source (see
+ *   osPatchLevelMapping.service.ts) — looked up ONCE per fleet-wide call by
+ *   the caller (devices.service.ts), not per device. Null/undefined means
+ *   no mapping configured.
  */
 export function normalizeDeviceFull(
   raw: Record<string, any>,
@@ -258,6 +276,7 @@ export function normalizeDeviceFull(
   locCache: Record<string, unknown>,
   audienceMap: Record<string, DeviceAudienceRef[]> = {},
   pushdataCache: Record<string, unknown> = {},
+  osPatchLevelAttrName: string | null = null,
 ): NormalizedDevice {
   const devId = String(raw.id ?? raw._id ?? "");
   const rawPlatform = String(raw.type ?? raw.platform ?? "");
@@ -311,6 +330,9 @@ export function normalizeDeviceFull(
     if (a && typeof a === "object" && a.smartAttributeId) smartAttributeAssignmentIds.push(String(a.smartAttributeId));
   }
 
+  const osPatchLevelRaw = osPatchLevelAttrName ? smartAttributes.find((a) => a.name === osPatchLevelAttrName)?.value ?? null : null;
+  const osPatchLevel = osPatchLevelRaw && osPatchLevelRaw !== "—" ? osPatchLevelRaw : null;
+
   const serialNumber = summary.serialNumber ?? raw.serialNumber ?? "";
   // Populated from the real device-data pushdata store (main.py:3148) —
   // see deviceData.service.ts's loadDevicePushDataCache (Phase 8).
@@ -349,6 +371,7 @@ export function normalizeDeviceFull(
     model: rawModel,
     manufacturer: summary.manufacturer || raw.manufacturer || raw.brand || "",
     osVersion: summary.osVersion || raw.osVersion || "",
+    osPatchLevel,
     battery,
     macAddress: summary.macAddress || raw.macAddress || raw.networkInfo?.mac || "",
     ipAddress: summary.ipAddress || raw.ipAddress || "",

@@ -300,7 +300,18 @@ async function fetchDevicesFullUncached(
   }
   const pushdataCache = await loadDevicePushDataCache(slugKey);
 
-  const normalized = itemsAll.map((d) => normalizeDeviceFull(d, compIds, locCache, audienceMap, pushdataCache));
+  // OS Patch Level Smart Attribute mapping (Settings > Workspace Automation
+  // — osPatchLevelMapping.service.ts), loaded once per fleet-wide call, not
+  // per device.
+  let osPatchLevelAttrName: string | null = null;
+  try {
+    const stateRow = await prisma.workspaceState.findUnique({ where: { workspaceSlug: slugKey } });
+    osPatchLevelAttrName = stateRow?.osPatchLevelSmartAttributeName ?? null;
+  } catch (e) {
+    console.warn(`[Devices] osPatchLevel mapping lookup failed: ${e}`);
+  }
+
+  const normalized = itemsAll.map((d) => normalizeDeviceFull(d, compIds, locCache, audienceMap, pushdataCache, osPatchLevelAttrName));
 
   // Cases/Compliance-violations/Compliance-state lookups, loaded once per
   // fleet-wide call — same batching philosophy as everything else here,

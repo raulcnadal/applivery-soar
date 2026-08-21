@@ -68,7 +68,9 @@ async function test() {
       the macadmins community's <a href="https://sofa.macadmins.io" target="_blank" rel="noopener" class="underline">SOFA</a>
       feed — free, no API key. Unlike the Android Security Bulletin connector, this one matches a device's exact
       reported OS version against Apple's release history, so results reflect precisely which CVEs that device hasn't
-      received a fix for yet — not a coarse major-version bucket. Findings merge into the same risk score and CVE list
+      received a fix for yet — not a coarse major-version bucket. If <strong>OS Patch Level</strong> (Settings &gt;
+      Workspace Automation) is mapped, the version portion of that Smart Attribute is preferred over Applivery's own
+      synced OS version, since it may be fresher. Findings merge into the same risk score and CVE list
       the Vulnerability Catalog, Vulnerability Service, MISP, VulnCheck, and Android Security Bulletin populate — no
       separate section.
     </p>

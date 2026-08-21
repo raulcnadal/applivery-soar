@@ -96,3 +96,56 @@ export function mergeRawVulnResults(...sources: Array<{ mapped?: boolean; cve_li
   }
   return { mapped: anyMapped, cve_list: Array.from(byId.values()) };
 }
+
+function versionTuple(v: string): number[] {
+  return v.split(/[.\-_]/).map((p) => {
+    const n = Number.parseInt(p, 10);
+    return Number.isNaN(n) ? 0 : n;
+  });
+}
+
+function compareVersionTuples(a: number[], b: number[]): number {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const x = a[i] ?? 0, y = b[i] ?? 0;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+
+/** "26.6.2 (25G82)" -> "26.6.2" — the leading dotted-version prefix of an OS Patch Level value, discarding any trailing build parenthetical. Exported for vulnService.ts, which uses it to prefer a fresher/more-precise Apple version (when OS Patch Level is mapped) over device.osVersion for the shared OS cache key every plugin (Worker/MISP/VulnCheck/SOFA) reads. */
+export function extractLeadingVersion(raw: string): string | null {
+  const m = raw.match(/^([\d]+(?:\.[\d]+)*)/);
+  return m ? m[1] : null;
+}
+
+/**
+ * When a device has a real, precise OS Patch Level value (Settings >
+ * Workspace Automation's Smart Attribute mapping —
+ * osPatchLevelMapping.service.ts), narrows a merged OS-level CVE list down
+ * to only entries THIS exact device hasn't received the fix for yet, using
+ * each entry's own `fixed_in` field. Only osvAndroidService.ts (an SPL
+ * date) and sofaService.ts (an Apple ProductVersion) ever populate
+ * `fixed_in` — every other source (Worker/MISP/VulnCheck) leaves it null,
+ * so this is a safe no-op for their entries regardless of platform.
+ * No-op entirely when osPatchLevel is null/undefined (no mapping
+ * configured, or this device doesn't carry the attribute) — callers keep
+ * today's coarser osVersion-only behavior in that case.
+ */
+export function filterCvesByPatchLevel(cveList: Array<Record<string, any>>, workerPlatform: string, osPatchLevel: string | null | undefined): Array<Record<string, any>> {
+  if (!osPatchLevel) return cveList;
+  return cveList.filter((c) => {
+    const fixedIn = c.fixed_in;
+    if (!fixedIn || typeof fixedIn !== "string") return true; // no fixed_in info to compare against — can't rule it out, keep it
+    if (workerPlatform === "android") {
+      // Both sides are "YYYY-MM-DD" ISO date strings — safe to compare lexicographically.
+      return fixedIn > osPatchLevel;
+    }
+    if (workerPlatform === "macos" || workerPlatform === "ios") {
+      const deviceVersion = extractLeadingVersion(osPatchLevel);
+      if (!deviceVersion) return true;
+      return compareVersionTuples(versionTuple(fixedIn), versionTuple(deviceVersion)) > 0;
+    }
+    return true; // no comparator defined for this platform/source pairing — keep as-is
+  });
+}

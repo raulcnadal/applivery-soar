@@ -26,11 +26,28 @@ export interface AutomationCredentialStatus {
   lastVerifiedAt?: string | null;
 }
 
+export interface SmartAttributeOption {
+  id: string;
+  name: string;
+}
+
 export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", () => {
   const status = ref<AutomationCredentialStatus>({ configured: false, source: null });
   const isLoading = ref(false);
   const isSaving = ref(false);
   const error = ref<string | null>(null);
+
+  // OS Patch Level Smart Attribute mapping (osPatchLevelMapping.service.ts)
+  // — which Applivery Smart Attribute (by name) to surface as every
+  // device's osPatchLevel, feeding CVE-matching precision and a Compliance
+  // Policy condition. `smartAttributes` reuses the same GET
+  // /api/smart-attributes catalog the Compliance Policy Builder's own
+  // Smart Attribute picker uses (compliance.ts's fetchSmartAttributes).
+  const osPatchLevelSmartAttributeName = ref<string | null>(null);
+  const smartAttributes = ref<SmartAttributeOption[]>([]);
+  const isLoadingMapping = ref(false);
+  const isSavingMapping = ref(false);
+  const mappingError = ref<string | null>(null);
 
   async function fetchStatus() {
     isLoading.value = true;
@@ -77,5 +94,44 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
     }
   }
 
-  return { status, isLoading, isSaving, error, fetchStatus, setServiceAccountToken, remove };
+  async function fetchOsPatchLevelMapping() {
+    isLoadingMapping.value = true;
+    mappingError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/settings/os-patch-level-mapping");
+      osPatchLevelSmartAttributeName.value = res.data.smartAttributeName ?? null;
+    } catch (err: any) {
+      mappingError.value = err?.response?.data?.detail || "Failed to load the OS Patch Level mapping.";
+    } finally {
+      isLoadingMapping.value = false;
+    }
+  }
+
+  async function fetchSmartAttributes() {
+    const { api } = await import("../api/http");
+    const res = await api.get("/smart-attributes");
+    smartAttributes.value = res.data.items ?? [];
+  }
+
+  async function setOsPatchLevelMapping(smartAttributeName: string | null) {
+    isSavingMapping.value = true;
+    mappingError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.put("/settings/os-patch-level-mapping", { smartAttributeName });
+      osPatchLevelSmartAttributeName.value = res.data.smartAttributeName ?? null;
+    } catch (err: any) {
+      mappingError.value = err?.response?.data?.detail || "Failed to save the OS Patch Level mapping.";
+      throw err;
+    } finally {
+      isSavingMapping.value = false;
+    }
+  }
+
+  return {
+    status, isLoading, isSaving, error, fetchStatus, setServiceAccountToken, remove,
+    osPatchLevelSmartAttributeName, smartAttributes, isLoadingMapping, isSavingMapping, mappingError,
+    fetchOsPatchLevelMapping, fetchSmartAttributes, setOsPatchLevelMapping,
+  };
 });

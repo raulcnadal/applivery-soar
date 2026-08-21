@@ -56,6 +56,19 @@ Background jobs (the compliance evaluator, snapshot capture, [scheduled report s
 
 No permission gate — any signed-in admin can set the automation credential to be their own session.
 
+### OS Patch Level
+
+If your Applivery workspace already populates a **Smart Attribute** with each device's OS patch/build level (Android's Security Patch Level date, Apple's dotted version + build, Windows's full build), map it here once: a dropdown lists every Smart Attribute defined on your Applivery workspace (the same catalog the Compliance Policy Builder's own Smart Attribute picker uses), and picking one tells this app which attribute NAME to read on every device fetch.
+
+Once mapped, every device's `osPatchLevel` field is populated automatically (`deviceNormalize.ts`) from that Smart Attribute's own per-device value — no separate API call, no per-connector configuration. Two things read it:
+
+- **[Android Security Bulletin](#android-security-bulletin-osvdev) / [Apple Security Releases](#apple-security-releases-sofa)** — CVE lists narrow from "every CVE ever disclosed for this major version" (Android) or exact-ProductVersion-only (Apple) down to "CVEs THIS device specifically hasn't patched yet," compared against the Smart Attribute's own SPL date (Android) or version+build (Apple). Unmapped devices, or workspaces that haven't configured this mapping at all, keep the previous, coarser behavior — nothing breaks, it's purely additive precision.
+- **Compliance Policy conditions** — a new **OS Patch Level** field is available in the Policy Builder, so a policy can require devices to be on/above a specific patch level directly, the same way an **OS version** condition works today.
+
+Expected value formats (populated by your Applivery workspace, not by this app): Android `"2026-05-05"` (SPL date), Apple `"26.6.2 (25G82)"` (dotted version + build in parentheses), Windows `"10.0.28000.2704"` (full build — likely already identical to what `osVersion` reports for Windows, so mapping this mainly matters for Android/Apple).
+
+No permission gate beyond Settings' own read/manage requirement.
+
 ## Applivery SOAR Agent
 
 The single place to get the native Windows/macOS agent onto a device — agent binary download/publish, what it reports, and one combined Managed
@@ -237,7 +250,7 @@ The SHA256 itself is computed on-device by the Windows and macOS agents (self-re
 
 Unlike the other three CVE connectors, this one makes no per-device or per-app query at all: the whole bulletin (~3,400 entries) is fetched as one bulk ZIP dump per refresh (`osv-vulnerabilities.storage.googleapis.com/Android/all.zip` — OSV's own documented bulk-consumption mechanism for full-ecosystem reads) and re-indexed by Android major version, so refreshing needs no Automation Credential and touches Applivery's own API zero times.
 
-**Known limitation, read before enabling**: this app does not currently capture a device's exact Security Patch Level — only its reported Android major version (e.g. "15"). Every CVE ever disclosed against that major version is surfaced, regardless of whether this specific device has since installed the patch that fixes it. This is a deliberate "assume unpatched unless proven otherwise" bias, but it does mean results here are visibly noisier than MISP/VulnCheck's per-exact-version CPE matches — read a hit as "this Android version has had this CVE disclosed at some point," not "this exact device is still exposed today."
+**Precision depends on [OS Patch Level](#os-patch-level) being mapped.** Out of the box, this app only knows a device's reported Android major version (e.g. "15"), so every CVE ever disclosed against that major version is surfaced regardless of whether the device has since patched — a deliberate "assume unpatched unless proven otherwise" bias, but visibly noisier than MISP/VulnCheck's per-exact-version CPE matches. If your Applivery workspace populates a Smart Attribute with each Android device's real Security Patch Level date and you map it under Settings > Workspace Automation > [OS Patch Level](#os-patch-level), results narrow automatically to only the CVEs that specific device's own SPL hasn't reached yet — no separate configuration here, this connector and Compliance conditions both just start reading the mapped value the moment it's set.
 
 - **Enabled** toggle.
 - **Refresh interval (hours)** — default 24. The bulletin itself is published monthly, so there's little value refreshing more often than daily.
@@ -251,6 +264,8 @@ Unlike the other three CVE connectors, this one makes no per-device or per-app q
 **Opt-in, per-workspace — no credential.** Apple's own per-release security-content disclosures for macOS and iOS/iPadOS, republished in structured JSON by the macadmins community's [SOFA](https://sofa.macadmins.io) feed (`v2/macos_data_feed.json` and `v2/ios_data_feed.json`). Free, public, no API key. Fifth CVE source (after the Vulnerability Service, MISP, VulnCheck, and Android Security Bulletin), merged into the same risk score and CVE list those populate — no separate section.
 
 Unlike Android Security Bulletin's major-version-only matching, this connector does **precise point-release matching**: Applivery reports a bare `osVersion` string for Apple devices with no separate build field, and that's exactly the shape SOFA's own release history uses (`"26.6.1"`, `"18.5"`, etc.), so a device's exact reported version is looked up directly against SOFA's per-track release history. For a device sitting on release R, the cached result is the union of every CVE fixed by a chronologically *later* release in the same OS track — i.e. CVEs that specific device genuinely hasn't received a fix for, not a coarse bucket. A device whose exact point release isn't (yet) in SOFA's own history falls back to the nearest older indexed version on the same platform, so a device one point release ahead of the feed's own freshness still gets a materially useful (if very slightly conservative) answer rather than nothing.
+
+If [OS Patch Level](#os-patch-level) is mapped, the version portion of that Smart Attribute's value (e.g. `"26.6.2 (25G82)"` → `"26.6.2"`) is used for this lookup INSTEAD of Applivery's own synced `osVersion`, since it's a value the customer has deliberately populated for exactly this purpose and may be fresher. This also sharpens MISP/VulnCheck's own CPE version matching for the same device, since they read the same, now-more-precise version.
 
 Also flags actively-exploited CVEs (SOFA's own `InKEV`/`ActivelyExploited` per-CVE signals, where present) as `is_kev`, and carries a real `Severity` rating for the subset of CVEs SOFA enriches with one — most CVE entries in the feed are bare placeholders with no severity, so expect `severity: null` on a meaningful share of results, same as MISP's raw CPE matches.
 

@@ -272,13 +272,42 @@ export async function isOsvAndroidEnabled(workspaceSlug: string): Promise<boolea
   return Boolean(cfg?.enabled);
 }
 
+/**
+ * Cache rows are keyed by Android MAJOR version only ("android|15" — see
+ * this module's own doc comment on why: SOFA-style exact-build precision
+ * isn't possible from device.osVersion alone). The requested key, though,
+ * is built generically by vulnService.ts/vulnSources.ts from the device's
+ * raw osVersion, which may carry a minor/patch segment ("android|15.2") —
+ * an exact match against that would silently never hit any cache row. Falls
+ * back to the requested key's own major-version segment when an exact match
+ * misses, so this connector actually matches regardless of whether
+ * Applivery reports Android osVersion as a bare major number or not.
+ */
 export async function getOsvAndroidCacheRow(workspaceSlug: string, key: string) {
-  return prisma.osvAndroidCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
+  const exact = await prisma.osvAndroidCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } });
+  if (exact) return exact;
+  const [platform, versionStr] = key.split("|");
+  if (!platform || !versionStr) return null;
+  const major = versionStr.split(".")[0];
+  if (!major || major === versionStr) return null; // already tried this exact key above
+  return prisma.osvAndroidCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key: `${platform}|${major}` } } });
 }
 
+/**
+ * Batch form of getOsvAndroidCacheRow. IMPORTANT: a major-version fallback
+ * hit comes back with its OWN `.key` field (e.g. "android|15"), not the key
+ * that was actually requested (e.g. "android|15.2") — but vulnService.ts's
+ * batch callers index this function's results by `.key` to look them back
+ * up by the REQUESTED key, so every returned row here is re-tagged with the
+ * requested key it's answering for (same fix as sofaService.ts's identical
+ * fallback-remapping — see that file's getSofaCacheRows doc comment).
+ */
 export async function getOsvAndroidCacheRows(workspaceSlug: string, keys: string[]) {
   if (!keys.length) return [];
-  return prisma.osvAndroidCache.findMany({ where: { workspaceSlug, key: { in: keys } } });
+  const pairs = await Promise.all(keys.map(async (key) => [key, await getOsvAndroidCacheRow(workspaceSlug, key)] as const));
+  return pairs
+    .filter((p): p is [string, NonNullable<(typeof p)[1]>] => Boolean(p[1]))
+    .map(([requestedKey, row]) => ({ ...row, key: requestedKey }));
 }
 
 export function isOsvAndroidCacheFresh(cachedAt: Date | undefined | null): boolean {

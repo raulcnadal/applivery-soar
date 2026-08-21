@@ -336,7 +336,7 @@ function onCloned() {
       </button>
     </nav>
 
-    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto">
+    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto" :class="isMobile ? '' : 'pb-14'">
       <RouterView />
     </main>
 

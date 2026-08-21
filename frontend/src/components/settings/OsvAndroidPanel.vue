@@ -71,10 +71,11 @@ async function test() {
       populate — no separate section.
     </p>
     <Alert type="info">
-      This app doesn't currently capture a device's exact Security Patch Level — only its Android major version — so
-      matching is necessarily coarse: every CVE ever disclosed for that major version is surfaced, whether or not this
-      specific device has already patched it. Treat results as "CVEs disclosed for this Android version," not a precise
-      per-device exposure count.
+      Precision depends on <strong>OS Patch Level</strong> (Settings &gt; Workspace Automation) being mapped to a Smart
+      Attribute that carries each Android device's real Security Patch Level date. Without that mapping, matching is
+      necessarily coarse — every CVE ever disclosed for a device's major version is surfaced, whether or not it's
+      already patched. With it mapped, results narrow automatically to only the CVEs that specific device's own SPL
+      hasn't reached yet — no separate configuration needed here.
     </Alert>
     <Alert v-if="!canEdit()" type="info">Your role doesn't have the canEditIntegrationSecrets permission — every control below is disabled.</Alert>
     <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>

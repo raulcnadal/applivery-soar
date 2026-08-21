@@ -265,19 +265,23 @@ onMounted(async () => {
     </div>
 
     <template v-if="subView === 'policies'">
-      <ViolationsQueue />
+      <div class="mb-3">
+        <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Policies</p>
+      </div>
       <div v-if="store.isLoadingPolicies" class="flex flex-col items-center justify-center min-h-[300px]">
         <div class="w-8 h-8 border-2 rounded-full animate-spin mb-4" :style="{ borderColor: `${PRIMARY_BLUE}30`, borderTopColor: PRIMARY_BLUE }" />
         <span class="text-xs uppercase tracking-widest font-bold text-gray-400">Loading policies…</span>
       </div>
-      <PoliciesTable
-        v-else
-        :policies="visiblePolicies"
-        :is-loading="store.isLoadingPolicies"
-        :total-policies-count="store.policies.length"
-        :segment-name="segmentsStore.selectedSegment.name"
-        @edit="editPolicy"
-      />
+      <div v-else class="mb-8">
+        <PoliciesTable
+          :policies="visiblePolicies"
+          :is-loading="store.isLoadingPolicies"
+          :total-policies-count="store.policies.length"
+          :segment-name="segmentsStore.selectedSegment.name"
+          @edit="editPolicy"
+        />
+      </div>
+      <ViolationsQueue />
     </template>
     <AppListsPanel v-else />
 
