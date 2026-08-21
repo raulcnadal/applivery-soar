@@ -76,7 +76,10 @@ export interface NormalizedDevice {
   // doc comment. Each entry: identifier/name/version/source/updateAvailable/
   // productCode/enforcedByPolicy plus an optional per-app `vuln` (same shape
   // as compliance.ts's AppVersionVulnInfo) when the Vulnerability Service
-  // has a fresh cached match for that exact version. Windows entries may
+  // has a fresh cached match for that exact version, and a SEPARATE
+  // optional per-app `integrity` (VirusTotal file-hash verdict — see
+  // backend binaryIntegrityService.ts) when the agent could hash the app's
+  // binary and a check has run. Windows entries may
   // also carry `origin: "msi" | "store"` distinguishing classic installer
   // apps from AppX/Store packages — a Windows device can report the same
   // identifier+version from both `source`s (self-reported + server-fetch),

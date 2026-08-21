@@ -12,6 +12,7 @@ import { getMitreTechniques, refreshMitreCatalog } from "./mitreCatalog";
 import { getVulnServiceConfig, refreshVulnServiceNow, testVulnServiceConfig, updateVulnServiceConfig } from "./vulnService";
 import { getMispConfig, refreshMispNow, testMispConfig, updateMispConfig } from "./mispService";
 import { getVulncheckConfig, refreshVulncheckNow, testVulncheckConfig, updateVulncheckConfig } from "./vulncheckService";
+import { getBinaryIntegrityConfig, refreshBinaryIntegrityNow, updateBinaryIntegrityConfig } from "./binaryIntegrityService";
 import { z } from "zod";
 
 /**
@@ -225,4 +226,30 @@ catalogsRouter.post(
     if (!authorization) throw new HttpError(401, "Missing credentials");
     res.json(await refreshVulncheckNow(workspaceOf(req), authorization));
   }),
+);
+
+// ── Binary Integrity (software identity) — reuses the workspace's own
+// VirusTotal Threat Intel provider, no separate API key here. No bearer
+// needed for refresh: the hashes it reads already live in local Prisma
+// data (InstalledAppInventory), unlike the three CVE sources above which
+// need a live session to re-fetch the fleet from Applivery's own API. ──
+const binaryIntegrityConfigSchema = z.object({ refreshIntervalHours: z.number().default(24) });
+
+catalogsRouter.get(
+  "/api/binary-integrity/config",
+  ...readCompliance,
+  asyncHandler(async (req, res) => res.json(await getBinaryIntegrityConfig(workspaceOf(req)))),
+);
+catalogsRouter.put(
+  "/api/binary-integrity/config",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const payload = binaryIntegrityConfigSchema.parse(req.body);
+    res.json(await updateBinaryIntegrityConfig(workspaceOf(req), payload));
+  }),
+);
+catalogsRouter.post(
+  "/api/binary-integrity/refresh",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => res.json(await refreshBinaryIntegrityNow(workspaceOf(req)))),
 );

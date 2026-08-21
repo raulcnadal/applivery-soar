@@ -63,6 +63,14 @@ export interface VulncheckConfig {
   lastRefreshError: string | null;
   lastRefreshStats: Record<string, any> | null;
 }
+export interface BinaryIntegrityConfig {
+  workspaceSlug: string;
+  virustotalConfigured: boolean;
+  refreshIntervalHours: number;
+  lastRefreshAt: string | null;
+  lastRefreshError: string | null;
+  lastRefreshStats: Record<string, any> | null;
+}
 export interface AppleAppUpdatesStatus {
   targetDeviceCount: number;
   syncedCount: number;
@@ -85,6 +93,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   const vulnServiceConfig = ref<VulnServiceConfig | null>(null);
   const mispConfig = ref<MispConfig | null>(null);
   const vulncheckConfig = ref<VulncheckConfig | null>(null);
+  const binaryIntegrityConfig = ref<BinaryIntegrityConfig | null>(null);
   const appleAppUpdatesStatus = ref<AppleAppUpdatesStatus | null>(null);
 
   const isLoading = ref(false);
@@ -216,6 +225,25 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     }
   }
 
+  async function fetchBinaryIntegrityConfig() {
+    const { api } = await import("../api/http");
+    binaryIntegrityConfig.value = (await api.get("/binary-integrity/config")).data;
+  }
+  async function saveBinaryIntegrityConfig(payload: { refreshIntervalHours: number }) {
+    const { api } = await import("../api/http");
+    binaryIntegrityConfig.value = (await api.put("/binary-integrity/config", payload)).data;
+  }
+  async function refreshBinaryIntegrityNow() {
+    isRefreshing.value = true;
+    try {
+      const { api } = await import("../api/http");
+      await api.post("/binary-integrity/refresh");
+      await fetchBinaryIntegrityConfig();
+    } finally {
+      isRefreshing.value = false;
+    }
+  }
+
   async function fetchAppleAppUpdatesStatus() {
     const { api } = await import("../api/http");
     appleAppUpdatesStatus.value = (await api.get("/apple-app-updates/status")).data;
@@ -231,7 +259,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   }
 
   return {
-    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, vulncheckConfig, appleAppUpdatesStatus,
+    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, vulncheckConfig, binaryIntegrityConfig, appleAppUpdatesStatus,
     isLoading, isRefreshing, error,
     fetchOsUpdateCatalog, refreshOsUpdateCatalog,
     fetchVulnCatalog, refreshVulnCatalog,
@@ -240,6 +268,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     fetchVulnServiceConfig, saveVulnServiceConfig, testVulnServiceConfig, refreshVulnServiceNow,
     fetchMispConfig, saveMispConfig, testMispConfig, refreshMispNow,
     fetchVulncheckConfig, saveVulncheckConfig, testVulncheckConfig, refreshVulncheckNow,
+    fetchBinaryIntegrityConfig, saveBinaryIntegrityConfig, refreshBinaryIntegrityNow,
     fetchAppleAppUpdatesStatus, refreshAppleAppUpdates,
   };
 });

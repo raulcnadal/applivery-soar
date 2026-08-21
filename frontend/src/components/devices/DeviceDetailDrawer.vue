@@ -62,6 +62,21 @@ function riskMeta(tier: string) {
 // deviceData.service.ts = "self_reported"), same labels ReportedAppsPanel.vue
 // uses. SEVERITY_COLOR mirrors AppDetailModal.vue's own per-CVE severity map.
 const APP_SOURCE_LABELS: Record<string, string> = { self_reported: "Self-reported", server_fetch: "Applivery UEM" };
+// Software integrity (VirusTotal file-hash verdict) badge styling — a
+// SEPARATE signal from the CVE severity colors above, see
+// backend binaryIntegrityService.ts's doc comment for why they aren't merged.
+const INTEGRITY_BADGE_CLASS: Record<string, string> = {
+  malicious: "bg-red-500/10 text-red-500",
+  suspicious: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  unknown: "bg-gray-500/10 text-gray-500 dark:text-gray-400",
+  error: "bg-gray-500/10 text-gray-500 dark:text-gray-400",
+};
+const INTEGRITY_BADGE_LABEL: Record<string, string> = {
+  malicious: "Malicious",
+  suspicious: "Suspicious",
+  unknown: "Not in VirusTotal",
+  error: "Check failed",
+};
 const SEVERITY_COLOR: Record<string, string> = { CRITICAL: "#EF4444", HIGH: "#F97316", MEDIUM: "#F59E0B", LOW: "#3B82F6" };
 // Apps tab search — a device with a large AppX/Store inventory (see the
 // Windows dual-source round: 142 apps isn't unusual once Store/system
@@ -1083,6 +1098,21 @@ function traceTitle(t: Record<string, any>): string {
                     <p v-if="a.installLocation" class="text-[10px] text-gray-400 truncate" :title="a.installLocation">{{ a.installLocation }}</p>
                   </div>
                   <span class="flex items-center gap-1 shrink-0">
+                    <!-- Software integrity (VirusTotal file-hash verdict) —
+                         a SEPARATE signal from the CVE badges below, only
+                         shown when the agent could hash this app's binary
+                         AND a check has actually run. Deliberately silent
+                         (no badge at all) rather than an "unknown" pill for
+                         every app without a hash, since that'd be most apps
+                         on an agent build that predates hashing. -->
+                    <span
+                      v-if="a.integrity && a.integrity.checked && a.integrity.verdict !== 'clean'"
+                      class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+                      :class="INTEGRITY_BADGE_CLASS[a.integrity.verdict] || 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+                      :title="a.integrity.detail"
+                    >
+                      {{ INTEGRITY_BADGE_LABEL[a.integrity.verdict] || a.integrity.verdict }}
+                    </span>
                     <span
                       v-for="s in a.sources"
                       :key="s"

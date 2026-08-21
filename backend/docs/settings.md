@@ -219,6 +219,18 @@ MISP has no built-in concept of "this app, this version" the way the Vulnerabili
 
 **Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test.
 
+## Binary Integrity
+
+**Opt-in, per-workspace — but no separate credential.** A different question from the CVE-matching connectors above: instead of "is this app version known-vulnerable," it hashes each self-reported app's installed binary (Windows `.exe`, macOS app bundle's main executable) with SHA256 and looks the hash up against [VirusTotal](https://www.virustotal.com)'s file-reputation database to flag sideloaded, unverified, or tampered/malicious software — something a CVE feed can never catch, since a malicious binary usually isn't a known-CVE version of anything. This reuses the same VirusTotal connector already configured under [Threat Intel](#threat-intel); there is nothing to enable or key in here beyond the refresh interval, so this panel is disabled with a prompt to configure VirusTotal first if that connector isn't enabled yet.
+
+The SHA256 itself is computed on-device by the Windows and macOS agents (self-reported only — Applivery's own server-fetched app inventory has no hash) and included in the existing app-report payload; nothing is hashed or uploaded from a device the agent doesn't already have installed-app visibility into. Findings are **not** merged into the CVE-based vulnerability score — a clean-hash app can still be a vulnerable outdated version, and a "no verdict" hash doesn't mean an app is CVE-free. Instead, results show as a sibling **integrity** badge next to each app in the Device detail drawer (clean, suspicious/malicious per VirusTotal's detection ratio, or unknown/error), separate from that app's vuln badge.
+
+- **Refresh interval (hours)** — default 24. Only field here; there's no Enabled toggle or API key, since VirusTotal being enabled under Threat Intel is itself the on/off switch.
+- **Save**.
+- Once VirusTotal is configured, a status panel shows last-refreshed time, a **Refresh now** button, and refresh stats (hashes checked vs. failed, still queued for the next tick). Results are cached for 24h per SHA256 (hashes are identical across every device that has the same binary, so this cache is fleet-wide per hash, not per-device); **Refresh now** always bypasses that cache. Unlike the CVE connectors, this refresher never needs a live Applivery API session — it reads hashes already stored from prior app reports, so it runs even without an Automation Credential configured.
+
+**Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or save.
+
 ## OS Lifecycle
 
 **Status/monitoring only.** Covers two independent data sources, each with its own Refresh now:
@@ -293,6 +305,7 @@ Quick reference for which Settings section unblocks which feature elsewhere:
 | [Compliance](compliance.md) Self-Reported Attribute conditions | Applivery SOAR Agent + a deployed self-report script |
 | [Compliance](compliance.md) App List conditions | App List inventory sync (Applivery SOAR Agent script, or the paced background refresher) |
 | [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service, MISP, and/or VulnCheck (results merge into the same badge/section) |
+| [Devices](devices.md) app integrity badge | Threat Intel VirusTotal provider enabled + Binary Integrity refresh interval saved + agent-reported `sha256` on the app |
 | [Devices](devices.md) Firewall Rule Sets section | A [Firewall Policy Library](workflows.md#firewall-policy-library) rule set actually applied via a workflow |
 | [Cases](cases.md) ticketing chips/sync | Integrations (Jira/ServiceNow) |
 | [Cases](cases.md) SLA badges | Case SLA |

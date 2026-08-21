@@ -5,6 +5,7 @@ import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
 import { getEnabledVulnSourcePlugins, mergeRawVulnResults, type VulnSourceCacheRow } from "./vulnSources";
+import { computeAppIntegrityStatus, type AppIntegrityInfo } from "./binaryIntegrityService";
 
 /**
  * Vulnerability Service (Applivery-hosted CVE matching, CloudFlare Worker)
@@ -637,6 +638,12 @@ export async function computeDeviceAppsDetail(
   origin?: "winget" | "msi" | "store";
   installLocation: string | null;
   vuln: AppVersionVulnInfo | null;
+  // Malware/tamper verdict for this app's specific binary — a SEPARATE
+  // signal from `vuln` (CVE match), see binaryIntegrityService.ts's doc
+  // comment for why they aren't merged. null whenever the agent couldn't
+  // resolve a hash for this app (older agent build, or a source this
+  // wasn't confidently resolvable for) or nothing's been checked yet.
+  integrity: AppIntegrityInfo | null;
 }>> {
   if (appsEntries.length === 0) return [];
   const plugins = await getEnabledVulnSourcePlugins(workspaceSlug);
@@ -660,7 +667,8 @@ export async function computeDeviceAppsDetail(
 
   const out: Array<{
     identifier: string; name: string | null; version: string; sources: string[]; updateAvailable: boolean;
-    productCode: string | null; enforcedByPolicy: boolean; origin?: "winget" | "msi" | "store"; installLocation: string | null; vuln: AppVersionVulnInfo | null;
+    productCode: string | null; enforcedByPolicy: boolean; origin?: "winget" | "msi" | "store"; installLocation: string | null;
+    vuln: AppVersionVulnInfo | null; integrity: AppIntegrityInfo | null;
   }> = [];
   for (const [identifier, contributions] of byIdentifier) {
     // Freshest contribution wins for the headline name/version, same rule
@@ -678,6 +686,8 @@ export async function computeDeviceAppsDetail(
       const freshExtraRows = extraRows.map((r, i) => (r && plugins[i].isCacheFresh(r.cachedAt) ? r : null));
       if (freshRow || freshExtraRows.some(Boolean)) vuln = toVersionVulnInfo(freshRow, freshExtraRows);
     }
+    const sha256 = contributions.map((c) => c.app.sha256).find(Boolean) ?? null;
+    const integrity = sha256 ? await computeAppIntegrityStatus(workspaceSlug, sha256) : null;
     out.push({
       identifier,
       name: contributions.map((c) => c.app.name).find(Boolean) ?? null,
@@ -689,6 +699,7 @@ export async function computeDeviceAppsDetail(
       origin: contributions.map((c) => c.app.origin).find(Boolean),
       installLocation: contributions.map((c) => c.app.installLocation).find(Boolean) ?? null,
       vuln,
+      integrity,
     });
   }
   return out;

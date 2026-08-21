@@ -8,6 +8,7 @@ import { refreshMitreCatalog, MITRE_CATALOG_TICK_MS } from "../modules/catalogs/
 import { runVulnServiceRefresherTick, VULN_SERVICE_TICK_MS } from "../modules/catalogs/vulnService";
 import { runMispRefresherTick, MISP_TICK_MS } from "../modules/catalogs/mispService";
 import { runVulncheckRefresherTick, VULNCHECK_TICK_MS } from "../modules/catalogs/vulncheckService";
+import { runBinaryIntegrityRefresherTick, BINARY_INTEGRITY_TICK_MS } from "../modules/catalogs/binaryIntegrityService";
 import { resumeDueWorkflowSteps } from "../modules/workflows/durableEngine";
 import { runScriptLogReconcilerTick, SCRIPT_RUN_RECONCILE_TICK_MS } from "../modules/workflows/scriptLogReconciler";
 import { CASE_SLA_MONITOR_TICK_MS, runCaseSlaMonitorTick, runTicketStatusSyncTick, TICKET_SYNC_TICK_MS } from "../modules/cases/caseJobs";
@@ -113,6 +114,7 @@ export const JOBS: readonly CatalogJob[] = [
   { jobKey: "vuln_service_refresh", tickMs: VULN_SERVICE_TICK_MS, run: runVulnServiceRefresherTick },
   { jobKey: "misp_refresh", tickMs: MISP_TICK_MS, run: runMispRefresherTick },
   { jobKey: "vulncheck_refresh", tickMs: VULNCHECK_TICK_MS, run: runVulncheckRefresherTick },
+  { jobKey: "binary_integrity_refresh", tickMs: BINARY_INTEGRITY_TICK_MS, run: runBinaryIntegrityRefresherTick },
   { jobKey: "snapshot_scheduler", tickMs: SNAPSHOT_SCHEDULER_TICK_MS, run: runSnapshotSchedulerTick },
   { jobKey: "report_scheduler", tickMs: REPORT_SCHEDULER_TICK_MS, run: runReportSchedulerTick },
   { jobKey: "compliance_scheduler", tickMs: COMPLIANCE_SCHEDULER_TICK_MS, run: runComplianceSchedulerTick },

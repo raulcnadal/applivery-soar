@@ -120,6 +120,12 @@ export const deviceAppReportPayloadSchema = z.object({
         // Purely informational (App detail modal), never used for
         // identifier/matching logic. Absent on older agent builds.
         installLocation: z.string().optional(),
+        // SHA256 (64 lowercase hex chars) of the app's main executable —
+        // only present when the agent could confidently resolve one (see
+        // installedApps.service.ts's InstalledAppsEntry doc comment on the
+        // per-platform limitations). Absent on older agent builds and on
+        // any app the agent couldn't confidently resolve an exe path for.
+        sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
       }),
     )
     .default([]),

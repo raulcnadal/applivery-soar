@@ -31,7 +31,8 @@ function encryptThreatIntelConfig(type: string, config: Record<string, any>): Re
   return out;
 }
 
-function decryptThreatIntelConfig(type: string, config: Record<string, any>): Record<string, any> {
+/** Exported for reuse by catalogs/binaryIntegrityService.ts, which looks up the workspace's existing VirusTotal provider row directly rather than duplicating a decrypt-with-fail-open helper. */
+export function decryptThreatIntelConfig(type: string, config: Record<string, any>): Record<string, any> {
   const out = { ...(config ?? {}) };
   for (const field of THREAT_INTEL_SECRET_FIELDS[type] ?? []) {
     if (out[field]) {
@@ -154,7 +155,8 @@ export function detectIocType(value: string): string {
 
 // ── Per-provider lookups (main.py:14054-14159) ──
 
-async function lookupVirustotal(cfg: Record<string, any>, iocType: string, iocValue: string) {
+/** Exported for reuse by catalogs/binaryIntegrityService.ts — the same file-hash lookup, driven by an app binary's SHA256 instead of a Case IOC. */
+export async function lookupVirustotal(cfg: Record<string, any>, iocType: string, iocValue: string) {
   const apiKey = cfg.apiKey;
   if (!apiKey) throw new Error("VirusTotal integration is missing an API key");
   const headers = { "x-apikey": apiKey };

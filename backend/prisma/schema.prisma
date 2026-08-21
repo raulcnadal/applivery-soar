@@ -1051,6 +1051,35 @@ model VulncheckCache {
   @@unique([workspaceSlug, key])
 }
 
+// Binary integrity (software identity/malware verdict) — a deliberately
+// separate concern from the CVE vulnerability aggregate (VulnServiceCache/
+// MispVulnCache/VulncheckCache/vulnSources.ts): a SHA256 file-hash
+// reputation check, not a CPE/version CVE match. Keyed by (workspaceSlug,
+// sha256) alone, NOT the `${identifier}|${version}|${platform}` scheme the
+// vuln sources share — the same binary hash can be shared by many
+// identifier/version combos across the fleet (or, if tampered, a device's
+// copy can differ from every other device's "same" app — which is exactly
+// the signal this exists to catch), so hash is the only meaningful key.
+// Reuses the workspace's existing VirusTotal ThreatIntelProvider config —
+// no separate connector/API-key UI for this (see binaryIntegrityService.ts).
+model BinaryIntegrityConfig {
+  workspaceSlug        String    @id
+  refreshIntervalHours Int       @default(24)
+  lastRefreshAt        DateTime?
+  lastRefreshError     String?
+  lastRefreshStats     Json?
+}
+
+model BinaryHashCache {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  sha256        String
+  result        Json
+  cachedAt      DateTime @default(now())
+
+  @@unique([workspaceSlug, sha256])
+}
+
 model GlobalCatalog {
   source          String   @id
   payload         Json

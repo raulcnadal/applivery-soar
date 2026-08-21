@@ -44,6 +44,15 @@ export interface InstalledAppsEntry {
     // apps_windows.go's InstallLocation doc comment). Never used for
     // identifier/matching logic — only surfaced in the App detail modal.
     installLocation?: string;
+    // SHA256 of the app's main executable (Windows .exe / macOS Mach-O
+    // binary inside Contents/MacOS/), self-reported-only — only populated
+    // when the agent could confidently resolve a real executable path (see
+    // apps_windows.go/apps_macos.go's own doc comments on that limitation).
+    // Feeds binaryIntegrityService.ts's VirusTotal file-hash lookup — a
+    // malware/tamper signal, deliberately kept separate from the CVE
+    // vulnerability aggregate (vulnService.ts/vulnSources.ts) since it's a
+    // different kind of finding.
+    sha256?: string | null;
   }>;
   platform: string;
   fetchedAt: string;

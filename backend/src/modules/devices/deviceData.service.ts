@@ -206,6 +206,9 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
       // installedApps.service.ts's InstalledAppsEntry.apps[].installLocation
       // doc comment.
       ...(a.installLocation ? { installLocation: a.installLocation } : {}),
+      // Lowercased for a consistent cache key regardless of the agent's own
+      // hex casing — see installedApps.service.ts's .sha256 doc comment.
+      ...(a.sha256 ? { sha256: a.sha256.toLowerCase() } : {}),
     }))
     .sort((a, b) => a.identifier.localeCompare(b.identifier));
 
