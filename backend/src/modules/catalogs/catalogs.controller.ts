@@ -13,6 +13,7 @@ import { getVulnServiceConfig, refreshVulnServiceNow, testVulnServiceConfig, upd
 import { getMispConfig, refreshMispNow, testMispConfig, updateMispConfig } from "./mispService";
 import { getVulncheckConfig, refreshVulncheckNow, testVulncheckConfig, updateVulncheckConfig } from "./vulncheckService";
 import { getBinaryIntegrityConfig, refreshBinaryIntegrityNow, updateBinaryIntegrityConfig } from "./binaryIntegrityService";
+import { getOsvAndroidConfig, refreshOsvAndroidNow, testOsvAndroidConnection, updateOsvAndroidConfig } from "./osvAndroidService";
 import { z } from "zod";
 
 /**
@@ -252,4 +253,37 @@ catalogsRouter.post(
   "/api/binary-integrity/refresh",
   ...manageCompliance,
   asyncHandler(async (req, res) => res.json(await refreshBinaryIntegrityNow(workspaceOf(req)))),
+);
+
+// ── Android Security Bulletin (OSV.dev) — fourth CVE source merged into the
+// same Vulnerability aggregate via vulnSources.ts's plugin registry. Free,
+// public, no API key; refresh needs no Automation Credential either, since
+// it's a bulk reference-data fetch, not a per-device Applivery query. ──
+const osvAndroidConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  refreshIntervalHours: z.number().default(24),
+});
+
+catalogsRouter.get(
+  "/api/osv-android/config",
+  ...readCompliance,
+  asyncHandler(async (req, res) => res.json(await getOsvAndroidConfig(workspaceOf(req)))),
+);
+catalogsRouter.put(
+  "/api/osv-android/config",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const payload = osvAndroidConfigSchema.parse(req.body);
+    res.json(await updateOsvAndroidConfig(workspaceOf(req), payload, req.dashboardUser?.sub ?? "unknown"));
+  }),
+);
+catalogsRouter.post(
+  "/api/osv-android/test",
+  ...manageCompliance,
+  asyncHandler(async (_req, res) => res.json(await testOsvAndroidConnection())),
+);
+catalogsRouter.post(
+  "/api/osv-android/refresh",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => res.json(await refreshOsvAndroidNow(workspaceOf(req)))),
 );

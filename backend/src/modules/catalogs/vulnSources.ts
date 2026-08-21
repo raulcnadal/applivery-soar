@@ -7,12 +7,13 @@
  * (computeVulnServiceStatus / computeReportedAppsVulnSummaries /
  * computeDeviceAppsDetail) loop over ALL registered plugins uniformly
  * instead of each source needing its own hand-copied plumbing bolted onto
- * those three functions. Adding a 4th/5th source (Android via OSV.dev,
- * Apple via SOFA) means writing one plugin object here, not touching
- * vulnService.ts's read functions again.
+ * those three functions. Adding a 4th source (Android via OSV.dev, now
+ * registered below) or a 5th (Apple via SOFA) means writing one plugin
+ * object here, not touching vulnService.ts's read functions again.
  *
- * Every source — the Worker, MISP, VulnCheck, and any future one — writes
- * its per-combo cache rows in the SAME normalized shape:
+ * Every source — the Worker, MISP, VulnCheck, OSV.dev Android, and any
+ * future one — writes its per-combo cache rows in the SAME normalized
+ * shape:
  *   { mapped: boolean, cve_list: Array<{ id, severity, epss_score, is_kev,
  *     score, fixed_in, source, ... source-specific extra fields }> }
  * keyed by the SAME `${identifier}|${version}|${platform}` scheme (see
@@ -49,7 +50,8 @@ async function loadPlugins(): Promise<VulnSourcePlugin[]> {
   if (plugins) return plugins;
   const { mispVulnSourcePlugin } = await import("./mispService");
   const { vulncheckVulnSourcePlugin } = await import("./vulncheckService");
-  plugins = [mispVulnSourcePlugin, vulncheckVulnSourcePlugin];
+  const { osvAndroidVulnSourcePlugin } = await import("./osvAndroidService");
+  plugins = [mispVulnSourcePlugin, vulncheckVulnSourcePlugin, osvAndroidVulnSourcePlugin];
   return plugins;
 }
 

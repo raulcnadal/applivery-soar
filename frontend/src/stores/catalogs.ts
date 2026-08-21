@@ -71,6 +71,14 @@ export interface BinaryIntegrityConfig {
   lastRefreshError: string | null;
   lastRefreshStats: Record<string, any> | null;
 }
+export interface OsvAndroidConfig {
+  workspaceSlug: string;
+  enabled: boolean;
+  refreshIntervalHours: number;
+  lastRefreshAt: string | null;
+  lastRefreshError: string | null;
+  lastRefreshStats: Record<string, any> | null;
+}
 export interface AppleAppUpdatesStatus {
   targetDeviceCount: number;
   syncedCount: number;
@@ -94,6 +102,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   const mispConfig = ref<MispConfig | null>(null);
   const vulncheckConfig = ref<VulncheckConfig | null>(null);
   const binaryIntegrityConfig = ref<BinaryIntegrityConfig | null>(null);
+  const osvAndroidConfig = ref<OsvAndroidConfig | null>(null);
   const appleAppUpdatesStatus = ref<AppleAppUpdatesStatus | null>(null);
 
   const isLoading = ref(false);
@@ -244,6 +253,29 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     }
   }
 
+  async function fetchOsvAndroidConfig() {
+    const { api } = await import("../api/http");
+    osvAndroidConfig.value = (await api.get("/osv-android/config")).data;
+  }
+  async function saveOsvAndroidConfig(payload: { enabled: boolean; refreshIntervalHours: number }) {
+    const { api } = await import("../api/http");
+    osvAndroidConfig.value = (await api.put("/osv-android/config", payload)).data;
+  }
+  async function testOsvAndroidConfig() {
+    const { api } = await import("../api/http");
+    return (await api.post("/osv-android/test")).data as { status: string; latencyMs: number; sizeBytes: number | null };
+  }
+  async function refreshOsvAndroidNow() {
+    isRefreshing.value = true;
+    try {
+      const { api } = await import("../api/http");
+      await api.post("/osv-android/refresh");
+      await fetchOsvAndroidConfig();
+    } finally {
+      isRefreshing.value = false;
+    }
+  }
+
   async function fetchAppleAppUpdatesStatus() {
     const { api } = await import("../api/http");
     appleAppUpdatesStatus.value = (await api.get("/apple-app-updates/status")).data;
@@ -259,7 +291,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   }
 
   return {
-    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, vulncheckConfig, binaryIntegrityConfig, appleAppUpdatesStatus,
+    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, vulncheckConfig, binaryIntegrityConfig, osvAndroidConfig, appleAppUpdatesStatus,
     isLoading, isRefreshing, error,
     fetchOsUpdateCatalog, refreshOsUpdateCatalog,
     fetchVulnCatalog, refreshVulnCatalog,
@@ -269,6 +301,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     fetchMispConfig, saveMispConfig, testMispConfig, refreshMispNow,
     fetchVulncheckConfig, saveVulncheckConfig, testVulncheckConfig, refreshVulncheckNow,
     fetchBinaryIntegrityConfig, saveBinaryIntegrityConfig, refreshBinaryIntegrityNow,
+    fetchOsvAndroidConfig, saveOsvAndroidConfig, testOsvAndroidConfig, refreshOsvAndroidNow,
     fetchAppleAppUpdatesStatus, refreshAppleAppUpdates,
   };
 });

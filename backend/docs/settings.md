@@ -231,6 +231,21 @@ The SHA256 itself is computed on-device by the Windows and macOS agents (self-re
 
 **Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or save.
 
+## Android Security Bulletin (OSV.dev)
+
+**Opt-in, per-workspace — but no credential at all.** Google's own Android Security Bulletin (ASB), in structured, machine-readable form via [OSV.dev](https://osv.dev)'s public "Android" ecosystem mirror — confirmed live to genuinely be the ASB (not a lookalike): each entry carries the real CVE ID, the affected AOSP component, Google's own severity rating, and the exact Security Patch Level date a device needs to have applied to be patched. Free and public — no API key, no self-hosting, no rate limit to manage. Fourth CVE source (after the Vulnerability Service, MISP, and VulnCheck), merged into the same risk score and CVE list those populate — no separate "Android Security Bulletin" section anywhere in the product.
+
+Unlike the other three CVE connectors, this one makes no per-device or per-app query at all: the whole bulletin (~3,400 entries) is fetched as one bulk ZIP dump per refresh (`osv-vulnerabilities.storage.googleapis.com/Android/all.zip` — OSV's own documented bulk-consumption mechanism for full-ecosystem reads) and re-indexed by Android major version, so refreshing needs no Automation Credential and touches Applivery's own API zero times.
+
+**Known limitation, read before enabling**: this app does not currently capture a device's exact Security Patch Level — only its reported Android major version (e.g. "15"). Every CVE ever disclosed against that major version is surfaced, regardless of whether this specific device has since installed the patch that fixes it. This is a deliberate "assume unpatched unless proven otherwise" bias, but it does mean results here are visibly noisier than MISP/VulnCheck's per-exact-version CPE matches — read a hit as "this Android version has had this CVE disclosed at some point," not "this exact device is still exposed today."
+
+- **Enabled** toggle.
+- **Refresh interval (hours)** — default 24. The bulletin itself is published monthly, so there's little value refreshing more often than daily.
+- **Test connection** and **Save**. Test issues a `HEAD` request against the bulk-dump URL — there's no credential to validate, just confirms this server can actually reach it (useful for firewalled/on-prem deployments).
+- Once enabled, a status panel shows last-refreshed time, a **Refresh now** button, and refresh stats (entries parsed, distinct Android major versions indexed, total CVEs indexed, stale cache entries evicted). The whole bulletin is refreshed as one unit (not per-combo like the other connectors), so a fresh refresh always re-fetches and re-parses the full dump; **Refresh now** always does this regardless of the cache TTL.
+
+**Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test.
+
 ## OS Lifecycle
 
 **Status/monitoring only.** Covers two independent data sources, each with its own Refresh now:
@@ -301,10 +316,10 @@ Quick reference for which Settings section unblocks which feature elsewhere:
 
 | Feature | Depends on |
 |---|---|
-| [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service, MISP, and/or VulnCheck (conditions read the same merged status) |
+| [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service, MISP, VulnCheck, and/or Android Security Bulletin (conditions read the same merged status) |
 | [Compliance](compliance.md) Self-Reported Attribute conditions | Applivery SOAR Agent + a deployed self-report script |
 | [Compliance](compliance.md) App List conditions | App List inventory sync (Applivery SOAR Agent script, or the paced background refresher) |
-| [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service, MISP, and/or VulnCheck (results merge into the same badge/section) |
+| [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service, MISP, VulnCheck, and/or Android Security Bulletin (results merge into the same badge/section) |
 | [Devices](devices.md) app integrity badge | Threat Intel VirusTotal provider enabled + Binary Integrity refresh interval saved + agent-reported `sha256` on the app |
 | [Devices](devices.md) Firewall Rule Sets section | A [Firewall Policy Library](workflows.md#firewall-policy-library) rule set actually applied via a workflow |
 | [Cases](cases.md) ticketing chips/sync | Integrations (Jira/ServiceNow) |

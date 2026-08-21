@@ -1080,6 +1080,43 @@ model BinaryHashCache {
   @@unique([workspaceSlug, sha256])
 }
 
+// OSV.dev's "Android" ecosystem — a free/public, no-auth-required mirror of
+// Google's own Android Security Bulletin (osvAndroidService.ts). Unlike
+// MISP/VulnCheck, this isn't a per-combo API connector: the whole dataset
+// (~3,400 entries) is fetched as one bulk ZIP dump per refresh
+// (osv-vulnerabilities.storage.googleapis.com/Android/all.zip, OSV's own
+// documented bulk-consumption mechanism) and re-keyed by Android major
+// version — so OsvAndroidCache has one row per major version seen in the
+// dataset (e.g. "android|15"), not one row per device/app combo actually
+// present in the fleet. No refresh-time device enumeration, no Automation
+// Credential needed — same "reads/writes reference data, not fleet data"
+// shape as BinaryIntegrityConfig, but for CVEs instead of file hashes. Known
+// limitation (see docs/settings.md#android-security-bulletin-osvdev):
+// matching is by Android major version only — this app doesn't currently
+// capture a device's exact Security Patch Level (SPL) date, so a device on
+// an old SPL and one on the latest SPL of the same major version report
+// identically; results should be read as "CVEs disclosed for this Android
+// version," not "CVEs this specific device is still exposed to."
+model OsvAndroidConfig {
+  workspaceSlug        String    @id
+  enabled              Boolean   @default(false)
+  refreshIntervalHours Int       @default(24)
+  lastRefreshAt        DateTime?
+  lastRefreshError     String?
+  lastRefreshStats     Json?
+  updatedAt            DateTime  @updatedAt
+}
+
+model OsvAndroidCache {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  key           String
+  result        Json
+  cachedAt      DateTime @default(now())
+
+  @@unique([workspaceSlug, key])
+}
+
 model GlobalCatalog {
   source          String   @id
   payload         Json
