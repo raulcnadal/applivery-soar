@@ -79,6 +79,14 @@ export interface OsvAndroidConfig {
   lastRefreshError: string | null;
   lastRefreshStats: Record<string, any> | null;
 }
+export interface SofaConfig {
+  workspaceSlug: string;
+  enabled: boolean;
+  refreshIntervalHours: number;
+  lastRefreshAt: string | null;
+  lastRefreshError: string | null;
+  lastRefreshStats: Record<string, any> | null;
+}
 export interface AppleAppUpdatesStatus {
   targetDeviceCount: number;
   syncedCount: number;
@@ -103,6 +111,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   const vulncheckConfig = ref<VulncheckConfig | null>(null);
   const binaryIntegrityConfig = ref<BinaryIntegrityConfig | null>(null);
   const osvAndroidConfig = ref<OsvAndroidConfig | null>(null);
+  const sofaConfig = ref<SofaConfig | null>(null);
   const appleAppUpdatesStatus = ref<AppleAppUpdatesStatus | null>(null);
 
   const isLoading = ref(false);
@@ -276,6 +285,29 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     }
   }
 
+  async function fetchSofaConfig() {
+    const { api } = await import("../api/http");
+    sofaConfig.value = (await api.get("/sofa/config")).data;
+  }
+  async function saveSofaConfig(payload: { enabled: boolean; refreshIntervalHours: number }) {
+    const { api } = await import("../api/http");
+    sofaConfig.value = (await api.put("/sofa/config", payload)).data;
+  }
+  async function testSofaConfig() {
+    const { api } = await import("../api/http");
+    return (await api.post("/sofa/test")).data as { status: string; latencyMs: number };
+  }
+  async function refreshSofaNow() {
+    isRefreshing.value = true;
+    try {
+      const { api } = await import("../api/http");
+      await api.post("/sofa/refresh");
+      await fetchSofaConfig();
+    } finally {
+      isRefreshing.value = false;
+    }
+  }
+
   async function fetchAppleAppUpdatesStatus() {
     const { api } = await import("../api/http");
     appleAppUpdatesStatus.value = (await api.get("/apple-app-updates/status")).data;
@@ -291,7 +323,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
   }
 
   return {
-    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, vulncheckConfig, binaryIntegrityConfig, osvAndroidConfig, appleAppUpdatesStatus,
+    osUpdateCatalog, vulnCatalog, osLifecycleCatalog, gdmfCatalog, vulnServiceConfig, mispConfig, vulncheckConfig, binaryIntegrityConfig, osvAndroidConfig, sofaConfig, appleAppUpdatesStatus,
     isLoading, isRefreshing, error,
     fetchOsUpdateCatalog, refreshOsUpdateCatalog,
     fetchVulnCatalog, refreshVulnCatalog,
@@ -302,6 +334,7 @@ export const useCatalogsStore = defineStore("catalogs", () => {
     fetchVulncheckConfig, saveVulncheckConfig, testVulncheckConfig, refreshVulncheckNow,
     fetchBinaryIntegrityConfig, saveBinaryIntegrityConfig, refreshBinaryIntegrityNow,
     fetchOsvAndroidConfig, saveOsvAndroidConfig, testOsvAndroidConfig, refreshOsvAndroidNow,
+    fetchSofaConfig, saveSofaConfig, testSofaConfig, refreshSofaNow,
     fetchAppleAppUpdatesStatus, refreshAppleAppUpdates,
   };
 });

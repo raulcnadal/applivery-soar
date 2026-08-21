@@ -29,6 +29,7 @@ export const SYSTEM_HEALTH_JOBS: SystemHealthJobMeta[] = [
   { key: "vulncheck_refresh", label: "VulnCheck threat intel refresh", intervalSeconds: 3600 },
   { key: "binary_integrity_refresh", label: "Binary integrity (VirusTotal) refresh", intervalSeconds: 3600 },
   { key: "osv_android_refresh", label: "Android Security Bulletin (OSV.dev) refresh", intervalSeconds: 3600 },
+  { key: "sofa_refresh", label: "Apple Security Releases (SOFA) refresh", intervalSeconds: 3600 },
   { key: "catalog:os-lifecycle", label: "OS lifecycle refresh (endoflife.date)", intervalSeconds: 604800 },
   { key: "catalog:gdmf", label: "Apple Software Lookup Service refresh (GDMF)", intervalSeconds: 86400 },
   { key: "catalog:mitre", label: "MITRE ATT&CK catalog refresh", intervalSeconds: 86400 },

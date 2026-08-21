@@ -246,6 +246,21 @@ Unlike the other three CVE connectors, this one makes no per-device or per-app q
 
 **Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test.
 
+## Apple Security Releases (SOFA)
+
+**Opt-in, per-workspace — no credential.** Apple's own per-release security-content disclosures for macOS and iOS/iPadOS, republished in structured JSON by the macadmins community's [SOFA](https://sofa.macadmins.io) feed (`v2/macos_data_feed.json` and `v2/ios_data_feed.json`). Free, public, no API key. Fifth CVE source (after the Vulnerability Service, MISP, VulnCheck, and Android Security Bulletin), merged into the same risk score and CVE list those populate — no separate section.
+
+Unlike Android Security Bulletin's major-version-only matching, this connector does **precise point-release matching**: Applivery reports a bare `osVersion` string for Apple devices with no separate build field, and that's exactly the shape SOFA's own release history uses (`"26.6.1"`, `"18.5"`, etc.), so a device's exact reported version is looked up directly against SOFA's per-track release history. For a device sitting on release R, the cached result is the union of every CVE fixed by a chronologically *later* release in the same OS track — i.e. CVEs that specific device genuinely hasn't received a fix for, not a coarse bucket. A device whose exact point release isn't (yet) in SOFA's own history falls back to the nearest older indexed version on the same platform, so a device one point release ahead of the feed's own freshness still gets a materially useful (if very slightly conservative) answer rather than nothing.
+
+Also flags actively-exploited CVEs (SOFA's own `InKEV`/`ActivelyExploited` per-CVE signals, where present) as `is_kev`, and carries a real `Severity` rating for the subset of CVEs SOFA enriches with one — most CVE entries in the feed are bare placeholders with no severity, so expect `severity: null` on a meaningful share of results, same as MISP's raw CPE matches.
+
+- **Enabled** toggle.
+- **Refresh interval (hours)** — default 24. SOFA itself updates roughly daily; an Apple out-of-band emergency patch shows up on the next scheduled refresh.
+- **Test connection** and **Save**. Test issues a `HEAD` request against both feed URLs — no credential to validate, just confirms this server can reach them (useful for firewalled/on-prem deployments).
+- Once enabled, a status panel shows last-refreshed time, a **Refresh now** button, and refresh stats (OS tracks processed, exact point-release versions indexed, total CVEs indexed, stale cache entries evicted). Both feeds are refreshed as one unit per tick; **Refresh now** always re-fetches and re-parses both regardless of the cache TTL.
+
+**Permission gate**: requires `canEditIntegrationSecrets` (see [Roles](#roles)) to edit or test.
+
 ## OS Lifecycle
 
 **Status/monitoring only.** Covers two independent data sources, each with its own Refresh now:
@@ -316,10 +331,10 @@ Quick reference for which Settings section unblocks which feature elsewhere:
 
 | Feature | Depends on |
 |---|---|
-| [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service, MISP, VulnCheck, and/or Android Security Bulletin (conditions read the same merged status) |
+| [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service, MISP, VulnCheck, Android Security Bulletin, and/or Apple Security Releases (conditions read the same merged status) |
 | [Compliance](compliance.md) Self-Reported Attribute conditions | Applivery SOAR Agent + a deployed self-report script |
 | [Compliance](compliance.md) App List conditions | App List inventory sync (Applivery SOAR Agent script, or the paced background refresher) |
-| [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service, MISP, VulnCheck, and/or Android Security Bulletin (results merge into the same badge/section) |
+| [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service, MISP, VulnCheck, Android Security Bulletin, and/or Apple Security Releases (results merge into the same badge/section) |
 | [Devices](devices.md) app integrity badge | Threat Intel VirusTotal provider enabled + Binary Integrity refresh interval saved + agent-reported `sha256` on the app |
 | [Devices](devices.md) Firewall Rule Sets section | A [Firewall Policy Library](workflows.md#firewall-policy-library) rule set actually applied via a workflow |
 | [Cases](cases.md) ticketing chips/sync | Integrations (Jira/ServiceNow) |

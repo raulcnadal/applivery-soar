@@ -14,6 +14,7 @@ import { getMispConfig, refreshMispNow, testMispConfig, updateMispConfig } from 
 import { getVulncheckConfig, refreshVulncheckNow, testVulncheckConfig, updateVulncheckConfig } from "./vulncheckService";
 import { getBinaryIntegrityConfig, refreshBinaryIntegrityNow, updateBinaryIntegrityConfig } from "./binaryIntegrityService";
 import { getOsvAndroidConfig, refreshOsvAndroidNow, testOsvAndroidConnection, updateOsvAndroidConfig } from "./osvAndroidService";
+import { getSofaConfig, refreshSofaNow, testSofaConnection, updateSofaConfig } from "./sofaService";
 import { z } from "zod";
 
 /**
@@ -286,4 +287,36 @@ catalogsRouter.post(
   "/api/osv-android/refresh",
   ...manageCompliance,
   asyncHandler(async (req, res) => res.json(await refreshOsvAndroidNow(workspaceOf(req)))),
+);
+
+// ── Apple Security Releases (SOFA) — fifth CVE source merged into the same
+// Vulnerability aggregate via vulnSources.ts's plugin registry. Free,
+// public, no API key; refresh needs no Automation Credential either. ──
+const sofaConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  refreshIntervalHours: z.number().default(24),
+});
+
+catalogsRouter.get(
+  "/api/sofa/config",
+  ...readCompliance,
+  asyncHandler(async (req, res) => res.json(await getSofaConfig(workspaceOf(req)))),
+);
+catalogsRouter.put(
+  "/api/sofa/config",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => {
+    const payload = sofaConfigSchema.parse(req.body);
+    res.json(await updateSofaConfig(workspaceOf(req), payload, req.dashboardUser?.sub ?? "unknown"));
+  }),
+);
+catalogsRouter.post(
+  "/api/sofa/test",
+  ...manageCompliance,
+  asyncHandler(async (_req, res) => res.json(await testSofaConnection())),
+);
+catalogsRouter.post(
+  "/api/sofa/refresh",
+  ...manageCompliance,
+  asyncHandler(async (req, res) => res.json(await refreshSofaNow(workspaceOf(req)))),
 );

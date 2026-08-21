@@ -10,6 +10,7 @@ import { runMispRefresherTick, MISP_TICK_MS } from "../modules/catalogs/mispServ
 import { runVulncheckRefresherTick, VULNCHECK_TICK_MS } from "../modules/catalogs/vulncheckService";
 import { runBinaryIntegrityRefresherTick, BINARY_INTEGRITY_TICK_MS } from "../modules/catalogs/binaryIntegrityService";
 import { runOsvAndroidRefresherTick, OSV_ANDROID_TICK_MS } from "../modules/catalogs/osvAndroidService";
+import { runSofaRefresherTick, SOFA_TICK_MS } from "../modules/catalogs/sofaService";
 import { resumeDueWorkflowSteps } from "../modules/workflows/durableEngine";
 import { runScriptLogReconcilerTick, SCRIPT_RUN_RECONCILE_TICK_MS } from "../modules/workflows/scriptLogReconciler";
 import { CASE_SLA_MONITOR_TICK_MS, runCaseSlaMonitorTick, runTicketStatusSyncTick, TICKET_SYNC_TICK_MS } from "../modules/cases/caseJobs";
@@ -77,11 +78,13 @@ import { releaseJobSlot, tryAcquireJobSlot } from "./jobReentrancyGuard";
  * binary-integrity connectors merged into the Vulnerability Service's own
  * aggregate — misp_refresh (mispService.ts), vulncheck_refresh
  * (vulncheckService.ts), binary_integrity_refresh
- * (binaryIntegrityService.ts) — plus a 24th, osv_android_refresh
- * (osvAndroidService.ts): Google's own Android Security Bulletin via
- * OSV.dev's public "Android" ecosystem mirror, the only one of the four
- * that needs no Automation Credential AND no API key (a bulk public
- * reference-data fetch, not a per-device/per-app query).
+ * (binaryIntegrityService.ts) — plus a 24th and 25th, osv_android_refresh
+ * (osvAndroidService.ts) and sofa_refresh (sofaService.ts): Google's
+ * Android Security Bulletin via OSV.dev's public "Android" ecosystem
+ * mirror, and Apple's own security-release history via the macadmins
+ * community's SOFA feed. Neither needs an Automation Credential or an API
+ * key — both are bulk public reference-data fetches, not per-device/
+ * per-app queries.
  *
  * Post-migration scale review: with REDIS_URL configured, every job below
  * instead runs as a BullMQ repeatable job (queue/backgroundQueue.ts) so
@@ -127,6 +130,7 @@ export const JOBS: readonly CatalogJob[] = [
   { jobKey: "vulncheck_refresh", tickMs: VULNCHECK_TICK_MS, run: runVulncheckRefresherTick },
   { jobKey: "binary_integrity_refresh", tickMs: BINARY_INTEGRITY_TICK_MS, run: runBinaryIntegrityRefresherTick },
   { jobKey: "osv_android_refresh", tickMs: OSV_ANDROID_TICK_MS, run: runOsvAndroidRefresherTick },
+  { jobKey: "sofa_refresh", tickMs: SOFA_TICK_MS, run: runSofaRefresherTick },
   { jobKey: "snapshot_scheduler", tickMs: SNAPSHOT_SCHEDULER_TICK_MS, run: runSnapshotSchedulerTick },
   { jobKey: "report_scheduler", tickMs: REPORT_SCHEDULER_TICK_MS, run: runReportSchedulerTick },
   { jobKey: "compliance_scheduler", tickMs: COMPLIANCE_SCHEDULER_TICK_MS, run: runComplianceSchedulerTick },

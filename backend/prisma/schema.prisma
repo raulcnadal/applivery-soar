@@ -1117,6 +1117,38 @@ model OsvAndroidCache {
   @@unique([workspaceSlug, key])
 }
 
+// Apple's own security-release history via the SOFA feed
+// (sofa.macadmins.io — sofaService.ts) — fifth CVE source, and unlike
+// OsvAndroidCache's major-version-only matching, this one does precise
+// point-release comparison: a device's exact reported ProductVersion
+// (device.osVersion, e.g. "26.6.1") is looked up directly against SOFA's
+// own release history for that OS track, and the cached result is the
+// union of every CVE fixed by a chronologically LATER release in that same
+// track — i.e. "CVEs this exact device hasn't received a fix for yet," not
+// a coarse major-version bucket. One row per exact ProductVersion SOFA has
+// ever published for macOS or iOS/iPadOS (a few dozen per platform, not
+// per-device), same "bulk reference data, no Automation Credential needed"
+// shape as OsvAndroidCache.
+model SofaConfig {
+  workspaceSlug        String    @id
+  enabled              Boolean   @default(false)
+  refreshIntervalHours Int       @default(24)
+  lastRefreshAt        DateTime?
+  lastRefreshError     String?
+  lastRefreshStats     Json?
+  updatedAt            DateTime  @updatedAt
+}
+
+model SofaCache {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  key           String
+  result        Json
+  cachedAt      DateTime @default(now())
+
+  @@unique([workspaceSlug, key])
+}
+
 model GlobalCatalog {
   source          String   @id
   payload         Json

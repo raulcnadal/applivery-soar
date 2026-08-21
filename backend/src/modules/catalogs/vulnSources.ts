@@ -51,7 +51,8 @@ async function loadPlugins(): Promise<VulnSourcePlugin[]> {
   const { mispVulnSourcePlugin } = await import("./mispService");
   const { vulncheckVulnSourcePlugin } = await import("./vulncheckService");
   const { osvAndroidVulnSourcePlugin } = await import("./osvAndroidService");
-  plugins = [mispVulnSourcePlugin, vulncheckVulnSourcePlugin, osvAndroidVulnSourcePlugin];
+  const { sofaVulnSourcePlugin } = await import("./sofaService");
+  plugins = [mispVulnSourcePlugin, vulncheckVulnSourcePlugin, osvAndroidVulnSourcePlugin, sofaVulnSourcePlugin];
   return plugins;
 }
 
