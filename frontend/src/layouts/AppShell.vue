@@ -27,8 +27,10 @@ const { isMobile } = useBreakpoint();
 const isMobileMenuOpen = ref(false);
 
 // Views the Segments panel is reachable from (App.jsx:4462's currentView
-// check) — Overview/Devices/Compliance/Cases only.
-const SEGMENT_PANEL_VIEWS = ["overview", "devices", "compliance", "cases"];
+// check) — Overview/Devices/Compliance/Cases originally; Playground added
+// so the globe/map can also be scoped to a segment (previously the only
+// nav destination with device data and no way to filter it by segment).
+const SEGMENT_PANEL_VIEWS = ["overview", "devices", "compliance", "cases", "playground"];
 // Lazy-loaded — Settings pulls in ~20 sub-panels' worth of code that most
 // sessions never open; keeping it out of the eagerly-loaded shell chunk
 // matches how every other view is already route-level code-split.

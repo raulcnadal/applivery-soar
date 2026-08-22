@@ -13,6 +13,9 @@ import PlaygroundGlobe from "../components/playground/PlaygroundGlobe.vue";
 import PlaygroundMapView from "../components/playground/PlaygroundMapView.vue";
 import DeviceDetailDrawer from "../components/devices/DeviceDetailDrawer.vue";
 import { fetchWidgetData } from "../lib/widgetData";
+import { useSegmentsStore } from "../stores/segments";
+
+const segmentsStore = useSegmentsStore();
 
 // Camera altitude (globe radii) below which the view auto-switches from the
 // 3D globe to the 2D map — App.jsx:1833's GLOBE_TO_MAP_ALTITUDE_THRESHOLD.
@@ -53,7 +56,15 @@ async function loadDevices() {
   isLoadingGlobe.value = true;
   error.value = null;
   try {
-    const data = await fetchWidgetData("mdm_devices");
+    // Segment scoping — same filters.segmentId shape every other widget
+    // source already sends (see OverviewView.vue); mdm_devices forwards it
+    // straight through to Applivery's own /mdm/devices/ endpoint, which
+    // resolves the segment's descendants server-side. Previously omitted
+    // entirely, since Playground had no Segments panel to read a selection
+    // from at all until it was added alongside Overview/Devices/Compliance/
+    // Cases (AppShell.vue's SEGMENT_PANEL_VIEWS).
+    const segmentId = String(segmentsStore.selectedSegment.id) !== "0" ? segmentsStore.selectedSegment.id : undefined;
+    const data = await fetchWidgetData("mdm_devices", { segmentId });
     globeDevices.value = data.items ?? [];
   } catch (err: any) {
     error.value = err?.response?.data?.detail || "Failed to load devices.";
@@ -119,6 +130,13 @@ function openDevice(item: any) {
 onMounted(async () => {
   await Promise.all([loadDevices(), loadCompliancePolicies()]);
 });
+
+// Re-fetch the globe/map's device set when the Segments panel selection
+// changes — same pattern as OverviewView.vue's own widget-reload watcher.
+watch(
+  () => segmentsStore.selectedSegment,
+  () => loadDevices(),
+);
 </script>
 
 <template>
@@ -130,6 +148,13 @@ onMounted(async () => {
             <component :is="ICONS.Global" :size="15" weight="Linear" class="text-blue-400" />
             <span class="text-base font-semibold text-white tracking-wide">Playground</span>
             <HelpIcon slug="playground" title="Playground admin guide" class="hover:bg-white/10" />
+            <span
+              v-if="String(segmentsStore.selectedSegment.id) !== '0'"
+              class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style="background-color: rgba(56, 189, 248, 0.15); color: #38bdf8"
+            >
+              <component :is="ICONS.Layers" :size="10" weight="Linear" /> {{ segmentsStore.selectedSegment.name }}
+            </span>
           </div>
           <p class="text-xs text-white/40 mt-0.5" style="font-family: 'Outfit', sans-serif; font-weight: 300">Live 3D visualization — {{ globeDevices.length }} devices tracked</p>
         </div>

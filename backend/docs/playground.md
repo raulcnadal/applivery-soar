@@ -4,9 +4,13 @@
 
 Reach it via the **Devices / Playground** tab switcher at the top of the [Devices](devices.md) header, and switch back the same way from inside Playground.
 
+## Segments panel
+
+The same sliding **Segments** panel available from Overview, Devices, Compliance, and Cases (hover the far-left screen edge, or tap the edge tab on mobile) is also reachable from Playground — pick a segment to scope the globe/map to only devices in it and its sub-segments, same "Global" reset and search/tree behavior as everywhere else it appears. A small badge next to the Playground title shows which segment is currently active.
+
 ## Header bar
 
-- Device count and a live breakdown: compliant / non-compliant counts, plus per-platform counts (Apple, Android, Windows).
+- Device count and a live breakdown: compliant / non-compliant counts, plus per-platform counts (Apple, Android, Windows) — all scoped to the active segment, if one is selected.
 - **Policy filter** — pick a [Compliance Policy](compliance.md) to show only the devices currently violating it (the globe tints purple while this filter is active).
 - **Non-Compliant Only** toggle (tints red while active).
 - **Sync Locations** — refreshes GPS data for the fleet (same action as the Devices drawer's Location tab).

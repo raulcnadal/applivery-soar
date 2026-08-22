@@ -120,8 +120,49 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
   const slugKey = workspaceSlug || "global";
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // Tier 2: historical range → snapshots only, no live call.
-  if (dateIni && dateEnd) {
+  // Segments panel scoping for our own device-derived widgets (compliance_*,
+  // geofence_*, the *_device_status_summary sources, device_risk_distribution).
+  // The frontend's Segments panel already walks its fetched tree client-side
+  // to expand a selected segment into itself + every descendant id
+  // (segments.ts's collectSegmentIds) — sent here as filters.segmentIds so
+  // this file doesn't need its own copy of that tree-walk. null means
+  // "Global selected, no filter" — same "no filter" meaning as
+  // filters.segmentId's own "0" sentinel used below for the Applivery-proxied
+  // sources. Bug fix: these device-derived sources previously ignored the
+  // Segments panel selection entirely (only the Applivery-proxied sources via
+  // baseParams.segmentId ever looked at it), which is why switching segments
+  // visibly changed nothing on Overview even though it worked everywhere else.
+  const segmentIds: string[] | null = Array.isArray(filters.segmentIds) && filters.segmentIds.length ? filters.segmentIds.map(String) : null;
+  function inSegment(segId: unknown): boolean {
+    return !segmentIds || segmentIds.includes(String(segId ?? "0"));
+  }
+  let deviceSegmentByIdPromise: Promise<Map<string, unknown>> | null = null;
+  function deviceSegmentById(): Promise<Map<string, unknown>> {
+    if (!deviceSegmentByIdPromise) {
+      deviceSegmentByIdPromise = getDevicesFull(authorization, workspaceSlug, false).then((r) => new Map(r.items.map((d: any) => [String(d.id), d.segmentId])));
+    }
+    return deviceSegmentByIdPromise;
+  }
+  // Companion date-range filter for the same widgets, applied only where a
+  // condition genuinely has its own timestamp to check against (a violation's
+  // detectedAt/lastDetectedAt) — a "live current state" gauge with no stored
+  // per-day history (e.g. compliance_devices_violating, geofence_*, the
+  // *_device_status_summary sources) has no historical value to filter to,
+  // so it deliberately always reflects live "now" regardless of date range.
+  function inDateRange(ts: string | Date | null | undefined): boolean {
+    if (!dateIni || !dateEnd || !ts) return true;
+    const d = typeof ts === "string" ? ts.slice(0, 10) : ts.toISOString().slice(0, 10);
+    return dateIni <= d && d <= dateEnd;
+  }
+
+  // Tier 2: historical range → snapshots only, no live call. Skipped
+  // entirely when a segment filter is active: the daily AnalyticsSnapshot
+  // rows this reads (snapshotCapture.ts's ALL_SNAPSHOT_SOURCES) are captured
+  // once per workspace with no per-segment breakdown at all, so serving them
+  // here would silently ignore the Segments panel selection the same way the
+  // device-derived sources above used to — better to fall through to a live,
+  // correctly-segment-scoped computation than return a fast but wrong answer.
+  if (dateIni && dateEnd && !segmentIds) {
     const isTodayOnly = dateIni === todayStr && dateEnd === todayStr;
     if (!isTodayOnly) {
       const snap = await aggregateSnapshotsForRange(slugKey, source, dateIni, dateEnd);
@@ -130,8 +171,11 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
     }
   }
 
-  // Tier 1: today (or no date filter) → in-memory live cache first.
-  if (!(dateIni && dateEnd && dateIni < todayStr)) {
+  // Tier 1: today (or no date filter) → in-memory live cache first. Also
+  // skipped when a segment filter is active — this cache is keyed only by
+  // (workspaceSlug, source), so serving it here would return whatever the
+  // last-requested segment (or Global) happened to compute.
+  if (!(dateIni && dateEnd && dateIni < todayStr) && !segmentIds) {
     const cached = liveCacheGet<WidgetResponse>(slugKey, source);
     if (cached !== null) return cached;
   }
@@ -265,28 +309,36 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
     if (source === "compliance_devices_violating") {
       const devicesResp = await getDevicesFull(authorization, workspaceSlug, false);
       const violatingIds = new Set(Object.keys(state).filter((k) => k.includes(":")).map((k) => k.split(":")[1]));
-      const violating = devicesResp.items.filter((d) => violatingIds.has(d.id));
+      const scopedDevices = devicesResp.items.filter((d: any) => inSegment(d.segmentId));
+      const violating = scopedDevices.filter((d) => violatingIds.has(d.id));
       response.scorecardValue = violating.length;
-      response.chartData = [{ name: "Non-compliant", value: violating.length }, { name: "Compliant", value: devicesResp.items.length - violating.length }];
+      response.chartData = [{ name: "Non-compliant", value: violating.length }, { name: "Compliant", value: scopedDevices.length - violating.length }];
       response.items = violating;
       return response;
     }
 
     if (source === "compliance_violations_by_policy") {
+      const segMap = segmentIds ? await deviceSegmentById() : null;
       const agg: Record<string, number> = {};
-      for (const key of Object.keys(state)) {
-        const policyId = key.split(":")[0];
+      let matched = 0;
+      for (const [key, entry] of Object.entries(state)) {
+        const [policyId, deviceId] = key.split(":");
+        if (segMap && !inSegment(segMap.get(deviceId))) continue;
+        if (!inDateRange(entry.lastDetectedAt)) continue;
         const name = policiesById.get(policyId)?.name ?? "Deleted policy";
         agg[name] = (agg[name] ?? 0) + 1;
+        matched++;
       }
       response.chartData = Object.entries(agg).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-      response.scorecardValue = Object.keys(state).length;
+      response.scorecardValue = matched;
       return response;
     }
 
     if (source === "compliance_violations_trend") {
+      const segMap = segmentIds ? await deviceSegmentById() : null;
       const dateMap = widgetTrendDateMap(dateIni, dateEnd, 14, 60);
       for (const v of violations) {
+        if (segMap && !inSegment(segMap.get(v.deviceId))) continue;
         const dStr = isoToMmdd(v.detectedAt);
         if (dStr && dStr in dateMap) dateMap[dStr]++;
       }
@@ -296,21 +348,30 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
     }
 
     if (source === "compliance_review_queue") {
+      const segMap = segmentIds ? await deviceSegmentById() : null;
       const statusLabels: Record<string, string> = { pending: "Pending review", auto_fired: "Auto-fired", no_workflow: "No workflow", approved: "Approved", dismissed: "Dismissed" };
       const agg: Record<string, number> = {};
-      for (const entry of Object.values(state)) {
+      let matched = 0;
+      for (const [key, entry] of Object.entries(state)) {
+        const deviceId = key.includes(":") ? key.split(":")[1] : "";
+        if (segMap && !inSegment(segMap.get(deviceId))) continue;
+        if (!inDateRange(entry.lastDetectedAt)) continue;
         const label = statusLabels[entry.status] ?? entry.status ?? "Unknown";
         agg[label] = (agg[label] ?? 0) + 1;
+        matched++;
       }
       response.chartData = Object.entries(agg).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-      response.scorecardValue = Object.keys(state).length;
+      response.scorecardValue = matched;
       return response;
     }
 
     if (source === "autorun_safety_summary") {
+      const segMap = segmentIds ? await deviceSegmentById() : null;
       const statusLabels: Record<string, string> = { auto_fired: "Auto-fired", autorun_blocked: "Blocked (safety)", autorun_capped: "Capped (batch limit)" };
       const agg: Record<string, number> = { "Auto-fired": 0, "Blocked (safety)": 0, "Capped (batch limit)": 0 };
       for (const v of violations) {
+        if (segMap && !inSegment(segMap.get(v.deviceId))) continue;
+        if (!inDateRange(v.detectedAt)) continue;
         const label = statusLabels[v.status];
         if (label) agg[label]++;
       }
@@ -333,10 +394,15 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
   // the Compliance evaluator itself.
   const geofenceSources = ["geofence_zones_summary", "geofence_devices_status", "geofence_location_freshness"];
   if (geofenceSources.includes(source)) {
-    const [zones, locations] = await Promise.all([
+    const [zones, locationsAll] = await Promise.all([
       prisma.geofenceZone.findMany({ where: { workspaceSlug: slugKey } }),
       prisma.deviceLocation.findMany({ where: { workspaceSlug: slugKey } }),
     ]);
+    // A DeviceLocation row is always "current" (one per device, no history —
+    // see the model's own @@unique([workspaceSlug, deviceId])), so this is
+    // segment-scoped only, never date-scoped.
+    const segMap = segmentIds ? await deviceSegmentById() : null;
+    const locations = segMap ? locationsAll.filter((l: (typeof locationsAll)[number]) => inSegment(segMap.get(l.deviceId))) : locationsAll;
     const realLocations = locations.filter((l) => l.error !== "no_location_reported");
     const neverLocated = locations.length - realLocations.length;
     const insideZone = (loc: { lat: number; lng: number }, zone: { shape: string; geometry: unknown }) =>
@@ -582,7 +648,7 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
   // ── 2.66-2.69 Fleet-wide device status rollups (reuse getDevicesFull) ──
   if (source === "os_updates_device_status_summary") {
     const devicesResp = await getDevicesFull(authorization, workspaceSlug, false);
-    const winDevices = devicesResp.items.filter((d: any) => d.platform === "windows" && d.osUpdateStatus);
+    const winDevices = devicesResp.items.filter((d: any) => d.platform === "windows" && d.osUpdateStatus && inSegment(d.segmentId));
     const agg = { "Up to date": 0, "Behind (confirmed)": 0, "Possibly behind (unconfirmed)": 0 };
     for (const d of winDevices as any[]) {
       const status = d.osUpdateStatus;
@@ -598,7 +664,7 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
 
   if (source === "vuln_device_status_summary") {
     const devicesResp = await getDevicesFull(authorization, workspaceSlug, false);
-    const scoped = devicesResp.items.filter((d: any) => ["apple", "macos", "android"].includes(d.platform) && d.vulnStatus);
+    const scoped = devicesResp.items.filter((d: any) => ["apple", "macos", "android"].includes(d.platform) && d.vulnStatus && inSegment(d.segmentId));
     const agg = { "Up to date": 0, "Behind (confirmed)": 0, "Possibly behind (unconfirmed)": 0 };
     for (const d of scoped as any[]) {
       const status = d.vulnStatus;
@@ -614,7 +680,7 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
 
   if (source === "os_lifecycle_device_status_summary") {
     const devicesResp = await getDevicesFull(authorization, workspaceSlug, false);
-    const lcDevices = devicesResp.items.filter((d: any) => d.osLifecycleStatus);
+    const lcDevices = devicesResp.items.filter((d: any) => d.osLifecycleStatus && inSegment(d.segmentId));
     const agg = { Supported: 0, "End of life": 0, Unknown: 0 };
     for (const d of lcDevices as any[]) {
       const status = d.osLifecycleStatus;
@@ -630,7 +696,7 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
 
   if (source === "vuln_service_device_status_summary") {
     const devicesResp = await getDevicesFull(authorization, workspaceSlug, false);
-    const checked = devicesResp.items.filter((d: any) => d.vulnServiceStatus?.checked);
+    const checked = devicesResp.items.filter((d: any) => d.vulnServiceStatus?.checked && inSegment(d.segmentId));
     const agg = { "Known-exploited (KEV)": 0, "Critical/high": 0, "Medium/low only": 0, Clean: 0 };
     for (const d of checked as any[]) {
       const status = d.vulnServiceStatus;
@@ -679,16 +745,21 @@ export async function getWidgetData(params: GetWidgetDataParams): Promise<Widget
   if (source === "device_risk_distribution" || source === "device_risk_trend") {
     if (source === "device_risk_distribution") {
       const devicesResp = await getDevicesFull(authorization, workspaceSlug, false);
+      const scopedDevices = devicesResp.items.filter((d: any) => inSegment(d.segmentId));
       const tierOrder = ["low", "medium", "high", "critical"];
       const agg: Record<string, number> = Object.fromEntries(tierOrder.map((t) => [t, 0]));
-      for (const d of devicesResp.items as any[]) {
+      for (const d of scopedDevices as any[]) {
         const tier = d.riskTier ?? "low";
         if (tier in agg) agg[tier]++;
       }
       response.chartData = tierOrder.map((t) => ({ name: titleCase(t), value: agg[t] }));
-      response.scorecardValue = devicesResp.items.length;
+      response.scorecardValue = scopedDevices.length;
       return response;
     }
+    // device_risk_trend reads from the device_risk_summary daily snapshot
+    // (a single fleet-wide average, captured by snapshotCapture.ts — see its
+    // own doc comment), which has no per-segment breakdown to filter to;
+    // acknowledged gap, left as fleet-wide regardless of segment selection.
     const dates = (await listSnapshotDates(slugKey)).slice(-30);
     const labels: string[] = [];
     const series: number[] = [];

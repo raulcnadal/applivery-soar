@@ -77,8 +77,18 @@ async function loadWidget(w: DashboardWidget, opts: { silent?: boolean } = {}) {
     const dateEnd = dateRange.value.to.toISOString().slice(0, 10);
     // Segment scoping — merged into each widget's own filters, same shape
     // the backend already expects (App.jsx:3543-3573's filters.segmentId).
+    // segmentId (singular) is what the Applivery-proxied sources pass straight
+    // through to Applivery's own API, which resolves descendants server-side.
+    // segmentIds (plural, expanded) is the same descendant-inclusive set
+    // DevicesView/CasesView already compute client-side via collectSegmentIds
+    // (walked against the fetched segment tree) — sent here too so the
+    // backend's own device-derived widgets (compliance_*, geofence_*, the
+    // *_device_status_summary sources) can scope to it without needing their
+    // own copy of the tree-walk. Previously omitted entirely, which is why
+    // switching segments never changed anything on Overview.
     const segmentId = String(segmentsStore.selectedSegment.id) !== "0" ? segmentsStore.selectedSegment.id : undefined;
-    const data = await fetchWidgetData(w.stat, { ...w.filters, segmentId }, dateIni, dateEnd);
+    const segmentIds = segmentId ? Array.from(segmentsStore.collectSegmentIds(segmentId) ?? []) : undefined;
+    const data = await fetchWidgetData(w.stat, { ...w.filters, segmentId, segmentIds }, dateIni, dateEnd);
     widgetSlots[w.id].data = data;
     if (opts.silent) widgetSlots[w.id].error = null; // clear a stale error silently once fresh data lands
   } catch (err: any) {
