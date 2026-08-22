@@ -1,6 +1,6 @@
 # Apps — Admin Guide
 
-The Apps main-nav view has two sub-tabs: **Reported Apps** (fleet-wide, read-only visibility into what's actually installed) and **App Catalog** (the shared identifier catalog [App Lists](compliance.md#app-lists-sub-view) are built from). Both read from the same underlying per-device app inventory; neither requires the other to be used.
+The Apps main-nav view has three sub-tabs: **Reported Apps** (fleet-wide, read-only visibility into what's actually installed), **App Catalog** (the shared identifier catalog [App Lists](#app-lists-tab) are built from), and **App Lists** (the mandatory/disallowed app catalogs [Compliance Policy](compliance.md) conditions reference). All three read from the same underlying per-device app inventory; none requires another to be used.
 
 ## Reported Apps tab
 
@@ -21,7 +21,7 @@ A platform filter and a name/identifier search sit above the table. Clicking a r
 
 ### App detail modal
 
-- **App Lists** — which of your [App Lists](compliance.md#app-lists-sub-view) reference this app, matched against the App Catalog by identifier *or* name (case-insensitive) — an app added to the catalog via Winget search stores winget's PackageIdentifier (e.g. `Google.Chrome`), while a device's self-report often carries the lowercased DisplayName instead (`google chrome`) when winget isn't invokable from the agent's LocalSystem service context, so identifier-only matching would wrongly say "not in the catalog" for an app that demonstrably is.
+- **App Lists** — which of your [App Lists](#app-lists-tab) reference this app, matched against the App Catalog by identifier *or* name (case-insensitive) — an app added to the catalog via Winget search stores winget's PackageIdentifier (e.g. `Google.Chrome`), while a device's self-report often carries the lowercased DisplayName instead (`google chrome`) when winget isn't invokable from the agent's LocalSystem service context, so identifier-only matching would wrongly say "not in the catalog" for an app that demonstrably is.
 - **Applivery Application Library** (Windows only) — a best-effort lookup against Applivery's own Windows App Distribution catalog, matched by MSI product code when available (exact) or by name (fallback).
 - **Vulnerabilities** — per-version CVE breakdown, see below. Only shown when the [Vulnerability Service](settings.md#vulnerability-service) is enabled and has a cached match for at least one version of this app.
 - **Devices** — one row per physical device (a device seen via both the SOAR Agent and Applivery UEM is merged, not duplicated), with version, package-type badge, every "Reported by" source that saw it, "enforced by policy" badge (Windows only — assigned via Applivery's Windows App Distribution, not just incidentally present), update-available flag, and its own "Last sync" column showing freshness and any live-fetch error. Windows apps also show their full on-disk install path on its own line below the row when known (always for AppX/Store packages, sometimes for classic Win32 installs) — purely informational, not used for any matching logic.
@@ -50,7 +50,7 @@ The App detail modal's Vulnerabilities section breaks the same underlying data d
 
 ## App Catalog tab
 
-The **Custom Catalog** (left column) is the shared, admin-curated set of app identifiers that [App Lists](compliance.md#app-lists-sub-view) are built from — distinct from Reported Apps above, which is read-only fleet visibility with no authoring involved. An app doesn't need to have ever been seen installed to be added here (e.g. importing straight from an app store to pre-build a list before rollout), and conversely a reported app isn't automatically in the catalog until added.
+The **Custom Catalog** (left column) is the shared, admin-curated set of app identifiers that [App Lists](#app-lists-tab) are built from — distinct from Reported Apps above, which is read-only fleet visibility with no authoring involved. An app doesn't need to have ever been seen installed to be added here (e.g. importing straight from an app store to pre-build a list before rollout), and conversely a reported app isn't automatically in the catalog until added.
 
 A platform filter narrows the list; each entry can be removed (blocked if an App List still references it — remove it from the list first).
 
@@ -71,8 +71,21 @@ The **Add new Apps** button (right column) opens a two-step wizard: pick an OS p
 - **Google Play (exact package)** — Google doesn't expose a free-text search API to EMMs, so this is an exact package-name lookup (e.g. `com.slack`) against Applivery's Google Play EMM integration rather than a browsable search.
 - **Quick-start presets** (Common browsers, Collaboration apps) and a manual "Can't find it? Add manually" fallback (raw identifier + name) are also available per platform.
 
+## App Lists tab
+
+An **App List** is a named, platform-specific catalog of apps (by bundle ID / package name / product ID), referenced by [Compliance Policy](compliance.md)'s "Missing a required app" and "Has a disallowed app" conditions. This tab moved here from the Compliance view alongside the other app-related sub-tabs above, since it's fundamentally about apps, not policies — the policies that consume an App List still live in Compliance.
+
+**Creating a list**: Name, Platform (locked once created), optional Description, then add apps three ways:
+- **Quick-start presets** (common browsers, collaboration apps) — one click, but worth spot-checking since they're not guaranteed 100% current.
+- **Search** — Apple App Store (iOS/macOS), Homebrew Cask (macOS, name only — confirm the bundle ID via `mdls`), Microsoft Store/Winget (Windows — Winget is a community index, unofficial), or "Known Apps" (Android — only apps already known to your org's App Distribution/Android Enterprise catalog, since there's no free Play Store search API).
+- **Manual entry** — name + raw identifier for anything not found via search.
+
+Each list shows its app count and which Compliance Policies currently reference it; deletion is blocked while still referenced.
+
+**Installed-app inventory sync panel** at the top of the tab shows coverage % (devices synced), self-reported count, oldest sync age, an estimated full-refresh cycle time, error count, and a manual **Refresh now**. This panel stays idle until at least one enabled Compliance Policy actually uses an App List condition — until then there's nothing to sync for.
+
 ## Related guides
 
-- [Compliance](compliance.md) — App Lists and how `requiredAppList`/`disallowedAppList` conditions consume the Custom Catalog.
+- [Compliance](compliance.md) — the Policy Builder conditions (`requiredAppList`/`disallowedAppList`) that consume App Lists, and the Custom Check Result condition an agent-run check can also feed.
 - [Devices](devices.md) — the per-device Apps tab, a device-scoped view of the same Reported Apps data with the same per-app CVE detail.
-- [Settings](settings.md) — App Inventory Reporting setup, the installed-apps refresh budget, and Vulnerability Service configuration.
+- [Settings](settings.md) — App Inventory Reporting setup, the installed-apps refresh budget, Custom Device Checks, and Vulnerability Service configuration.

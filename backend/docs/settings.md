@@ -78,7 +78,7 @@ Configuration bundle, instead of assembling everything by hand.
   path exists as an alternative source for the same binaries).
 - **Device Report Secret** — **Generate** / **Rotate** (confirm-gated — rotating immediately breaks any device still using the old secret) /
   **Remove**. The baseline credential every device needs, included in the Managed Configuration bundle below.
-- **What This Agent Reports** — checkboxes for **App Inventory Reporting** (feeds [App List](compliance.md#app-lists-sub-view) conditions and
+- **What This Agent Reports** — checkboxes for **App Inventory Reporting** (feeds [App List](apps.md#app-lists-tab) conditions and
   [Vulnerability Service](#vulnerability-service) per-app CVE matching) and **Security Attestation Reporting** (BitLocker/FileVault + firewall —
   feeds Self-Reported Attribute compliance conditions), plus the report interval. If a [Global Bootstrap Token](#mtls-agent-authentication) is
   configured, it's included in the Windows bundle automatically — no separate opt-in, since a device with an already-active certificate can never
@@ -94,6 +94,29 @@ Configuration bundle, instead of assembling everything by hand.
 
 Stays disabled until the device report secret exists. No permission gate on this page itself (publishing to Applivery requires
 `canEditIntegrationSecrets`).
+
+### Custom Device Checks
+
+Extends the fixed self-report attributes above into an open-ended, admin-defined catalog: rather than being limited to what the agent already
+knows how to report, you define WHAT to check and the agent runs it locally on its normal report cycle. Each check has a **Platform** (Windows or
+macOS), a **Key** (used to reference it from a policy), a **Name**/**Description**, and a **Checker type**:
+
+- **Process running** — a process name is currently running.
+- **Service/Launchd running** — a Windows service or macOS launchd job is loaded and running.
+- **Registry value / plist key / file contents** — a specific value at a platform-specific location matches (or exists/doesn't).
+- **App installed** — a specific app identifier is present.
+- **Raw command** — the agent runs an arbitrary shell/PowerShell command and reports its output.
+
+**Raw command checks execute arbitrary code on every managed endpoint the check is enabled for** — this checker type isn't gated any more
+tightly than the others (RBAC's `canManage` Compliance permission covers all of them equally), so only grant Compliance-manage access to admins
+you'd trust with that.
+
+A check appears as a **Custom Check Result** condition option in the [Policy Builder](compliance.md#conditions--the-full-field-catalog) the
+instant it's created — unlike Self-Reported Attributes (which only appear once a device has actually reported one), the catalog itself is the
+source of truth, so you can wire a check into a policy before a single device has reported back yet. The Policy Builder only offers check keys
+whose platform matches the policy's own target platform.
+
+Results come back inside the agent's normal report payload — no separate check-in.
 
 ## mTLS Agent Authentication
 

@@ -69,9 +69,10 @@ Everything about this device's standing against your [Compliance Policies](compl
 
 1. **Compliance Status** — the same Compliance/Risk badges from the header, plus a visual risk meter (0–100, colored by tier).
 2. **Risk Factors** — each factor contributing to the risk score and its point value.
-3. **Compliance Policy Violations** — every currently-open violation against this device (regardless of review status), with its policy name and status (pending / approved / dismissed / auto-fired), or a green "no open violations" state.
-4. **Awaiting Review** — the subset of violations still sitting in the [review queue](compliance.md#violations--review-queue); clickable rows that jump to the [Audit Log](audit-logs.md) filtered to this device.
-5. **Open Cases** — clickable rows that open the linked [Case](cases.md).
+3. **Vulnerability Service** — the same section described in the Overview tab above (only shown once [Settings → Vulnerability Service](settings.md#vulnerability-service) is configured), repeated here since it also feeds the risk score this tab is about.
+4. **Compliance Policies** — every SOAR Compliance Policy currently in scope for this device (platform + Device Audience match), not just the ones it's violating — a green dot and "Compliant," or a red/amber/blue dot and its status (Violating / pending / auto_fired), per policy. **Click any policy row** to open a status modal showing every individual condition inside that policy with its own red/green dot for whether it's currently true on this device, the policy's match rule (ANY/ALL), and when it was last evaluated — the fastest way to see exactly what's tripping a multi-condition policy without reopening the [Policy Builder](compliance.md#policy-builder) and cross-referencing the device's raw attributes by hand.
+5. **Awaiting Review** — the subset of violations still sitting in the [review queue](compliance.md#violations--review-queue); clickable rows that jump to the [Audit Log](audit-logs.md) filtered to this device.
+6. **Open Cases** — clickable rows that open the linked [Case](cases.md).
 
 ### Apps tab
 
@@ -84,6 +85,10 @@ No installed-app data yet for this device shows an empty state pointing at [App 
 ### Location tab
 
 Shows last-known coordinates with an **Open in Google Maps** link, or an empty state if none is on file. **Sync fleet locations** refreshes GPS data for the *entire fleet* (one Applivery call per device), not just this one — it can take a moment.
+
+### Agent tab
+
+On-demand only — Applivery's own per-device diagnostic feed (`GET /mdm/agent-logs`, `GET /mdm/agent-trace`), troubleshooting data rather than fleet/compliance state, so this tab never fetches it live on its own. A **Fetch Agent Logs & Trace** button is the only trigger; whatever it last retrieved stays visible for reference (stored server-side, re-read on every drawer open) until fetched again, alongside a "Last fetched" timestamp or "Never fetched for this device." **Agent Logs** shows each entry's title, status badge (ERROR/WARN/other, color-coded), timestamp, body text, any parse error, and an attachment link when the log carries one (e.g. a full crash dump). **Agent Trace** shows each event's title, event-type badge, timestamp, and content. Both sections show "Not fetched yet" until the button above is used at least once.
 
 ### Actions available from the drawer
 

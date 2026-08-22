@@ -8,7 +8,8 @@ This build is a Vue 3 single-page frontend and a Node.js/Express + TypeScript ba
 
 - **[Overview](docs/overview.md)** — a fully customizable widget dashboard across ~55 data sources spanning your device fleet, App Distribution, and every SOAR feature below.
 - **[Devices](docs/devices.md)** — fleet inventory, per-device security posture (vulnerabilities, patch status, OS lifecycle, firewall state), segment/policy/tag management, and a live 3D globe view ([Playground](docs/playground.md)).
-- **[Compliance](docs/compliance.md)** — policy-as-code device compliance, with a template gallery for ISO 27001 / ENS / NIS2, and an App Lists sub-view for mandatory/disallowed app enforcement.
+- **[Compliance](docs/compliance.md)** — policy-as-code device compliance across a wide catalog of condition types (OS version/patch level, vulnerability/CVE exposure, disk encryption, firewall state, jailbreak/root detection, geofence zones, required/disallowed apps, custom agent-run checks, and more), with a template gallery for ISO 27001 / ENS / NIS2, per-channel (Webhook/Email) alert delivery with optional daily caps, and per-condition violation detail surfaced right on the device.
+- **[Apps](docs/apps.md)** — fleet-wide installed-app inventory, a shared App Catalog, Vulnerability Service risk scoring per app, and the App Lists (mandatory/disallowed apps) that Compliance Policies reference.
 - **[Workflows](docs/workflows.md)** — chained MDM actions, scripts, HTTP calls, and notifications, auto-fired by Compliance or run manually — including a Script/OMA-URI Library, a Windows Firewall Policy Library for network-remediation actions, and Inbound Webhook Triggers for third-party tools.
 - **[Cases](docs/cases.md)** — the incident layer above raw violations, with SLA tracking, Jira/ServiceNow ticketing sync, and threat-intel IOC lookups.
 - **[Reporting](docs/reporting.md)** — build, template, and schedule branded PDF reports from the same widget catalog as Overview.
@@ -71,7 +72,7 @@ Losing `./pgdata` loses every Compliance Policy, Workflow, Case, Role, and Setti
 
 ### Background jobs at scale
 
-Background jobs (the compliance evaluator, workflow-wait resumer, ticket sync, intelligence-catalog refreshers, and more — 20 in total) run in-process by default, which is correct and sufficient for a single `soar-backend` replica. If you scale `soar-backend` out (`docker compose up --scale soar-backend=3`), set `REDIS_URL` so these jobs run through the bundled `soar-redis` service instead — otherwise every replica's own copy of each job would fire independently, and the compliance evaluator, workflow resumer, etc. would all run multiple times per tick instead of once.
+Background jobs (the compliance evaluator, workflow-wait resumer, ticket sync, intelligence-catalog refreshers, and more — 25 in total) run in-process by default, which is correct and sufficient for a single `soar-backend` replica. If you scale `soar-backend` out (`docker compose up --scale soar-backend=3`), set `REDIS_URL` so these jobs run through the bundled `soar-redis` service instead — otherwise every replica's own copy of each job would fire independently, and the compliance evaluator, workflow resumer, etc. would all run multiple times per tick instead of once.
 
 ### Building without the bundled Postgres service
 

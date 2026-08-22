@@ -2,7 +2,7 @@
 
 Compliance is where you define what "out of compliance" means for a device, and what should happen automatically the moment a device crosses that line. A **Compliance Policy** is a set of conditions (e.g. OS too old, disk not encrypted, a required app missing), a match rule (any condition, or all of them), and a linked [Workflow](workflows.md) that runs against any device meeting those conditions. A policy can also tag the device, open a [Case](cases.md), and escalate to a tougher workflow if the device's own risk tier is already high.
 
-This guide covers both sub-views: **Policies** (the main list + builder) and **App Lists** (mandatory/disallowed app catalogs referenced from policy conditions), reached via the tab switcher at the top right.
+Compliance Policies are managed from a single view — Policies (the list + builder below). App Lists, the mandatory/disallowed app catalogs a policy's conditions can reference, live on the [Apps view's own App Lists tab](apps.md#app-lists-tab) instead, alongside Reported Apps and the App Catalog.
 
 ## Policies list
 
@@ -19,6 +19,8 @@ Turning a policy's **Enabled** toggle on, or saving a change to which devices it
 Open by clicking **Create Compliance Policy** or editing an existing one.
 
 **Basics**: Name (required), Description.
+
+**Target platform** — optionally lock a policy to one platform (Apple/macOS/Android/Windows) instead of "Common (all platforms)"; the Policy Builder then only offers conditions and Self-Reported Attribute/Custom Check names that actually apply to that platform, the same targeting concept [Workflows](workflows.md) already uses. Choosing **macOS** assumes every macOS device is supervised and skips straight to the conditions step — Apple's own supervision-dependent management surface makes an unsupervised Mac's device-level restrictions unreliable enough that it isn't worth a separate branch here, unlike Apple/iOS, which still asks.
 
 **Enabled** / **Auto-run workflow (skip review queue)** checkboxes. With Auto-run off, violations land in the [Awaiting review queue](#violations--review-queue) for a human to approve or dismiss. With it on, the linked workflow fires immediately and unattended.
 
@@ -42,6 +44,7 @@ Each condition is Field → Operator → Value. Choose **Match ANY condition** (
 | Applivery compliance flag | Compliant/Non-compliant |
 | Platform | apple, macos, android, windows |
 | OS version | less/greater than, equals |
+| OS Patch Level | less/greater than, equals — needs [Settings → OS Patch Level](settings.md#os-patch-level) Smart Attribute mapping configured; a platform-aware comparison (Android SPL date, Apple version+build, Windows full build), more precise than OS version alone once populated |
 | Days since last check-in | staleness threshold |
 | Time since enrollment | amount + unit |
 | Battery % | |
@@ -57,6 +60,7 @@ Each condition is Field → Operator → Value. Choose **Match ANY condition** (
 | Smart Attribute | equals/not equals/contains/greater/less/exists/missing, by attribute name |
 | Custom device field (advanced) | free-text dot-path into the full device record, e.g. `nativeSecurity.isEncrypted` — used for things like Android disk-encryption/screen-lock checks where there's no dedicated field |
 | Self-Reported Attribute (agent) | from the optional self-report script — e.g. `diskEncryptionEnabled`, `screenLockEnabled`, `antivirusEnabled`. Needs [Settings → Applivery SOAR Agent](settings.md#applivery-soar-agent) set up and the matching script deployed |
+| Custom Check Result (agent) | an admin-defined check the matching agent runs locally and reports back — process running, service status, a registry/plist/file value, an app installed, or a raw command's output — equals/not equals/contains/greater/less/exists/missing, by check key. Define checks under [Settings → Applivery SOAR Agent](settings.md#applivery-soar-agent); the Policy Builder only offers check keys defined for the policy's own target platform |
 | Days since last self-report / Has ever self-reported | |
 | **Missing a required app** (App List) | pick an existing App List — only matches devices on that list's platform |
 | **Has a disallowed app** (App List) | same, inverse |
@@ -76,6 +80,12 @@ There is no dedicated "jailbreak/root" or "disk encryption" field type for every
 **Mark on Applivery console**: a **non-compliance tag** (applied while violated, removed on recovery — give each policy its own distinct tag) and/or a **Smart Attribute** to attach/detach. Either, both, or neither.
 
 **Case Management**: **Open a Case when violated** (default on) and, only if that's on, **Auto-resolve the Case once the device recovers** (default off — recommended only for conditions that reliably self-heal; otherwise let an analyst confirm the fix first).
+
+**Alerts**: **Send an alert when this policy is violated** (default off) fires one rolled-up message per evaluation pass that finds at least one new violation — e.g. "3 new violations" — not one per device, and independent of the workflow/autoRun settings above. Two channels, either or both:
+- **Webhook** — an optional per-policy URL override (leave blank to reuse [Settings → General](settings.md)'s single global Notifications Webhook URL), with a **Test** button to send a sample message before relying on it.
+- **Email** — this policy's own recipient list, separate from [Settings → SMTP](settings.md)'s global "Alert Email Recipients" (reserved for SLA breach/System Health instead). Requires SMTP to be configured in Settings.
+
+Each channel also has its own optional **Limit to N alerts per day** guardrail — off (unlimited) by default. Turning it on caps just that channel independently of the other (e.g. unlimited Webhook while Email is capped at 20/day, or any other combination), so a misconfigured or overly broad policy that keeps re-tripping every evaluation pass can't flood a webhook channel or an inbox unboundedly. Extra violations found after a channel's daily cap is reached are still recorded (visible in the review queue/Recent activity below) — they just don't trigger another alert until the cap resets the next day.
 
 **MITRE ATT&CK Tagging** — pick techniques this policy's violation represents; carried onto every Case it opens, purely for triage/reporting, no effect on evaluation. As you add conditions, a **Suggested from your conditions** row appears above the picker with techniques a curated field→technique mapping associates with those conditions (e.g. an outdated-OS or pending-CVE condition suggests *T1203 — Exploitation for Client Execution*; a missing required security app suggests *T1562 — Impair Defenses*). These are suggestions only — click one to add it, or ignore them entirely; nothing is auto-applied to the policy's tags.
 
@@ -100,25 +110,12 @@ Below that, a **Recent activity** table lists resolved/handled violations with s
 
 **autoRun circuit breaker**: if a policy's last 3 consecutive auto-fired runs *all* failed on every targeted device, autoRun automatically pauses for that policy — a signal the automation itself is broken (bad script reference, revoked credential, an Applivery outage), not that devices are hard to fix. Edit and re-save the policy to re-arm it.
 
-## App Lists sub-view
-
-An **App List** is a named, platform-specific catalog of apps (by bundle ID / package name / product ID), referenced by the "Missing a required app" and "Has a disallowed app" conditions above.
-
-**Creating a list**: Name, Platform (locked once created), optional Description, then add apps three ways:
-- **Quick-start presets** (common browsers, collaboration apps) — one click, but worth spot-checking since they're not guaranteed 100% current.
-- **Search** — Apple App Store (iOS/macOS), Homebrew Cask (macOS, name only — confirm the bundle ID via `mdls`), Microsoft Store/Winget (Windows — Winget is a community index, unofficial), or "Known Apps" (Android — only apps already known to your org's App Distribution/Android Enterprise catalog, since there's no free Play Store search API).
-- **Manual entry** — name + raw identifier for anything not found via search.
-
-Each list shows its app count and which Compliance Policies currently reference it; deletion is blocked while still referenced.
-
-**Installed-app inventory sync panel** at the top of the page shows coverage % (devices synced), self-reported count, oldest sync age, an estimated full-refresh cycle time, error count, and a manual **Refresh now**. This panel stays idle until at least one enabled policy actually uses an App List condition — until then there's nothing to sync for.
-
 ## Settings this view depends on
 
 - **[OS Updates](settings.md#os-updates)** — powers the pending-update conditions; needs at least one catalog refresh to have happened.
 - **[Vulnerability Service](settings.md#vulnerability-service)** — opt-in, needs an API token configured before its conditions produce real data.
 - **[Applivery SOAR Agent](settings.md#applivery-soar-agent)** — required for Self-Reported Attribute conditions (disk encryption, screen lock, antivirus on Windows/macOS).
-- **App List inventory** — populated either via the self-report script or the paced background Applivery-API refresher; a brand-new App List condition won't match anything until coverage catches up.
+- **[App List inventory](apps.md#app-lists-tab)** — populated either via the self-report script or the paced background Applivery-API refresher; a brand-new App List condition won't match anything until coverage catches up.
 - **Geofence Zone inventory** — populated by the paced background location refresher (see [Geofencing](geofencing.md)); a brand-new geofence condition won't match anything until coverage catches up.
 - **[Roles](settings.md#roles)** — `canBulkTriage` gates bulk approve/dismiss on the violations queue; `canDeletePolicyOrWorkflow` gates policy deletion.
 
@@ -126,5 +123,6 @@ Each list shows its app count and which Compliance Policies currently reference 
 
 - [Workflows](workflows.md) — build the workflows a policy links to, including the destructive-action rules that gate auto-run.
 - [Cases](cases.md) — how policy violations become Cases and inherit MITRE tags.
-- [Devices](devices.md) — the "Compliance Policies" signal shown on the fleet table and device drawer.
+- [Devices](devices.md) — the "Compliance Policies" signal shown on the fleet table and device drawer, including the per-condition status modal opened from a policy pill.
+- [Apps](apps.md#app-lists-tab) — App Lists, the mandatory/disallowed app catalogs the "Missing a required app"/"Has a disallowed app" conditions reference.
 - [Geofencing](geofencing.md) — drawing zones and the background location refresher behind the Geofence Zone condition.

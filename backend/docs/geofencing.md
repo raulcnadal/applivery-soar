@@ -56,7 +56,7 @@ Instead, a **budgeted, background location refresher** runs continuously, indepe
 - A configurable **budget (requests/hour)** caps how much of the shared Applivery API allowance this refresher is allowed to spend, so it never crowds out device sync or other background jobs. Default 2,000/hour, adjustable between 200 and 4,000.
 - Each cycle only fetches what's needed to keep the cache warm — this is a delta-style refresh, not a full re-pull of location history, since Compliance Policy evaluation only ever needs the *current* location, not the full trail.
 
-This mirrors the same pattern already used for the installed-app inventory refresher (see [Compliance → App Lists](compliance.md#app-lists-sub-view)) — a proven approach for keeping large-fleet background data fresh under a shared, rate-limited API budget.
+This mirrors the same pattern already used for the installed-app inventory refresher (see [Apps → App Lists](apps.md#app-lists-tab)) — a proven approach for keeping large-fleet background data fresh under a shared, rate-limited API budget.
 
 ### Refresh status panel
 
