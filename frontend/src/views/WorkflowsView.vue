@@ -54,6 +54,26 @@ const scriptRepoImportOpen = ref(false);
 const firewallBuilderOpen = ref(false);
 const editingRuleSet = ref<FirewallRuleSet | null>(null);
 
+// Platform filter for the Workflows list — mirrors ComplianceView.vue's own
+// policyPlatformFilter (same option set/labels, same "common" = no
+// targetPlatform distinction), added per user request for parity between
+// the two views.
+const WORKFLOW_PLATFORM_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "All platforms" },
+  { value: "common", label: "Common (all platforms)" },
+  { value: "apple", label: "iOS/iPadOS" },
+  { value: "macos", label: "macOS" },
+  { value: "android", label: "Android" },
+  { value: "windows", label: "Windows" },
+  { value: "aosp", label: "AOSP" },
+];
+const workflowPlatformFilter = ref("");
+const visibleWorkflows = computed(() => {
+  if (workflowPlatformFilter.value === "common") return store.workflows.filter((w) => !w.targetPlatform);
+  if (workflowPlatformFilter.value) return store.workflows.filter((w) => w.targetPlatform === workflowPlatformFilter.value);
+  return store.workflows;
+});
+
 function openNew() {
   editingWorkflow.value = null;
   builderOpen.value = true;
@@ -140,6 +160,20 @@ onMounted(async () => {
             <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> Firewall Policy Library
           </button>
         </div>
+        <!-- Same invisible/reserved-space trick as the Create Workflow button
+             just below — only meaningful on the Workflows tab, but kept in
+             the layout (rather than v-if'd out) on the other two tabs so
+             the header row's width doesn't jump when switching tabs. -->
+        <select
+          v-model="workflowPlatformFilter"
+          title="Filter the Workflows list to one platform"
+          class="px-2.5 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500 shrink-0"
+          :class="tab === 'workflows' ? '' : 'invisible pointer-events-none'"
+          :aria-hidden="tab !== 'workflows'"
+          :tabindex="tab === 'workflows' ? 0 : -1"
+        >
+          <option v-for="p in WORKFLOW_PLATFORM_FILTER_OPTIONS" :key="p.value" :value="p.value">{{ p.label }}</option>
+        </select>
         <!-- Always rendered (rather than conditionally mounted) so its layout
              space stays reserved on non-Workflows tabs — otherwise the pill
              switcher next to it visibly shifts position, since removing this
@@ -174,7 +208,7 @@ onMounted(async () => {
     </template>
     <template v-else>
       <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
-      <WorkflowsTable :workflows="store.workflows" :is-loading="store.isLoading" @edit="openEdit" @dry-run="openDryRun" @run="openRun" @versions="openVersions" />
+      <WorkflowsTable :workflows="visibleWorkflows" :is-loading="store.isLoading" @edit="openEdit" @dry-run="openDryRun" @run="openRun" @versions="openVersions" />
       <RecentRunsSection />
     </template>
 

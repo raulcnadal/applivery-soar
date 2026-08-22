@@ -11,7 +11,7 @@
 // scoped to whatever Segment is selected in the Segments panel, same
 // collectSegmentIds pattern as DevicesView.vue/CasesView.vue
 // (CompliancePoliciesView.jsx:245-253).
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import AppListsPanel from "../components/compliance/AppListsPanel.vue";
@@ -82,6 +82,30 @@ function openNewPolicy() {
   prefill.value = null;
   drawerOpen.value = true;
 }
+
+// "Create Compliance Policy" — a single button offering both creation paths
+// (previously "New from Template" and "Create Compliance Policy" were two
+// separate always-visible buttons; merged per user request to save header
+// space) via a small dropdown menu rather than a second button. Closes on
+// an outside click, same as any standard menu button.
+const isCreateMenuOpen = ref(false);
+function toggleCreateMenu() {
+  isCreateMenuOpen.value = !isCreateMenuOpen.value;
+}
+function createFromScratch() {
+  isCreateMenuOpen.value = false;
+  openNewPolicy();
+}
+function createFromTemplate() {
+  isCreateMenuOpen.value = false;
+  isTemplateGalleryOpen.value = true;
+}
+function handleCreateMenuOutsideClick(e: MouseEvent) {
+  if (!isCreateMenuOpen.value) return;
+  if (!(e.target as HTMLElement)?.closest("[data-create-policy-menu]")) isCreateMenuOpen.value = false;
+}
+onMounted(() => document.addEventListener("click", handleCreateMenuOutsideClick));
+onUnmounted(() => document.removeEventListener("click", handleCreateMenuOutsideClick));
 
 function editPolicy(policy: CompliancePolicy) {
   editingPolicy.value = policy;
@@ -220,12 +244,32 @@ onMounted(async () => {
         <button :disabled="isEvaluating" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50" @click="evaluateNow">
           <component :is="ICONS.Refresh" :size="14" weight="Linear" :class="isEvaluating ? 'animate-spin' : ''" /> {{ isEvaluating ? "Evaluating…" : "Evaluate now" }}
         </button>
-        <button class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="isTemplateGalleryOpen = true">
-          <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> New from Template
-        </button>
-        <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200" @click="openNewPolicy">
-          <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Compliance Policy
-        </button>
+        <div class="relative" data-create-policy-menu>
+          <button
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200"
+            @click="toggleCreateMenu"
+          >
+            <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Compliance Policy
+            <component :is="ICONS.AltArrowDown" :size="12" weight="Linear" />
+          </button>
+          <div
+            v-if="isCreateMenuOpen"
+            class="absolute right-0 z-20 top-full mt-1 w-52 rounded-lg shadow-xl py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+          >
+            <button
+              class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900/50 flex items-center gap-2"
+              @click="createFromScratch"
+            >
+              <component :is="ICONS.AddSquare" :size="14" weight="Linear" /> From scratch
+            </button>
+            <button
+              class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900/50 flex items-center gap-2"
+              @click="createFromTemplate"
+            >
+              <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> From template
+            </button>
+          </div>
+        </div>
         <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
           <button
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"

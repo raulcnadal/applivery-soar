@@ -336,7 +336,7 @@ function toggleVersion(version: string) {
                  as a data-integrity bug: the same app appearing to be
                  "installed twice" on one device). -->
             <div v-for="d in app.devices" :key="d.deviceId" class="px-2.5 py-1.5">
-              <div class="grid grid-cols-2 sm:grid-cols-[minmax(140px,1fr)_92px_60px_168px_150px] gap-2 items-center text-xs">
+              <div class="grid grid-cols-2 sm:grid-cols-[minmax(140px,1fr)_140px_60px_168px_150px] gap-2 items-center text-xs">
                 <span class="min-w-0 col-span-2 sm:col-span-1 text-gray-900 dark:text-white truncate" :title="d.deviceName">{{ d.deviceName }}</span>
                 <span class="flex items-center gap-1 font-mono" :title="d.versionsBySource ? Object.entries(d.versionsBySource).map(([s, v]) => `${SOURCE_LABELS[s] || s}: ${v}`).join(' · ') : undefined">
                   <component
@@ -348,7 +348,13 @@ function toggleVersion(version: string) {
                     title="Enforced by Applivery's Windows App Distribution policy on this device"
                   />
                   <component v-if="d.updateAvailable" :is="ICONS.CloudDownload" :size="12" weight="Linear" class="text-blue-500 shrink-0" title="Update available" />
-                  <span class="truncate">{{ d.version || "—" }}</span>
+                  <!-- Not truncate: version strings are short but not THAT
+                       short (Apple's "26.6.2 (25G82)", Windows'
+                       "10.0.28000.2704") — at the old 92px column width
+                       these silently lost their tail with no visual
+                       indicator at all (no ellipsis even), the exact bug
+                       this column-width bump + break-words is fixing. -->
+                  <span class="break-words">{{ d.version || "—" }}</span>
                   <span v-if="d.versionsBySource" class="text-amber-500 shrink-0">⚠</span>
                 </span>
                 <span>
