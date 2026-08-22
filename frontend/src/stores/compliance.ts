@@ -46,6 +46,10 @@ export interface CompliancePolicy {
   alertViaEmail: boolean;
   alertWebhookUrl?: string | null;
   alertEmailRecipients?: string | null;
+  // Optional per-channel daily send caps — see backend/prisma/schema.prisma's
+  // CompliancePolicy.alertWebhookMaxPerDay doc comment. Null/unset = unlimited.
+  alertWebhookMaxPerDay?: number | null;
+  alertEmailMaxPerDay?: number | null;
   lastAlertSentAt?: string | null;
   lastAlertError?: string | null;
   lastEvaluatedAt?: string | null;

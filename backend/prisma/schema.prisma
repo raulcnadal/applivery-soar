@@ -281,6 +281,22 @@ model CompliancePolicy {
   alertEmailRecipients         String?
   lastAlertSentAt              DateTime?
   lastAlertError               String?
+  // Optional per-channel daily send caps — a guardrail against a
+  // misconfigured or overly broad policy flooding a webhook/inbox with
+  // alerts (each evaluation pass that finds a new violation fires one
+  // alert per enabled channel, so a policy re-tripping every interval can
+  // otherwise send unboundedly). Null/unset means unlimited, matching every
+  // other optional Int? column here (e.g. autoRunBatchCap) — each channel
+  // is capped independently, so e.g. Webhook can stay unlimited while Email
+  // is capped, or vice versa. alertWebhookSentToday/alertEmailSentToday are
+  // the running counts for alertCountersDate (a "YYYY-MM-DD" day key, same
+  // convention as AnalyticsSnapshot/widgets.service.ts); firePolicyViolationAlert
+  // resets both counts to 0 whenever today's date key no longer matches.
+  alertWebhookMaxPerDay        Int?
+  alertEmailMaxPerDay          Int?
+  alertWebhookSentToday        Int       @default(0)
+  alertEmailSentToday          Int       @default(0)
+  alertCountersDate            String?
   // Scheduler/circuit-breaker state — not part of the save payload, managed
   // by the evaluation engine itself (see CompliancePolicyPayload comments
   // in compliance.schemas.ts). An explicit save resets the trip, same as

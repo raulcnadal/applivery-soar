@@ -115,6 +115,8 @@ export async function createCompliancePolicy(workspaceSlug: string, payload: Com
       alertViaEmail: payload.alertViaEmail,
       alertWebhookUrl: payload.alertWebhookUrl?.trim() || null,
       alertEmailRecipients: payload.alertEmailRecipients?.trim() || null,
+      alertWebhookMaxPerDay: payload.alertWebhookMaxPerDay ?? null,
+      alertEmailMaxPerDay: payload.alertEmailMaxPerDay ?? null,
     },
   });
   await recordAuditEvent(workspaceSlug, {
@@ -185,6 +187,8 @@ export async function updateCompliancePolicy(workspaceSlug: string, policyId: st
       alertViaEmail: payload.alertViaEmail,
       alertWebhookUrl: payload.alertWebhookUrl?.trim() || null,
       alertEmailRecipients: payload.alertEmailRecipients?.trim() || null,
+      alertWebhookMaxPerDay: payload.alertWebhookMaxPerDay ?? null,
+      alertEmailMaxPerDay: payload.alertEmailMaxPerDay ?? null,
       // Explicit save = the human review/reset step for the autoRun circuit
       // breaker (main.py:10921-10929) — clears the trip so autoRun resumes
       // on the next pass; it re-trips on its own if the same failure repeats.
@@ -399,7 +403,12 @@ interface MarkerAction {
  */
 async function firePolicyViolationAlert(
   workspaceSlug: string,
-  policy: { id: string; name: string; alertOnViolation: boolean; alertViaWebhook: boolean; alertViaEmail: boolean; alertWebhookUrl: string | null; alertEmailRecipients: string | null },
+  policy: {
+    id: string; name: string; alertOnViolation: boolean; alertViaWebhook: boolean; alertViaEmail: boolean;
+    alertWebhookUrl: string | null; alertEmailRecipients: string | null;
+    alertWebhookMaxPerDay: number | null; alertEmailMaxPerDay: number | null;
+    alertWebhookSentToday: number; alertEmailSentToday: number; alertCountersDate: string | null;
+  },
   newViolationCount: number,
   deviceCount: number,
 ): Promise<void> {
@@ -411,20 +420,40 @@ async function firePolicyViolationAlert(
 
   const errors: string[] = [];
 
+  // Optional per-channel daily send caps (Compliance Policy Builder > Alerts
+  // > "Limit to N alerts per day") — a guardrail against a misconfigured or
+  // overly broad policy that keeps finding new violations every evaluation
+  // pass and would otherwise flood a webhook/inbox unboundedly. Counts are
+  // scoped to a "YYYY-MM-DD" day key (UTC, same convention as
+  // AnalyticsSnapshot's date column) and reset the moment today's key no
+  // longer matches what's stored — no separate cron/reset job needed since
+  // this function already runs on every evaluation pass.
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const countersStale = policy.alertCountersDate !== todayKey;
+  let webhookSentToday = countersStale ? 0 : policy.alertWebhookSentToday;
+  let emailSentToday = countersStale ? 0 : policy.alertEmailSentToday;
+
   if (policy.alertViaWebhook) {
-    try {
-      const url = policy.alertWebhookUrl?.trim()
-        || (await prisma.workspaceState.findUnique({ where: { workspaceSlug: "global" } }))?.webhookUrl?.trim()
-        || null;
-      if (!url) throw new Error("no webhook URL configured (set one on this policy or in Settings > General)");
-      await sendChatText(url, text);
-    } catch (e) {
-      errors.push(`webhook: ${e instanceof Error ? e.message : e}`);
+    if (policy.alertWebhookMaxPerDay != null && webhookSentToday >= policy.alertWebhookMaxPerDay) {
+      errors.push(`webhook: daily limit reached (${policy.alertWebhookMaxPerDay}/day) — skipped, resets after ${todayKey}`);
+    } else {
+      try {
+        const url = policy.alertWebhookUrl?.trim()
+          || (await prisma.workspaceState.findUnique({ where: { workspaceSlug: "global" } }))?.webhookUrl?.trim()
+          || null;
+        if (!url) throw new Error("no webhook URL configured (set one on this policy or in Settings > General)");
+        await sendChatText(url, text);
+        webhookSentToday += 1;
+      } catch (e) {
+        errors.push(`webhook: ${e instanceof Error ? e.message : e}`);
+      }
     }
   }
 
   if (policy.alertViaEmail) {
-    if (!policy.alertEmailRecipients?.trim()) {
+    if (policy.alertEmailMaxPerDay != null && emailSentToday >= policy.alertEmailMaxPerDay) {
+      errors.push(`email: daily limit reached (${policy.alertEmailMaxPerDay}/day) — skipped, resets after ${todayKey}`);
+    } else if (!policy.alertEmailRecipients?.trim()) {
       errors.push("email: no recipients configured on this policy");
     } else {
       // sendAlertEmail is itself best-effort (never throws) and only
@@ -433,12 +462,19 @@ async function firePolicyViolationAlert(
       // worth surfacing as a per-policy error, unlike a genuinely broken
       // per-policy recipients list or webhook URL above.
       await sendAlertEmail(workspaceSlug, subject, text, policy.alertEmailRecipients);
+      emailSentToday += 1;
     }
   }
 
   await prisma.compliancePolicy.update({
     where: { id: policy.id },
-    data: { lastAlertSentAt: new Date(), lastAlertError: errors.length ? errors.join("; ").slice(0, 500) : null },
+    data: {
+      lastAlertSentAt: new Date(),
+      lastAlertError: errors.length ? errors.join("; ").slice(0, 500) : null,
+      alertWebhookSentToday: webhookSentToday,
+      alertEmailSentToday: emailSentToday,
+      alertCountersDate: todayKey,
+    },
   }).catch((e: unknown) => console.warn(`[Compliance] Failed to record alert status for policy ${policy.id}: ${e}`));
 }
 

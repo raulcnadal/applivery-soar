@@ -121,6 +121,15 @@ const form = reactive({
   alertViaEmail: false,
   alertWebhookUrl: "",
   alertEmailRecipients: "",
+  // Optional per-channel daily send caps — off (unlimited) by default,
+  // matching every policy's behavior before this setting existed; opting in
+  // sets a positive per-day ceiling on just that channel. See
+  // backend/prisma/schema.prisma's CompliancePolicy.alertWebhookMaxPerDay
+  // doc comment.
+  limitAlertWebhook: false,
+  alertWebhookMaxPerDay: 50 as number | null,
+  limitAlertEmail: false,
+  alertEmailMaxPerDay: 50 as number | null,
 });
 
 const isTestingAlertWebhook = ref(false);
@@ -197,6 +206,10 @@ function resetForm() {
   form.alertViaEmail = p?.alertViaEmail ?? false;
   form.alertWebhookUrl = p?.alertWebhookUrl ?? "";
   form.alertEmailRecipients = p?.alertEmailRecipients ?? "";
+  form.limitAlertWebhook = p?.alertWebhookMaxPerDay != null;
+  form.alertWebhookMaxPerDay = p?.alertWebhookMaxPerDay ?? 50;
+  form.limitAlertEmail = p?.alertEmailMaxPerDay != null;
+  form.alertEmailMaxPerDay = p?.alertEmailMaxPerDay ?? 50;
   testAlertWebhookError.value = null;
   testAlertWebhookOk.value = false;
   matchedDevices.value = null;
@@ -492,6 +505,8 @@ async function save() {
       alertViaEmail: form.alertOnViolation && form.alertViaEmail,
       alertWebhookUrl: form.alertWebhookUrl.trim() || null,
       alertEmailRecipients: form.alertEmailRecipients.trim() || null,
+      alertWebhookMaxPerDay: form.limitAlertWebhook && Number.isFinite(Number(form.alertWebhookMaxPerDay)) && Number(form.alertWebhookMaxPerDay) > 0 ? Number(form.alertWebhookMaxPerDay) : null,
+      alertEmailMaxPerDay: form.limitAlertEmail && Number.isFinite(Number(form.alertEmailMaxPerDay)) && Number(form.alertEmailMaxPerDay) > 0 ? Number(form.alertEmailMaxPerDay) : null,
     };
     if (props.policy) {
       await store.updatePolicy(props.policy.id, payload);
@@ -809,6 +824,16 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
             <p v-if="testAlertWebhookError" class="text-[11px]" :style="{ color: DANGER }">{{ testAlertWebhookError }}</p>
             <p v-if="testAlertWebhookOk" class="text-[11px]" style="color: #22C55E">Test message sent.</p>
             <p class="text-[11px] leading-relaxed text-gray-400">Override just for this policy, or leave blank to reuse the deployment's single global webhook.</p>
+            <div class="flex items-center gap-3 flex-wrap pt-1">
+              <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
+                <input v-model="form.limitAlertWebhook" type="checkbox" /> Limit to
+              </label>
+              <input v-model.number="form.alertWebhookMaxPerDay" type="number" min="1" max="10000" :disabled="!form.limitAlertWebhook" class="w-20 px-2.5 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-40 focus:ring-2 focus:ring-brand-500" />
+              <span class="text-xs text-gray-900 dark:text-white">alerts per day</span>
+            </div>
+            <p class="text-[11px] leading-relaxed text-gray-400">
+              {{ form.limitAlertWebhook ? "Extra violations found after this many webhook alerts fire today are still recorded, just not sent — a guardrail against a misconfigured or overly broad policy flooding the webhook." : "Unlimited — every evaluation pass with a new violation sends a webhook alert." }}
+            </p>
           </div>
 
           <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
@@ -817,6 +842,16 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
           <div v-if="form.alertViaEmail" class="pl-6 space-y-1.5">
             <input v-model="form.alertEmailRecipients" placeholder="security@yourorg.com, ops@yourorg.com" class="w-full px-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500" />
             <p class="text-[11px] leading-relaxed text-gray-400">This policy's own recipient list — separate from Settings &gt; SMTP's "Alert Email Recipients" (used for SLA breach/System Health instead). Requires SMTP to be configured in Settings.</p>
+            <div class="flex items-center gap-3 flex-wrap pt-1">
+              <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
+                <input v-model="form.limitAlertEmail" type="checkbox" /> Limit to
+              </label>
+              <input v-model.number="form.alertEmailMaxPerDay" type="number" min="1" max="10000" :disabled="!form.limitAlertEmail" class="w-20 px-2.5 py-1 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-40 focus:ring-2 focus:ring-brand-500" />
+              <span class="text-xs text-gray-900 dark:text-white">alerts per day</span>
+            </div>
+            <p class="text-[11px] leading-relaxed text-gray-400">
+              {{ form.limitAlertEmail ? "Extra violations found after this many emails go out today are still recorded, just not sent — a guardrail against a misconfigured or overly broad policy flooding an inbox." : "Unlimited — every evaluation pass with a new violation sends an email." }}
+            </p>
           </div>
 
           <p v-if="policy?.lastAlertError" class="text-[11px] flex items-start gap-1.5" :style="{ color: WARNING }">
