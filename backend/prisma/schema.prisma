@@ -513,22 +513,39 @@ model Trigger {
 // above are workspace-wide aggregates across every device that has ever hit
 // that inbound webhook, which can't answer "did THIS device's EDR/MTD/DEX
 // tool call this webhook (and when)". This table backs exactly that,
-// written inside fireTrigger (triggers.service.ts) each time a fire
-// resolves to a real device, and read by deviceNormalize.ts to attach onto
-// NormalizedDevice.triggerFires for the Compliance Policy Builder's
-// "Inbound Webhook Fired" condition (complianceFields.ts's triggerFired
-// field / complianceEvaluate.ts's evaluator) to read from. lastPayload is
-// kept purely for admin visibility (the gap this table exists to close in
-// the first place) — never read by the evaluator.
+// written inside fireTrigger/resolveTrigger (triggers.service.ts) each time
+// a fire/resolve resolves to a real device, and read by deviceNormalize.ts
+// to attach onto NormalizedDevice.triggerFires for the Compliance Policy
+// Builder's "Inbound Webhook Fired" condition (complianceFields.ts's
+// triggerFired field / complianceEvaluate.ts's evaluator) to read from.
+//
+// status/resolvedAt exist because a raw "did it ever fire" flag can't tell
+// a still-active EDR/MTD/DEX alert apart from one the same external tool
+// already cleared -- an admin flagged exactly this: SOAR could move a
+// device out of compliance off an inbound Trigger firing, but had no way
+// to hear back that the condition causing it was no longer happening,
+// leaving the device stuck out of compliance forever. Each configured
+// Trigger now exposes two URLs (triggers.controller.ts) -- .../fire/...
+// sets status="active" (existing behavior), .../resolve/... (new) sets
+// status="resolved" -- so the SAME external system that raised the alert
+// is expected to call the resolve URL once its own condition clears.
+// complianceEvaluate.ts's "exists" operator only reports true while
+// status is "active", so a Compliance Policy built on this condition
+// recovers automatically (tag/case cleanup, same as any other condition)
+// the moment a resolve comes in and nothing else in the policy still
+// matches. lastPayload is kept purely for admin visibility — never read
+// by the evaluator.
 model TriggerFireState {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   workspaceSlug String
   triggerId     String
   deviceId      String
+  status        String    @default("active") // "active" | "resolved"
   lastFiredAt   DateTime
-  fireCount     Int      @default(1)
+  resolvedAt    DateTime?
+  fireCount     Int       @default(1)
   lastPayload   Json?
-  updatedAt     DateTime @updatedAt
+  updatedAt     DateTime  @updatedAt
 
   @@unique([workspaceSlug, triggerId, deviceId])
   @@index([workspaceSlug, deviceId])

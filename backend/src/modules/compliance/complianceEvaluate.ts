@@ -256,18 +256,30 @@ export function evaluateCondition(
     if (field === "triggerFired") {
       // TriggerFireState (schema.prisma), attached onto NormalizedDevice as
       // triggerFires by deviceNormalize.ts, populated inside
-      // triggers.service.ts's fireTrigger. Closes the visibility gap where
-      // an Inbound Webhook firing (external EDR/MTD/DEX tool) had no way to
-      // drive a compliance condition. `exists` optionally qualified by
-      // withinMinutes means "fired at least once in the last N minutes";
-      // `missing` is its exact inverse ("hasn't fired in the last N minutes,
-      // or never has") — same present/absent handling shape as
-      // customCheckResult above, just keyed by triggerId instead of a check
-      // key, and with a recency window instead of a value comparison.
+      // triggers.service.ts's fireTrigger/resolveTrigger. Closes the
+      // visibility gap where an Inbound Webhook firing (external EDR/MTD/DEX
+      // tool) had no way to drive a compliance condition -- and, just as
+      // importantly, no way for that SAME external system to report the
+      // condition cleared. `present` therefore tracks the trigger's own
+      // Fired/Resolved lifecycle (status === "active"), not mere history:
+      // `exists` means "currently active per the last Fire/Resolve call
+      // received," `missing` means "resolved, or this trigger has never
+      // fired for this device at all." This is what lets a Compliance
+      // Policy built on this condition recover automatically the moment a
+      // Resolved call comes in and nothing else in the policy still
+      // matches — same as any other condition clearing.
+      //
+      // withinMinutes is an optional staleness SAFETY NET, not the primary
+      // signal — protects against an external tool that fires but, due to
+      // its own bug/misconfiguration, never calls the Resolved URL: past
+      // that many minutes since the last Fire, an "active" state is treated
+      // as stale and no longer present, rather than leaving a device out of
+      // compliance forever on a resolve that will never arrive. Leave unset
+      // for a trigger that reliably resolves on its own.
       const target = value ?? {};
-      const fires = (device.triggerFires as Record<string, { lastFiredAt: string; fireCount: number }> | null) ?? {};
+      const fires = (device.triggerFires as Record<string, { status: "active" | "resolved"; lastFiredAt: string; resolvedAt: string | null; fireCount: number }> | null) ?? {};
       const entry = fires[target.triggerId];
-      let present = Boolean(entry);
+      let present = Boolean(entry) && entry!.status === "active";
       if (present && target.withinMinutes) {
         const ageMinutes = (Date.now() - new Date(entry!.lastFiredAt).getTime()) / 60000;
         present = ageMinutes >= 0 && ageMinutes <= Number(target.withinMinutes);

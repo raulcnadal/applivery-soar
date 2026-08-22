@@ -89,13 +89,17 @@ export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   // Disclosed new feature (TriggerFireState, schema.prisma) — closes the
   // visibility gap where an Inbound Webhook (Settings > Inbound Webhooks,
   // triggers.service.ts) fired by an external EDR/MTD/DEX tool had no way
-  // to surface inside a Compliance Policy. `value` is `{ triggerId,
-  // withinMinutes? }`; `exists`/`missing` optionally qualified by
-  // withinMinutes for "fired recently" / "hasn't fired recently (or ever)"
-  // — see complianceEvaluate.ts's "triggerFired" branch. Same reasoning as
-  // customCheckResult for omitting `platforms` here: a Trigger isn't
-  // platform-scoped, the Policy Builder just lists every enabled one via
-  // GET /api/compliance/trigger-names.
+  // to surface inside a Compliance Policy. Tracks a real Fired/Resolved
+  // lifecycle (each Trigger exposes both a Fire and a Resolve URL) rather
+  // than a one-way "did it ever fire" flag — `exists` means "currently
+  // active" (fired, not yet resolved), `missing` means "resolved, or never
+  // fired." `value` is `{ triggerId, withinMinutes? }`; withinMinutes is an
+  // optional staleness safety net (auto-treat as no-longer-active after N
+  // minutes even without an explicit Resolved call), not the primary
+  // signal — see complianceEvaluate.ts's "triggerFired" branch. Same
+  // reasoning as customCheckResult for omitting `platforms` here: a
+  // Trigger isn't platform-scoped, the Policy Builder just lists every
+  // enabled one via GET /api/compliance/trigger-names.
   { key: "triggerFired", label: "Inbound Webhook Fired", type: "trigger_fired", operators: ["exists", "missing"] },
   { key: "selfReportDaysAgo", label: "Days since last self-report", type: "number", operators: ["greaterThan", "lessThan"] },
   { key: "hasSelfReported", label: "Has ever self-reported (agent installed)", type: "boolean", operators: ["equals"] },

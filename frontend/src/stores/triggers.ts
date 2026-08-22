@@ -65,5 +65,15 @@ export const useTriggersStore = defineStore("triggers", () => {
     return `${window.location.origin}/api/triggers/fire/${trigger.id}/${trigger.secret}`;
   }
 
-  return { triggers, isLoading, error, fetchTriggers, createTrigger, updateTrigger, deleteTrigger, rotateSecret, fireUrl };
+  // Companion to fireUrl — point the SAME external system's "condition
+  // cleared" callback here so a device this trigger moved out of
+  // compliance can actually recover instead of staying flagged forever.
+  // Requires Device lookup field to be configured (see resolveTrigger's
+  // own doc comment on the backend) — there's no "everyone's state" to
+  // clear, only a specific device's.
+  function resolveUrl(trigger: Trigger): string {
+    return `${window.location.origin}/api/triggers/resolve/${trigger.id}/${trigger.secret}`;
+  }
+
+  return { triggers, isLoading, error, fetchTriggers, createTrigger, updateTrigger, deleteTrigger, rotateSecret, fireUrl, resolveUrl };
 });

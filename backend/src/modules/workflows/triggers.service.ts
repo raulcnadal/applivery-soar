@@ -198,11 +198,15 @@ export async function fireTrigger(triggerId: string, secret: string, body: Recor
   // can't bloat this table — it's kept for admin visibility only, never
   // read by the evaluator.
   if (matchedDevice) {
-    const cappedPayload = JSON.stringify(body).length > 8000 ? { truncated: true, keys: Object.keys(body) } : body;
+    const cappedPayload = capTriggerPayload(body);
     await prisma.triggerFireState.upsert({
       where: { workspaceSlug_triggerId_deviceId: { workspaceSlug: slugKey, triggerId, deviceId: matchedDevice.id } },
-      create: { workspaceSlug: slugKey, triggerId, deviceId: matchedDevice.id, lastFiredAt: new Date(), fireCount: 1, lastPayload: cappedPayload as any },
-      update: { lastFiredAt: new Date(), fireCount: { increment: 1 }, lastPayload: cappedPayload as any },
+      create: { workspaceSlug: slugKey, triggerId, deviceId: matchedDevice.id, status: "active", lastFiredAt: new Date(), resolvedAt: null, fireCount: 1, lastPayload: cappedPayload as any },
+      // A fresh fire always re-activates, even if this same (trigger, device)
+      // pair was previously resolved — an EDR/MTD/DEX tool re-raising the
+      // same alert type is exactly the "still/again violating" case this
+      // condition exists for.
+      update: { status: "active", lastFiredAt: new Date(), resolvedAt: null, fireCount: { increment: 1 }, lastPayload: cappedPayload as any },
     });
   }
 
@@ -222,5 +226,96 @@ export async function fireTrigger(triggerId: string, secret: string, body: Recor
     message: `Inbound trigger "${trigger.name}" fired — ran "${workflow.name}"` + (matchedDevice ? ` against ${matchedDevice.displayName}` : " (no device context)"),
   });
 
+  // Fire-and-forget — a Compliance Policy built on this trigger's "Inbound
+  // Webhook Fired" condition should reflect the new violation promptly
+  // rather than waiting out its own evaluationIntervalMinutes. See
+  // compliance.service.ts's triggerEventDrivenReEvaluation doc comment for
+  // why this is a dynamic import (breaks a compliance <-> workflows cycle).
+  if (matchedDevice) {
+    const { triggerEventDrivenReEvaluation } = await import("../compliance/compliance.service");
+    triggerEventDrivenReEvaluation(slugKey, `inbound trigger "${trigger.name}" fired`);
+  }
+
   return { status: "ok", workflowRunId: runRecord.id, caseId, matchedDevice: matchedDevice?.displayName ?? null };
+}
+
+/** Caps a raw inbound payload well under Postgres' JSONB practical limits — kept for admin visibility only, never read by the evaluator, so a chatty/misbehaving external sender can't bloat this table. */
+function capTriggerPayload(body: Record<string, unknown>): Record<string, unknown> {
+  return JSON.stringify(body).length > 8000 ? { truncated: true, keys: Object.keys(body) } : body;
+}
+
+export interface ResolveTriggerResult {
+  status: "ok";
+  matchedDevice: string | null;
+}
+
+/**
+ * The companion to fireTrigger — closes the gap where SOAR could move a
+ * device out of compliance off an inbound Trigger's "Fired" call but had no
+ * way to hear back from the same external system that the underlying
+ * condition cleared. Deliberately much lighter than fireTrigger: it never
+ * runs the linked Workflow or opens a Case (this is a state correction, not
+ * a new incident) — it only flips this (trigger, device) pair's
+ * TriggerFireState to "resolved" so the Compliance Policy Builder's
+ * "Inbound Webhook Fired" condition (complianceEvaluate.ts) stops matching,
+ * letting the standard evaluation pass's own recovery machinery (tag/
+ * Smart-Attribute removal, Case auto-resolve) take it from there exactly
+ * like any other condition clearing.
+ *
+ * Requires deviceLookupField to be configured — unlike fireTrigger,
+ * resolving genuinely can't mean anything device-less (there is no
+ * "everyone's state" to clear, only a specific device's).
+ */
+export async function resolveTrigger(triggerId: string, secret: string, body: Record<string, unknown>): Promise<ResolveTriggerResult> {
+  const trigger = await findTriggerById(triggerId);
+  if (!trigger) throw new HttpError(404, "Unknown trigger");
+  if (!timingSafeEqual(secret, trigger.secret)) throw new HttpError(401, "Invalid trigger secret");
+  if (!trigger.enabled) throw new HttpError(403, "This trigger is disabled");
+  if (!trigger.deviceLookupField) {
+    throw new HttpError(400, "This trigger has no Device lookup field configured — set one (Settings > Inbound Webhooks) so a Resolved call knows which device's state to clear.");
+  }
+
+  const slugKey = trigger.workspaceSlug;
+  const authorization = await getAutomationBearer(slugKey);
+  if (!authorization) {
+    throw new HttpError(503, "No automation credential configured for this workspace — set one in Settings > Workspace Automation.");
+  }
+
+  const devicesResp = await getDevicesFull(authorization, slugKey, false);
+  const matchedDevice = resolveTriggerDevice(trigger.deviceLookupField, body, devicesResp.items);
+  if (!matchedDevice) {
+    await recordAuditEvent(slugKey, {
+      category: "trigger", action: "trigger_resolved_no_device", actor: "external", severity: "warning",
+      targetType: "trigger", targetId: triggerId, targetName: trigger.name,
+      message: `Trigger "${trigger.name}" resolve received but no device matched ${trigger.deviceLookupField}=${JSON.stringify(body[trigger.deviceLookupField])} — nothing cleared`,
+    });
+    throw new HttpError(404, `No device matched on field '${trigger.deviceLookupField}'`);
+  }
+
+  await prisma.triggerFireState.upsert({
+    where: { workspaceSlug_triggerId_deviceId: { workspaceSlug: slugKey, triggerId, deviceId: matchedDevice.id } },
+    // A resolve for a (trigger, device) pair that never actually fired is a
+    // no-op from a compliance standpoint (there's nothing "active" to clear)
+    // but still upserted rather than rejected — an external tool that fires
+    // a "resolved" webhook defensively/idempotently on every check shouldn't
+    // get an error back for it, and the row itself remains useful admin
+    // visibility either way.
+    create: { workspaceSlug: slugKey, triggerId, deviceId: matchedDevice.id, status: "resolved", lastFiredAt: new Date(0), resolvedAt: new Date(), fireCount: 0, lastPayload: capTriggerPayload(body) as any },
+    update: { status: "resolved", resolvedAt: new Date(), lastPayload: capTriggerPayload(body) as any },
+  });
+
+  await recordAuditEvent(slugKey, {
+    category: "trigger", action: "trigger_resolved", actor: "external",
+    targetType: "device", targetId: matchedDevice.id, targetName: matchedDevice.displayName,
+    message: `Inbound trigger "${trigger.name}" resolved for ${matchedDevice.displayName} — condition reported no longer active`,
+  });
+
+  // Fire-and-forget — see the identical call in fireTrigger above. A resolve
+  // is exactly as time-sensitive as a fire from a device-compliance
+  // standpoint: the device shouldn't sit falsely out of compliance any
+  // longer than a fresh violation should sit undetected.
+  const { triggerEventDrivenReEvaluation } = await import("../compliance/compliance.service");
+  triggerEventDrivenReEvaluation(slugKey, `inbound trigger "${trigger.name}" resolved`);
+
+  return { status: "ok", matchedDevice: matchedDevice.displayName };
 }

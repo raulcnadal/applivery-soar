@@ -321,12 +321,12 @@ async function fetchDevicesFullUncached(
   // can attach each device's own slice directly, same batching philosophy as
   // pushdataCache/locCache above (one query for the whole fleet, not one per
   // device).
-  let triggerFiresCache: Record<string, Record<string, { lastFiredAt: string; fireCount: number }>> = {};
+  let triggerFiresCache: Record<string, Record<string, { status: "active" | "resolved"; lastFiredAt: string; resolvedAt: string | null; fireCount: number }>> = {};
   try {
     const fires = await prisma.triggerFireState.findMany({ where: { workspaceSlug: slugKey } });
     for (const f of fires) {
       const entry = triggerFiresCache[f.deviceId] ?? (triggerFiresCache[f.deviceId] = {});
-      entry[f.triggerId] = { lastFiredAt: f.lastFiredAt.toISOString(), fireCount: f.fireCount };
+      entry[f.triggerId] = { status: f.status as "active" | "resolved", lastFiredAt: f.lastFiredAt.toISOString(), resolvedAt: f.resolvedAt?.toISOString() ?? null, fireCount: f.fireCount };
     }
   } catch (e) {
     console.warn(`[Devices] triggerFireState lookup failed: ${e}`);

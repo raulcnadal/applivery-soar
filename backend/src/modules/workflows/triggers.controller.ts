@@ -7,6 +7,7 @@ import {
   deleteTrigger,
   fireTrigger,
   listTriggers,
+  resolveTrigger,
   rotateTriggerSecret,
   updateTrigger,
   type TriggerPayload,
@@ -65,4 +66,12 @@ triggersRouter.post("/api/triggers/:triggerId/rotate-secret", ...manageTriggers,
 triggersRouter.post("/api/triggers/fire/:triggerId/:secret", asyncHandler(async (req, res) => {
   const body = req.body && typeof req.body === "object" ? req.body : {};
   res.json(await fireTrigger(req.params.triggerId, req.params.secret, body));
+}));
+
+// Companion to the fire URL above, same auth model — the external system
+// that raised the alert calls this once its own condition clears. See
+// triggers.service.ts's resolveTrigger doc comment.
+triggersRouter.post("/api/triggers/resolve/:triggerId/:secret", asyncHandler(async (req, res) => {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  res.json(await resolveTrigger(req.params.triggerId, req.params.secret, body));
 }));

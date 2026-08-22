@@ -250,15 +250,18 @@ function setPolicyPlatform(platform: string) {
           <option value="">{{ triggerNames.length ? "Select an inbound webhook…" : "No enabled Inbound Webhooks yet" }}</option>
           <option v-for="t in triggerNames" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
-        <span class="text-xs text-gray-400">within last</span>
+        <span class="text-xs text-gray-400">auto-expire after</span>
         <input
           type="number" min="1"
           :value="condition.value?.withinMinutes ?? ''"
-          placeholder="any time"
+          placeholder="never"
           class="w-24 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ withinMinutes: ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null })"
         />
-        <span class="text-xs text-gray-400">minutes (optional)</span>
+        <span class="text-xs text-gray-400">minutes (optional safety net)</span>
+        <p class="text-[10px] w-full text-gray-400">
+          Matches while the webhook is active — fired but not yet Resolved by the same external system. The optional expiry above only guards against a tool that fires but never calls its Resolved URL; leave blank if it reliably resolves on its own.
+        </p>
         <p v-if="triggerNames.length === 0" class="text-[10px] w-full text-gray-400">
           No enabled Inbound Webhooks yet — add one from Settings &gt; Inbound Webhooks.
         </p>

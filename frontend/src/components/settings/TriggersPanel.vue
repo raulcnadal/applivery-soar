@@ -49,9 +49,9 @@ async function rotate(t: Trigger) {
   await store.rotateSecret(t.id);
 }
 
-async function copyUrl(t: Trigger) {
+async function copyUrl(t: Trigger, kind: "fire" | "resolve") {
   try {
-    await navigator.clipboard.writeText(store.fireUrl(t));
+    await navigator.clipboard.writeText(kind === "fire" ? store.fireUrl(t) : store.resolveUrl(t));
   } catch {
     /* clipboard API unavailable — no-op */
   }
@@ -86,6 +86,11 @@ onMounted(async () => {
       directly, no Compliance Policy required. Each trigger gets its own self-contained URL — id and secret both live in the
       path, the same pattern Slack/Teams/PagerDuty use for their own incoming webhooks — so pasting it into any of those
       tools is enough.
+    </p>
+    <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+      With a Device lookup field set, a trigger can also feed a Compliance Policy's <strong>Inbound Webhook Fired</strong>
+      condition — the second, <strong>Resolved</strong> URL below the Fire URL is how the same external system reports that
+      condition cleared, so a device it moved out of compliance can actually recover instead of staying flagged forever.
     </p>
     <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
 
@@ -128,9 +133,16 @@ onMounted(async () => {
         </div>
         <p class="text-[11px] text-gray-400">{{ t.deviceLookupField ? `Device lookup: ${t.deviceLookupField}` : "Device-less" }} — {{ t.fireCount }}x fired{{ t.lastFiredAt ? ` (last ${new Date(t.lastFiredAt).toLocaleString()})` : "" }}</p>
         <div class="flex items-center gap-1.5">
+          <span class="text-[9px] font-semibold uppercase tracking-wide text-gray-400 w-12 shrink-0">Fire</span>
           <code class="text-[10px] text-gray-500 dark:text-gray-400 truncate bg-gray-50 dark:bg-black/20 rounded px-1.5 py-0.5 flex-1">{{ store.fireUrl(t) }}</code>
-          <button type="button" class="text-gray-400 hover:text-brand-600 shrink-0" title="Copy webhook URL" @click="copyUrl(t)"><component :is="ICONS.Copy" :size="13" weight="Linear" /></button>
+          <button type="button" class="text-gray-400 hover:text-brand-600 shrink-0" title="Copy Fire URL" @click="copyUrl(t, 'fire')"><component :is="ICONS.Copy" :size="13" weight="Linear" /></button>
         </div>
+        <div v-if="t.deviceLookupField" class="flex items-center gap-1.5">
+          <span class="text-[9px] font-semibold uppercase tracking-wide text-gray-400 w-12 shrink-0">Resolve</span>
+          <code class="text-[10px] text-gray-500 dark:text-gray-400 truncate bg-gray-50 dark:bg-black/20 rounded px-1.5 py-0.5 flex-1">{{ store.resolveUrl(t) }}</code>
+          <button type="button" class="text-gray-400 hover:text-brand-600 shrink-0" title="Copy Resolved URL" @click="copyUrl(t, 'resolve')"><component :is="ICONS.Copy" :size="13" weight="Linear" /></button>
+        </div>
+        <p v-else class="text-[10px] text-gray-400">Set a Device lookup field to also get a Resolved URL, so this trigger can back a Compliance Policy condition.</p>
       </div>
     </div>
 
