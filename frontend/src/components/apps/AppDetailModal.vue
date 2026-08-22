@@ -144,11 +144,32 @@ const versionsWithVulns = computed(() => {
   const byVersion = props.app.vulnSummary.byVersion;
   return props.app.versions.filter((v) => byVersion[v]).map((v) => ({ version: v, info: byVersion[v] }));
 });
+
+// Collapsed by default, per version — an app with several reported versions
+// (each potentially carrying a dozen-plus CVE rows, per its own cached
+// Vulnerability Service match) could otherwise print 30+ rows before the
+// admin has even decided which version they care about, growing this modal
+// far past the viewport. Empty Set = every version starts collapsed; Vue 3
+// tracks Set.add/delete on a ref the same as any other mutation, no need
+// for reactive() here.
+const expandedVersions = ref<Set<string>>(new Set());
+function toggleVersion(version: string) {
+  if (expandedVersions.value.has(version)) expandedVersions.value.delete(version);
+  else expandedVersions.value.add(version);
+}
 </script>
 
 <template>
   <Modal :open="open" :title="app ? app.name : 'App'" size="lg" class="max-w-4xl" @close="emit('close')">
-    <div v-if="app" class="space-y-5">
+    <!-- max-h-[75vh]/overflow-y-auto: Modal (bluesky-vue) itself doesn't cap
+         body height (packages/bluesky-vue/src/Modal.vue), so this app's own
+         content — particularly the per-version Vulnerabilities section right
+         below, which can run to dozens of CVE rows across several versions —
+         used to just push the panel past the viewport with no way to reach
+         the rest of it. Scrolls here regardless of collapse state, as a
+         hard backstop, not just a fix for the (default-collapsed) CVE
+         lists specifically. -->
+    <div v-if="app" class="space-y-5 max-h-[75vh] overflow-y-auto pr-1">
       <div>
         <div class="flex items-center gap-1.5">
           <p class="text-xs text-gray-400 font-mono">{{ app.identifier }}</p>
@@ -219,14 +240,23 @@ const versionsWithVulns = computed(() => {
         <p class="text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Vulnerabilities</p>
         <div class="space-y-3">
           <div v-for="{ version, info } in versionsWithVulns" :key="version">
-            <p class="text-xs font-medium text-gray-900 dark:text-white mb-1">
+            <button
+              v-if="info.cveList.length > 0"
+              type="button"
+              class="flex items-center gap-1 text-xs font-medium text-gray-900 dark:text-white mb-1 hover:opacity-80"
+              @click="toggleVersion(version)"
+            >
+              <component :is="expandedVersions.has(version) ? ICONS.AltArrowUp : ICONS.AltArrowDown" :size="12" weight="Linear" class="shrink-0 text-gray-400" />
               v{{ version }}
-              <span v-if="info.cveList.length === 0" class="font-normal" :style="{ color: '#22C55E' }"> · no known CVEs</span>
-              <span v-else class="font-normal text-gray-400">
+              <span class="font-normal text-gray-400">
                 · {{ info.cveList.length }} known CVE{{ info.cveList.length === 1 ? "" : "s" }}{{ info.hasKev ? " · includes a known-exploited (CISA KEV) CVE" : "" }}
               </span>
+            </button>
+            <p v-else class="text-xs font-medium text-gray-900 dark:text-white mb-1">
+              v{{ version }}
+              <span class="font-normal" :style="{ color: '#22C55E' }"> · no known CVEs</span>
             </p>
-            <div v-if="info.cveList.length > 0" class="space-y-1">
+            <div v-if="info.cveList.length > 0 && expandedVersions.has(version)" class="space-y-1 max-h-72 overflow-y-auto">
               <div v-for="c in info.cveList" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
                 <span class="text-gray-900 dark:text-white">
                   <a v-if="vulnLink(c.id)" :href="vulnLink(c.id)!" target="_blank" rel="noopener noreferrer" class="hover:underline text-brand-600 dark:text-brand-400">{{ c.id }}</a>
