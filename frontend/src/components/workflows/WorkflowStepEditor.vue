@@ -222,7 +222,7 @@ const failureBranchOptions = computed(() => [{ value: "", label: "Stop (default)
 </script>
 
 <template>
-  <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3 bg-gray-50/50">
+  <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3 bg-gray-50 dark:bg-gray-900/50">
     <div class="flex flex-wrap items-center gap-2">
       <span class="text-xs font-semibold text-gray-400 w-6 shrink-0">#{{ stepIndex + 1 }}</span>
       <Input v-model="step.name" placeholder="Step name" class="flex-1 min-w-[140px]" />
