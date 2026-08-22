@@ -35,6 +35,7 @@ const PUBLIC_ROUTES = new Set([
   "GET /api/agent-downloads/:platform/meta",
   "POST /api/applivery-webhook/receive/:secret",
   "POST /api/triggers/fire/:triggerId/:secret",
+  "POST /api/triggers/resolve/:triggerId/:secret",
   "POST /api/compliance/evaluate-due",
   "POST /api/workflows/resume-due",
 ]);
