@@ -14,7 +14,6 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
-import AppListsPanel from "../components/compliance/AppListsPanel.vue";
 import PoliciesTable from "../components/compliance/PoliciesTable.vue";
 import PolicyBuilderDrawer from "../components/compliance/PolicyBuilderDrawer.vue";
 import TemplateGallery from "../components/compliance/TemplateGallery.vue";
@@ -45,6 +44,10 @@ const PLATFORM_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 const policyPlatformFilter = ref("");
 
+// App Lists moved to the top-level Apps view (AppsView.vue) — Compliance
+// now has exactly one sub-view (Policies), so the Policies/App Lists
+// ViewSwitcher pill that used to live here was removed entirely rather than
+// kept around as a single-option switcher.
 const visiblePolicies = computed(() => {
   const ids = segmentsStore.collectSegmentIds(segmentsStore.selectedSegment.id);
   let list = ids === null ? store.policies : store.policies.filter((p) => ids.has(String(p.segmentId ?? "0")));
@@ -55,8 +58,6 @@ const visiblePolicies = computed(() => {
   }
   return list;
 });
-
-const subView = ref<"policies" | "app-lists">("policies");
 
 const drawerOpen = ref(false);
 const editingPolicy = ref<CompliancePolicy | null>(null);
@@ -162,7 +163,6 @@ function useTemplates(templates: ComplianceTemplate[], frameworkLabel: string) {
     targetPlatform,
     targetDeploymentModel: templates[0].targetDeploymentModel ?? null,
   };
-  subView.value = "policies";
   drawerOpen.value = true;
 }
 
@@ -216,14 +216,15 @@ onMounted(async () => {
         </div>
         <p class="text-sm mt-1 text-gray-400">Policies watch device conditions and fire a linked Workflow the moment a device falls out of compliance.</p>
       </div>
-      <!-- w-full sm:w-auto matches the same fix already applied to
-           DevicesView/WorkflowsView/ReportingView's header action row: this
-           div's own flex-wrap only has room to wrap its buttons onto
-           multiple lines once the div itself is allowed to take the full
-           header width on mobile — shrink-0 alone left it hugging its
-           unwrapped content width, which is wider than the viewport, so the
-           whole header scrolled horizontally instead of stacking. -->
-      <div class="flex items-center gap-2 shrink-0 ml-auto flex-wrap w-full sm:w-auto">
+    </header>
+
+    <!-- Full-width toolbar row (rather than living inside <header>'s own
+         flex, which right-anchored everything via ml-auto) so the
+         filter/evaluate controls can sit flush against the same left edge
+         as the policy cards below, while Create Compliance Policy stays
+         pinned to the right — per user request. -->
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-6">
+      <div class="flex items-center gap-2 flex-wrap">
         <select
           v-model="policyPlatformFilter"
           title="Filter the Policies list (and the On-Demand Policy Evaluation dropdown) to one platform"
@@ -244,50 +245,34 @@ onMounted(async () => {
         <button :disabled="isEvaluating" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50" @click="evaluateNow">
           <component :is="ICONS.Refresh" :size="14" weight="Linear" :class="isEvaluating ? 'animate-spin' : ''" /> {{ isEvaluating ? "Evaluating…" : "Evaluate now" }}
         </button>
-        <div class="relative" data-create-policy-menu>
+      </div>
+      <div class="relative shrink-0" data-create-policy-menu>
+        <button
+          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200"
+          @click="toggleCreateMenu"
+        >
+          <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Compliance Policy
+          <component :is="ICONS.AltArrowDown" :size="12" weight="Linear" />
+        </button>
+        <div
+          v-if="isCreateMenuOpen"
+          class="absolute right-0 z-20 top-full mt-1 w-52 rounded-lg shadow-xl py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+        >
           <button
-            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200"
-            @click="toggleCreateMenu"
+            class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900/50 flex items-center gap-2"
+            @click="createFromScratch"
           >
-            <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Compliance Policy
-            <component :is="ICONS.AltArrowDown" :size="12" weight="Linear" />
-          </button>
-          <div
-            v-if="isCreateMenuOpen"
-            class="absolute right-0 z-20 top-full mt-1 w-52 rounded-lg shadow-xl py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-          >
-            <button
-              class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900/50 flex items-center gap-2"
-              @click="createFromScratch"
-            >
-              <component :is="ICONS.AddSquare" :size="14" weight="Linear" /> From scratch
-            </button>
-            <button
-              class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900/50 flex items-center gap-2"
-              @click="createFromTemplate"
-            >
-              <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> From template
-            </button>
-          </div>
-        </div>
-        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
-          <button
-            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="subView === 'policies' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
-            @click="subView = 'policies'"
-          >
-            <component :is="ICONS.ShieldWarning" :size="14" weight="Linear" /> Policies
+            <component :is="ICONS.AddSquare" :size="14" weight="Linear" /> From scratch
           </button>
           <button
-            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="subView === 'app-lists' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
-            @click="subView = 'app-lists'"
+            class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900/50 flex items-center gap-2"
+            @click="createFromTemplate"
           >
-            <component :is="ICONS.Checklist" :size="14" weight="Linear" /> App Lists
+            <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> From template
           </button>
         </div>
       </div>
-    </header>
+    </div>
 
     <div v-if="evalSummary" class="mb-6 px-4 py-3 rounded-xl text-xs border text-gray-900 dark:text-white" :style="{ backgroundColor: `${PRIMARY_BLUE}08`, borderColor: `${PRIMARY_BLUE}30` }">
       <template v-if="evalSummary.scopedPolicyName">
@@ -308,26 +293,23 @@ onMounted(async () => {
       <p class="text-sm" :style="{ color: DANGER }">{{ store.policiesError }}</p>
     </div>
 
-    <template v-if="subView === 'policies'">
-      <div class="mb-3">
-        <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Policies</p>
-      </div>
-      <div v-if="store.isLoadingPolicies" class="flex flex-col items-center justify-center min-h-[300px]">
-        <div class="w-8 h-8 border-2 rounded-full animate-spin mb-4" :style="{ borderColor: `${PRIMARY_BLUE}30`, borderTopColor: PRIMARY_BLUE }" />
-        <span class="text-xs uppercase tracking-widest font-bold text-gray-400">Loading policies…</span>
-      </div>
-      <div v-else class="mb-8">
-        <PoliciesTable
-          :policies="visiblePolicies"
-          :is-loading="store.isLoadingPolicies"
-          :total-policies-count="store.policies.length"
-          :segment-name="segmentsStore.selectedSegment.name"
-          @edit="editPolicy"
-        />
-      </div>
-      <ViolationsQueue />
-    </template>
-    <AppListsPanel v-else />
+    <div class="mb-3">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Policies</p>
+    </div>
+    <div v-if="store.isLoadingPolicies" class="flex flex-col items-center justify-center min-h-[300px]">
+      <div class="w-8 h-8 border-2 rounded-full animate-spin mb-4" :style="{ borderColor: `${PRIMARY_BLUE}30`, borderTopColor: PRIMARY_BLUE }" />
+      <span class="text-xs uppercase tracking-widest font-bold text-gray-400">Loading policies…</span>
+    </div>
+    <div v-else class="mb-8">
+      <PoliciesTable
+        :policies="visiblePolicies"
+        :is-loading="store.isLoadingPolicies"
+        :total-policies-count="store.policies.length"
+        :segment-name="segmentsStore.selectedSegment.name"
+        @edit="editPolicy"
+      />
+    </div>
+    <ViolationsQueue />
 
     <PolicyBuilderDrawer
       :open="drawerOpen"

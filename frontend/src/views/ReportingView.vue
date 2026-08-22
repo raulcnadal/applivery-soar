@@ -117,24 +117,37 @@ async function runNow(rep: ScheduledReport) {
         </div>
         <p class="text-sm mt-1 text-gray-400">Build, schedule, and manage automated reports.</p>
       </div>
-      <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0 w-full sm:w-auto sm:max-w-full overflow-x-auto">
+      <!-- Create Report — same blue pill-button styling as Compliance's
+           "Create Compliance Policy" and Workflows' "Create Workflow",
+           placed to the left of the sub-view switcher, per user request.
+           Replaces the old full-width "Add Another Schedule" button that
+           used to sit below the schedules list. -->
+      <div class="flex flex-wrap items-center gap-2 shrink-0 ml-auto w-full sm:w-auto">
         <button
-          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-          :class="tab === 'builder' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
-          @click="selectTab('builder')"
+          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200 shrink-0"
+          @click="openNewReport"
         >
-          <component :is="ICONS.DocumentText" :size="14" weight="Linear" /> Builder
+          <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Report
         </button>
-        <button
-          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-          :class="tab === 'scheduled' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
-          @click="selectTab('scheduled')"
-        >
-          <component :is="ICONS.Calendar" :size="14" weight="Linear" /> Schedules ({{ store.scheduledReports.length }})
-        </button>
-        <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-gray-400 transition-all" @click="selectTab('template')">
-          <component :is="ICONS.CodeFile" :size="14" weight="Linear" /> Template
-        </button>
+        <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0 max-w-full overflow-x-auto">
+          <button
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
+            :class="tab === 'builder' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
+            @click="selectTab('builder')"
+          >
+            <component :is="ICONS.DocumentText" :size="14" weight="Linear" /> Builder
+          </button>
+          <button
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
+            :class="tab === 'scheduled' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
+            @click="selectTab('scheduled')"
+          >
+            <component :is="ICONS.Calendar" :size="14" weight="Linear" /> Schedules ({{ store.scheduledReports.length }})
+          </button>
+          <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-gray-400 transition-all" @click="selectTab('template')">
+            <component :is="ICONS.CodeFile" :size="14" weight="Linear" /> Template
+          </button>
+        </div>
       </div>
     </header>
 
@@ -212,15 +225,6 @@ async function runNow(rep: ScheduledReport) {
           </button>
         </div>
       </div>
-
-      <button
-        v-if="store.scheduledReports.length"
-        class="w-full py-3 rounded-xl border font-medium text-sm flex items-center justify-center gap-2 hover:opacity-80 transition-opacity"
-        :style="{ borderColor: PRIMARY_BLUE, color: PRIMARY_BLUE }"
-        @click="openNewReport"
-      >
-        <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Add Another Schedule
-      </button>
     </div>
 
     <ReportBuilderModal :open="builderOpen" :editing-report="editingReport" @close="builderOpen = false" @saved="builderOpen = false" />

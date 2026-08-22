@@ -136,7 +136,42 @@ onMounted(async () => {
           Chained actions — MDM commands, API calls, and notifications. Run manually, auto-fired by Compliance Policies on violation, or launched directly from a Case.
         </p>
       </div>
-      <div class="flex flex-wrap items-center gap-2 shrink-0 ml-auto w-full sm:w-auto">
+    </header>
+
+    <!-- Full-width toolbar row (matches ComplianceView.vue's layout): the
+         platform filter sits flush left, Create Workflow + the sub-view pill
+         switcher stay grouped on the right, in that order — per user
+         request to match the left/right split used elsewhere. -->
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-8">
+      <!-- Same invisible/reserved-space trick as the Create Workflow button
+           to the right — only meaningful on the Workflows tab, but kept in
+           the layout (rather than v-if'd out) on the other two tabs so the
+           toolbar row's width doesn't jump when switching tabs. -->
+      <select
+        v-model="workflowPlatformFilter"
+        title="Filter the Workflows list to one platform"
+        class="px-2.5 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500 shrink-0"
+        :class="tab === 'workflows' ? '' : 'invisible pointer-events-none'"
+        :aria-hidden="tab !== 'workflows'"
+        :tabindex="tab === 'workflows' ? 0 : -1"
+      >
+        <option v-for="p in WORKFLOW_PLATFORM_FILTER_OPTIONS" :key="p.value" :value="p.value">{{ p.label }}</option>
+      </select>
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <!-- Always rendered (rather than conditionally mounted) so its layout
+             space stays reserved on non-Workflows tabs — otherwise the pill
+             switcher next to it visibly shifts position, since removing this
+             button changes the row's total width. Port of the original's
+             identical `invisible pointer-events-none` trick. -->
+        <button
+          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200 shrink-0"
+          :class="tab === 'workflows' ? '' : 'invisible pointer-events-none'"
+          :aria-hidden="tab !== 'workflows'"
+          :tabindex="tab === 'workflows' ? 0 : -1"
+          @click="openNew"
+        >
+          <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Workflow
+        </button>
         <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0 max-w-full overflow-x-auto">
           <button
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
@@ -160,36 +195,8 @@ onMounted(async () => {
             <component :is="ICONS.ShieldCheck" :size="14" weight="Linear" /> Firewall Policy Library
           </button>
         </div>
-        <!-- Same invisible/reserved-space trick as the Create Workflow button
-             just below — only meaningful on the Workflows tab, but kept in
-             the layout (rather than v-if'd out) on the other two tabs so
-             the header row's width doesn't jump when switching tabs. -->
-        <select
-          v-model="workflowPlatformFilter"
-          title="Filter the Workflows list to one platform"
-          class="px-2.5 py-2 rounded-lg text-sm font-medium outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500 shrink-0"
-          :class="tab === 'workflows' ? '' : 'invisible pointer-events-none'"
-          :aria-hidden="tab !== 'workflows'"
-          :tabindex="tab === 'workflows' ? 0 : -1"
-        >
-          <option v-for="p in WORKFLOW_PLATFORM_FILTER_OPTIONS" :key="p.value" :value="p.value">{{ p.label }}</option>
-        </select>
-        <!-- Always rendered (rather than conditionally mounted) so its layout
-             space stays reserved on non-Workflows tabs — otherwise the pill
-             switcher next to it visibly shifts position, since removing this
-             button changes the row's total width. Port of the original's
-             identical `invisible pointer-events-none` trick. -->
-        <button
-          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 transition-all duration-200 shrink-0"
-          :class="tab === 'workflows' ? '' : 'invisible pointer-events-none'"
-          :aria-hidden="tab !== 'workflows'"
-          :tabindex="tab === 'workflows' ? 0 : -1"
-          @click="openNew"
-        >
-          <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Workflow
-        </button>
       </div>
-    </header>
+    </div>
 
     <template v-if="tab === 'library'">
       <Alert v-if="actionLibraryStore.error" type="danger">{{ actionLibraryStore.error }}</Alert>

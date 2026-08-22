@@ -1,20 +1,25 @@
 <script setup lang="ts">
-// Apps — new top-level view (nav tab added in AppShell.vue). Two purposes:
+// Apps — new top-level view (nav tab added in AppShell.vue). Three purposes:
 // 1) Reported Apps: fleet-wide visibility into what SOAR currently sees
 //    installed, on which devices, at which version — a troubleshooting aid
 //    independent of Compliance enforcement (see ReportedAppsPanel.vue).
-// 2) App Catalog: the shared identifier catalog App Lists (Compliance >
-//    App Lists) build from — moved here from AppListsPanel.vue's old left
-//    column so that view doesn't keep growing more crowded as more apps
-//    get cataloged. Compliance > App Lists still reads the catalog for its
-//    list editor; this is where entries actually get added/removed.
+// 2) App Catalog: the shared identifier catalog App Lists build from —
+//    moved here from AppListsPanel.vue's old left column so that panel
+//    doesn't keep growing more crowded as more apps get cataloged.
+// 3) App Lists: grouping App Catalog entries into named lists a Compliance
+//    Policy can reference (requiredAppList/disallowedAppList conditions).
+//    Moved here from Compliance's own sub-view switcher per user request —
+//    it's fundamentally about apps, not policies, and Compliance now has
+//    only one sub-view (Policies) left once this moves, so that switcher
+//    was removed there too.
 import { ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import ReportedAppsPanel from "../components/apps/ReportedAppsPanel.vue";
 import AppCatalogPanel from "../components/apps/AppCatalogPanel.vue";
+import AppListsPanel from "../components/compliance/AppListsPanel.vue";
 
-const subView = ref<"reported" | "catalog">("reported");
+const subView = ref<"reported" | "catalog" | "lists">("reported");
 </script>
 
 <template>
@@ -42,10 +47,18 @@ const subView = ref<"reported" | "catalog">("reported");
         >
           <component :is="ICONS.Checklist" :size="14" weight="Linear" /> Custom Catalog
         </button>
+        <button
+          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
+          :class="subView === 'lists' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
+          @click="subView = 'lists'"
+        >
+          <component :is="ICONS.ShieldWarning" :size="14" weight="Linear" /> App Lists
+        </button>
       </div>
     </header>
 
     <ReportedAppsPanel v-if="subView === 'reported'" />
-    <AppCatalogPanel v-else />
+    <AppCatalogPanel v-else-if="subView === 'catalog'" />
+    <AppListsPanel v-else />
   </main>
 </template>

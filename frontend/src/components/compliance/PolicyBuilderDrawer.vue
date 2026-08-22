@@ -262,7 +262,12 @@ const evalIntervalWarning = computed(() => {
   return m !== null && m > 0 && m < EVAL_INTERVAL_WARN_BELOW_MINUTES;
 });
 
-const needsDeploymentModel = computed(() => ["apple", "macos", "android"].includes(form.targetPlatform));
+// macOS is excluded here (unlike apple/android) — SOAR assumes every macOS
+// device it manages is supervised (Applivery doesn't enroll unsupervised
+// macOS devices in practice), so pickPlatform below auto-fills
+// targetDeploymentModel = "supervised" for macOS without showing this step
+// at all, letting the admin continue straight to the Rules screen.
+const needsDeploymentModel = computed(() => ["apple", "android"].includes(form.targetPlatform));
 const modelOptions = computed(() => DEPLOYMENT_MODELS[form.targetPlatform] ?? []);
 const modelLabel = computed(() => modelOptions.value.find((m) => m.value === form.targetDeploymentModel)?.label ?? form.targetDeploymentModel);
 
@@ -301,7 +306,8 @@ function reconcileConditionsForTarget() {
 function pickPlatform(value: string) {
   hasChosenTarget.value = true;
   form.targetPlatform = value;
-  form.targetDeploymentModel = "";
+  // All macOS devices SOAR manages are assumed supervised — skip asking.
+  form.targetDeploymentModel = value === "macos" ? "supervised" : "";
   reconcileConditionsForTarget();
   // Re-fetch platform-scoped -- selfReportedAttributeNames' underlying
   // endpoint supports ?platform= filtering, but the names it returns carry
