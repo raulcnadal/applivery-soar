@@ -36,6 +36,7 @@ import { useWorkflowsStore } from "../../stores/workflows";
 import { flattenSegments } from "../../lib/segments";
 import { msrcUrl, vulnLink } from "../../utils/vulnLinks";
 import HelpIcon from "../shared/HelpIcon.vue";
+import DeviceCompliancePolicyStatusModal from "./DeviceCompliancePolicyStatusModal.vue";
 import PolicyPickerModal from "./PolicyPickerModal.vue";
 import SegmentPickerModal from "./SegmentPickerModal.vue";
 import TagEditorModal from "./TagEditorModal.vue";
@@ -127,6 +128,7 @@ const router = useRouter();
 
 const tab = ref<"overview" | "compliance" | "apps" | "location" | "agent">("overview");
 const activePicker = ref<null | "segment" | "policy" | "tags">(null);
+const compliancePolicyStatusTarget = ref<{ policyId: string; policyName: string } | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
 const isSyncingLocation = ref(false);
@@ -1046,15 +1048,24 @@ function traceTitle(t: Record<string, any>): string {
                    from this tab. Green/red posture per row instead of only
                    surfacing red ones. -->
               <div v-if="assignedCompliancePolicies.length > 0" class="space-y-1.5">
-                <div v-for="p in assignedCompliancePolicies" :key="p.id" class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm bg-gray-50 dark:bg-gray-900/50">
+                <button
+                  v-for="p in assignedCompliancePolicies"
+                  :key="p.id"
+                  type="button"
+                  class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm text-left bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+                  @click="compliancePolicyStatusTarget = { policyId: p.id, policyName: p.name }"
+                >
                   <span class="flex items-center gap-2 min-w-0">
                     <span class="w-2 h-2 rounded-full shrink-0" :style="{ backgroundColor: p.compliant ? SUCCESS : DANGER }" />
                     <span class="truncate text-gray-900 dark:text-white">{{ p.name }}</span>
                   </span>
-                  <span class="text-[10px] font-semibold shrink-0 uppercase" :style="{ color: p.compliant ? SUCCESS : (p.status === 'pending' ? WARNING : p.status === 'auto_fired' ? PRIMARY_BLUE : DANGER) }">
-                    {{ p.compliant ? "Compliant" : (String(p.status || "").replace("_", " ") || "Violating") }}
+                  <span class="flex items-center gap-1.5 shrink-0">
+                    <span class="text-[10px] font-semibold uppercase" :style="{ color: p.compliant ? SUCCESS : (p.status === 'pending' ? WARNING : p.status === 'auto_fired' ? PRIMARY_BLUE : DANGER) }">
+                      {{ p.compliant ? "Compliant" : (String(p.status || "").replace("_", " ") || "Violating") }}
+                    </span>
+                    <component :is="ICONS.AltArrowRight" :size="12" weight="Linear" class="text-gray-400" />
                   </span>
-                </div>
+                </button>
               </div>
               <p v-else class="text-xs text-gray-400">No Compliance Policies are currently scoped to this device (platform/device audience).</p>
             </div>
@@ -1396,5 +1407,12 @@ function traceTitle(t: Record<string, any>): string {
 
     <WorkflowPickerModal :open="isPickingWorkflow" @close="isPickingWorkflow = false" @confirm="handleRunWorkflow" />
     <WorkflowRunResultModal :open="!!runResult" :run="runResult" @close="runResult = null" @complete="() => store.fetchDevices(true)" />
+    <DeviceCompliancePolicyStatusModal
+      :open="!!compliancePolicyStatusTarget"
+      :device-id="device?.id ?? null"
+      :policy-id="compliancePolicyStatusTarget?.policyId ?? null"
+      :policy-name="compliancePolicyStatusTarget?.policyName ?? null"
+      @close="compliancePolicyStatusTarget = null"
+    />
   </template>
 </template>

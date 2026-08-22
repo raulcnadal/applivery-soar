@@ -269,6 +269,17 @@ export const useDevicesStore = defineStore("devices", () => {
     return res.data;
   }
 
+  // Backs the Device Detail Drawer's Compliance Policies pills becoming
+  // clickable — per-condition met/not-met breakdown for one policy against
+  // one device, rather than only the pill's own overall compliant/violated
+  // color (disclosed new feature, devices.service.ts's
+  // getDeviceCompliancePolicyStatus doc comment).
+  async function getDeviceCompliancePolicyStatus(deviceId: string, policyId: string) {
+    const { api } = await import("../api/http");
+    const res = await api.get(`/devices/${deviceId}/compliance/${policyId}`);
+    return res.data;
+  }
+
   async function getFirewallState(deviceId: string) {
     const { api } = await import("../api/http");
     const res = await api.get(`/devices/${deviceId}/firewall-state`);
@@ -328,6 +339,7 @@ export const useDevicesStore = defineStore("devices", () => {
     getPolicies,
     getApps,
     getDeviceCompliance,
+    getDeviceCompliancePolicyStatus,
     getFirewallState,
     updateSegment,
     updateTags,

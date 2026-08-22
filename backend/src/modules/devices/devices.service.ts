@@ -28,6 +28,10 @@ import { anyVulnSourceEnabled } from "../catalogs/vulnSources";
 import { loadDevicePushDataCache } from "./deviceData.service";
 import { LOCATION_CACHE_KEY } from "../analytics/locationsSync.service";
 import { executeMdmAction } from "../workflows/mdmActionExecutor";
+import { evaluateCondition, type AppListsContext, type GeoContext } from "../compliance/complianceEvaluate";
+import { loadAppListsContext } from "../appLists/appCatalog.service";
+import { loadGeofenceZonesById } from "../geofencing/geofence.service";
+import { loadDeviceLocations } from "../geofencing/locationsRefresh.service";
 import { createScriptAsset } from "../workflows/scriptAssetUpload";
 
 // Port of `SECURITY_REPORT_SCRIPT_FILES`/`REATTEST_LIBRARY_ENTRY_NAME`
@@ -522,6 +526,66 @@ export async function getDeviceCompliance(authorization: string, workspaceSlug: 
     throw new HttpError(404, "Device not found in the current fleet snapshot");
   }
   return match;
+}
+
+/**
+ * Per-condition breakdown of one Compliance Policy against one device — the
+ * data behind Device Detail Drawer's "Compliance Policies" pills becoming
+ * clickable (a disclosed new feature, not a parity port): rather than only
+ * showing "this policy is violated," an admin can see exactly WHICH of the
+ * policy's conditions are currently true for this device and which aren't,
+ * each independently — regardless of the policy's own conditionLogic
+ * ("any"/"all"), which only decides the *overall* violated flag, not
+ * whether an individual condition is worth showing as a problem.
+ *
+ * Reuses the exact same evaluateCondition (complianceEvaluate.ts) the real
+ * evaluation pass (compliance.service.ts's runComplianceEvaluation) calls —
+ * this is a read-only, on-demand re-run of that same logic for a single
+ * device+policy pair, not a second implementation that could drift from
+ * it. AppLists/geo context is rebuilt fresh, scoped to just this one
+ * device, since this is a low-frequency on-demand lookup (a user opening a
+ * modal), unlike the batched whole-fleet pass those loaders were designed
+ * for.
+ *
+ * lastEvaluatedAt is the POLICY's own lastEvaluatedAt (schema.prisma) —
+ * this app evaluates every scoped device in one pass per policy per
+ * interval, so there's no meaningfully different per-device timestamp to
+ * report; every device scoped by this policy was checked at that same
+ * moment.
+ */
+export async function getDeviceCompliancePolicyStatus(authorization: string, workspaceSlug: string, deviceId: string, policyId: string) {
+  const full = await getDevicesFull(authorization, workspaceSlug, false);
+  const device = full.items.find((d) => String(d.id) === String(deviceId));
+  if (!device) throw new HttpError(404, "Device not found in the current fleet snapshot");
+
+  const policy = await prisma.compliancePolicy.findFirst({ where: { workspaceSlug, id: policyId } });
+  if (!policy) throw new HttpError(404, "Compliance policy not found");
+
+  const appLists: AppListsContext = await loadAppListsContext(workspaceSlug);
+  const geo: GeoContext = {
+    zonesById: await loadGeofenceZonesById(workspaceSlug),
+    locationsByDeviceId: await loadDeviceLocations(workspaceSlug, [device.id]),
+  };
+
+  const conditions = ((policy.conditions as any[]) ?? []).map((c) => ({
+    field: c.field,
+    operator: c.operator,
+    value: c.value,
+    met: evaluateCondition(device as any, c, appLists, geo),
+  }));
+
+  const conditionLogic = policy.conditionLogic;
+  const matchedCount = conditions.filter((c) => c.met).length;
+  const violated = conditions.length === 0 ? false : conditionLogic === "all" ? matchedCount === conditions.length : matchedCount > 0;
+
+  return {
+    policyId: policy.id,
+    policyName: policy.name,
+    conditionLogic,
+    lastEvaluatedAt: policy.lastEvaluatedAt,
+    violated,
+    conditions,
+  };
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   fetchDeviceAgentDiagnostics,
   getDeviceAssets,
   getDeviceCompliance,
+  getDeviceCompliancePolicyStatus,
   getDeviceFirewallState,
   getDeviceLocations,
   getDeviceNetworkStatus,
@@ -50,6 +51,20 @@ devicesRouter.get(
     const workspaceSlug = req.header("X-Workspace-Slug");
     requireCreds(authorization, workspaceSlug);
     res.json(await getDeviceCompliance(authorization, workspaceSlug!, req.params.deviceId));
+  }),
+);
+
+// GET /api/devices/{device_id}/compliance/{policy_id} — per-condition
+// breakdown for the "Compliance Policies" pills becoming clickable in
+// Device Detail Drawer (disclosed new feature, not a parity port).
+devicesRouter.get(
+  "/api/devices/:deviceId/compliance/:policyId",
+  ...readDevices,
+  asyncHandler(async (req, res) => {
+    const authorization = req.header("Authorization");
+    const workspaceSlug = req.header("X-Workspace-Slug");
+    requireCreds(authorization, workspaceSlug);
+    res.json(await getDeviceCompliancePolicyStatus(authorization, workspaceSlug!, req.params.deviceId, req.params.policyId));
   }),
 );
 
