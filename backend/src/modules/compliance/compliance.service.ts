@@ -1030,6 +1030,18 @@ export async function approveViolationCore(violationId: string, workspaceSlug: s
     await prisma.case.update({ where: { id: violation.caseId }, data: { workflowRunIds: { push: runRecord.id }, updatedAt: new Date() } });
     await addCaseTimelineEntry(violation.caseId, "workflow_run_linked", `Violation approved by ${actorEmail} — ran "${workflow.name}"`, actorEmail);
   }
+  // Same reasoning as the manual Case-close cleanup below (see
+  // removeComplianceMarkersForDevice's own comment): this policy may have
+  // openCaseOnViolation off entirely, in which case the Violations review
+  // queue — not a Case — is this workspace's only manual "this is handled"
+  // action. Approving here is exactly that, so it gets the same tag/
+  // Smart-Attribute cleanup a Case close would, rather than leaving the
+  // marker on the device until the next evaluation pass happens to find it
+  // already recovered (or indefinitely, for a policy with a long/no
+  // recheck interval).
+  await removeComplianceMarkersForDevice(authorization, workspaceSlug, violation.policyId, violation.deviceId).catch((e: unknown) =>
+    console.warn(`[Compliance] Failed to remove marker(s) for device ${violation.deviceId} on violation approval (policy ${violation.policyId}): ${e instanceof Error ? e.message : e}`),
+  );
   return updated;
 }
 
@@ -1048,7 +1060,7 @@ export async function bulkApproveViolations(violationIds: string[], workspaceSlu
 }
 
 /** Port of `_dismiss_violation_core` (main.py:11550). */
-export async function dismissViolationCore(violationId: string, workspaceSlug: string, actorEmail: string) {
+export async function dismissViolationCore(violationId: string, workspaceSlug: string, actorEmail: string, authorization?: string | null) {
   const violation = await prisma.complianceViolation.findFirst({ where: { workspaceSlug, id: violationId } });
   if (!violation) throw new HttpError(404, "Violation not found");
 
@@ -1071,15 +1083,27 @@ export async function dismissViolationCore(violationId: string, workspaceSlug: s
   if (violation.caseId) {
     await addCaseTimelineEntry(violation.caseId, "note_added", `Violation dismissed by ${actorEmail} — remediation not run`, actorEmail);
   }
+  // Same cleanup as approveViolationCore above — a dismiss is this
+  // workspace's manual "this is handled" action for policies with no Case
+  // at all (openCaseOnViolation off), so it gets the same tag/Smart-
+  // Attribute removal a Case close would rather than leaving a stale
+  // marker on the device. authorization is optional here only because
+  // dismiss's own route doesn't otherwise need it — skip cleanup rather
+  // than fail the dismiss itself if it's missing.
+  if (authorization) {
+    await removeComplianceMarkersForDevice(authorization, workspaceSlug, violation.policyId, violation.deviceId).catch((e: unknown) =>
+      console.warn(`[Compliance] Failed to remove marker(s) for device ${violation.deviceId} on violation dismissal (policy ${violation.policyId}): ${e instanceof Error ? e.message : e}`),
+    );
+  }
   return updated;
 }
 
-export async function bulkDismissViolations(violationIds: string[], workspaceSlug: string, actorEmail: string) {
+export async function bulkDismissViolations(violationIds: string[], workspaceSlug: string, actorEmail: string, authorization?: string | null) {
   const dismissed: string[] = [];
   const failed: Array<{ id: string; error: string }> = [];
   for (const vid of violationIds) {
     try {
-      await dismissViolationCore(vid, workspaceSlug, actorEmail);
+      await dismissViolationCore(vid, workspaceSlug, actorEmail, authorization);
       dismissed.push(vid);
     } catch (e) {
       failed.push({ id: vid, error: e instanceof HttpError ? String(e.detail) : String(e) });

@@ -292,10 +292,10 @@ complianceRouter.post("/api/compliance/violations/bulk-approve", ...bulkTriage, 
 }));
 
 complianceRouter.post("/api/compliance/violations/:violationId/dismiss", ...readCompliance, asyncHandler(async (req, res) => {
-  res.json(await dismissViolationCore(req.params.violationId, workspaceOf(req), actorOf(req)));
+  res.json(await dismissViolationCore(req.params.violationId, workspaceOf(req), actorOf(req), req.header("Authorization")));
 }));
 
 complianceRouter.post("/api/compliance/violations/bulk-dismiss", ...bulkTriage, asyncHandler(async (req, res) => {
   const payload = bulkViolationIdsSchema.parse(req.body);
-  res.json(await bulkDismissViolations(payload.violationIds, workspaceOf(req), actorOf(req)));
+  res.json(await bulkDismissViolations(payload.violationIds, workspaceOf(req), actorOf(req), req.header("Authorization")));
 }));
