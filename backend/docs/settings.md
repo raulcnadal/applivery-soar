@@ -183,9 +183,17 @@ Applivery has its own native outbound webhook system, configured entirely inside
 - **Receiver URL** — `.../api/applivery-webhook/receive/{secret}`, with a link to Applivery's own docs on adding a webhook.
 - **Webhook receiver enabled** toggle, **Rotate URL** (confirm-gated).
 - **Per-event-type rules** — one row per Applivery event type (device enrollment, MDM user changes, builds, bug/feedback reports, certificate expiry — new types appear automatically the first time Applivery sends one, nothing to pre-configure). Each expands to: Enabled, **Open a Case** + severity, **Run a Workflow** + workflow picker, with the same destructive-action acknowledgment (and same author-set pre-fill) as Case Auto-Run Rules if the chosen workflow has a destructive step.
-- **Recent events** feed — last 15, with outcome pills (fired / case opened / blocked / no automation credential / etc.).
+- **Recent events** feed — last 15, with outcome pills (fired / case opened / blocked / no automation credential / device fleet resync / etc.).
 
 No permission gate on the settings themselves; the receive endpoint is unauthenticated by design (the secret in the URL *is* the auth).
+
+### Subscribing to Device Enrolled is required for smooth Agent registration
+
+**Subscribe to the `{os}_device_enrolled` event in Applivery's own webhook configuration — this is a required step, not an optional automation, for any workspace deploying the [Applivery SOAR Agent](#applivery-soar-agent).** Independent of whether you enable a Case/Workflow rule for this event here (that toggle only controls the optional automation above), receiving a Device Enrolled event with the webhook receiver itself turned on always triggers an immediate, forced refresh of SOAR's own device fleet cache (normally refreshed lazily, on demand, with a 15-minute TTL).
+
+This closes a real race condition: a newly enrolled device gets Applivery's Managed Configuration profile pushed to it (including this agent's `WorkspaceSlug`/`ReportSecret`/`BootstrapToken`) essentially immediately, and the agent typically attempts its first self-report or mTLS registration within seconds of installing — but that registration is validated server-side against SOAR's own device cache (an mTLS bootstrap registration specifically cross-checks the reported serial number against SOAR's current view of Applivery's fleet). If that cache is still serving a pre-enrollment snapshot when the agent's very first registration attempt lands, registration fails with no obvious cause, and previously required a manual **Refresh** on the Devices view (or waiting out the cache TTL) before retrying. Subscribing to Device Enrolled means the device is already in SOAR's own fleet view by the time the agent's registration call arrives, so first-attempt registration succeeds silently, with no admin intervention.
+
+Without this event subscribed, agent registration on a freshly enrolled device is a race that usually — but not always — resolves itself once the 15-minute cache TTL naturally expires; subscribing removes the race entirely.
 
 ## Case SLA
 

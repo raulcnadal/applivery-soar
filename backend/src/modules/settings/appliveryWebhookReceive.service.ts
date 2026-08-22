@@ -133,12 +133,38 @@ export async function receiveAppliveryWebhook(secret: string, body: Record<strin
 
   const webhookOff = !config.enabled;
   const ruleOff = !rule.enabled;
+
+  // Proactive device-fleet sync — deliberately independent of rule.enabled
+  // (that toggle only gates the optional Case/Workflow automation below).
+  // A newly enrolled device's own SOAR Agent build is pushed via the same
+  // Managed Configuration profile Applivery applies at enrollment, and
+  // typically attempts its first self-report/mTLS registration within
+  // seconds — but that registration only succeeds once SOAR's own device
+  // cache (DEVICES_CACHE_TTL_SECONDS, 15 min) actually contains the device,
+  // since registration cross-checks the reported serial number against
+  // Applivery's live fleet. Without this, a device enrolling mid-cache
+  // window can lose that race and fail registration, needing a manual
+  // resync to fix — exactly the race condition this closes. Fire-and-forget
+  // (not awaited) so a slow full-fleet pull never delays this webhook's own
+  // response to Applivery. See docs/settings.md's Applivery Events section
+  // for why subscribing to this specific event is called out as required.
+  let deviceSyncTriggered = false;
+  if (!webhookOff && canonicalKey === "device_enrolled") {
+    const syncAuth = await getAutomationBearer(workspaceSlug);
+    if (syncAuth) {
+      deviceSyncTriggered = true;
+      getDevicesFull(syncAuth, workspaceSlug, true).catch((e) => {
+        console.warn(`[AppliveryWebhook] Proactive device sync after "${rawAction}" failed: ${e}`);
+      });
+    }
+  }
+
   if (webhookOff || ruleOff) {
-    event.outcome = webhookOff ? "webhook_disabled" : "logged";
+    event.outcome = webhookOff ? "webhook_disabled" : deviceSyncTriggered ? "device_sync_triggered" : "logged";
     await appendEvent(workspaceSlug, event);
     await recordAuditEvent(workspaceSlug, {
       category: "webhook", action: "applivery_event_received", actor: "applivery",
-      message: `Applivery event "${rawAction}" received — ${webhookOff ? "webhook is disabled" : "no automation configured for this event yet"}`,
+      message: `Applivery event "${rawAction}" received — ${webhookOff ? "webhook is disabled" : deviceSyncTriggered ? "device fleet resync triggered" : "no automation configured for this event yet"}`,
     });
     return { status: event.outcome, caseId: null, workflowRunId: null };
   }
@@ -159,6 +185,7 @@ export async function receiveAppliveryWebhook(secret: string, body: Record<strin
   }
 
   const outcomeParts: string[] = [];
+  if (deviceSyncTriggered) outcomeParts.push("device_sync_triggered");
   let caseId: string | null = null;
 
   if (rule.openCase) {
