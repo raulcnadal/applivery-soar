@@ -4,13 +4,12 @@
 // modal) plus POST /api/reports/generate (main.py:892-901, 15608-15779,
 // 16048-16159).
 //
-// Structural note (matches the same pattern already resolved for
-// Workflows/Settings per the standing "navigation and UI MUST match the
-// original" directive): "Builder" is NOT a form — it's a CTA card that
-// opens the Report Builder Modal, which is the ONE unified form used for
-// both "Generate Now" and "Save/Update Schedule". "Template" is not a real
-// persistent tab at all — selecting it opens the Template modal and
-// immediately snaps the active pill back to "builder" (App.jsx:3086-3094).
+// Structural note: "Builder" used to be its own CTA-card sub-view that just
+// opened the Report Builder Modal — removed per user request as pure
+// duplication of the "Create Report" header button, which opens the exact
+// same modal with one click and no extra navigation. Schedules is now the
+// only real view; "Template" is still not a real persistent tab — selecting
+// it just opens the Template modal, same as before.
 import { computed, onMounted, ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
@@ -26,18 +25,11 @@ const DANGER = "#EF4444";
 const store = useDashboardStateStore();
 const auth = useAuthStore();
 
-type Tab = "builder" | "scheduled";
-const tab = ref<Tab>("scheduled");
-const REPORTING_TAB_ANCHORS: Record<string, string> = { builder: "builder-tab", scheduled: "schedules-tab", template: "template-tab" };
-const helpAnchor = computed(() => REPORTING_TAB_ANCHORS[templateOpen.value ? "template" : tab.value] ?? null);
+const REPORTING_TAB_ANCHORS: Record<string, string> = { scheduled: "schedules-tab", template: "template-tab" };
+const helpAnchor = computed(() => REPORTING_TAB_ANCHORS[templateOpen.value ? "template" : "scheduled"] ?? null);
 
-function selectTab(id: Tab | "template") {
-  if (id === "template") {
-    templateOpen.value = true;
-    tab.value = "builder";
-    return;
-  }
-  tab.value = id;
+function openTemplate() {
+  templateOpen.value = true;
 }
 
 onMounted(async () => {
@@ -53,7 +45,6 @@ function openNewReport() {
 }
 function openEditReport(rep: ScheduledReport) {
   editingReport.value = rep;
-  tab.value = "builder";
   builderOpen.value = true;
 }
 
@@ -130,21 +121,10 @@ async function runNow(rep: ScheduledReport) {
           <component :is="ICONS.AddSquare" :size="15" weight="Linear" /> Create Report
         </button>
         <div class="flex items-center gap-1 p-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0 max-w-full overflow-x-auto">
-          <button
-            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="tab === 'builder' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
-            @click="selectTab('builder')"
-          >
-            <component :is="ICONS.DocumentText" :size="14" weight="Linear" /> Builder
-          </button>
-          <button
-            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all"
-            :class="tab === 'scheduled' ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
-            @click="selectTab('scheduled')"
-          >
+          <span class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm">
             <component :is="ICONS.Calendar" :size="14" weight="Linear" /> Schedules ({{ store.scheduledReports.length }})
-          </button>
-          <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-gray-400 transition-all" @click="selectTab('template')">
+          </span>
+          <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-gray-400 transition-all" @click="openTemplate">
             <component :is="ICONS.CodeFile" :size="14" weight="Linear" /> Template
           </button>
         </div>
@@ -155,28 +135,10 @@ async function runNow(rep: ScheduledReport) {
       {{ store.error || scheduleError }}
     </div>
 
-    <!-- Builder — CTA card only; the real form lives in the modal -->
-    <div v-if="tab === 'builder'" class="flex flex-col items-center justify-center py-16 gap-6">
-      <div class="w-16 h-16 rounded-2xl flex items-center justify-center" :style="{ backgroundColor: `${PRIMARY_BLUE}12` }">
-        <component :is="ICONS.DocumentText" :size="28" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
-      </div>
-      <div class="text-center">
-        <h2 class="text-lg font-semibold mb-1 text-gray-900 dark:text-white">Build a Report</h2>
-        <p class="text-sm text-gray-400">Configure data sources, filters, and delivery to generate a PDF report.</p>
-      </div>
-      <button
-        class="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-brand-600 transition-all duration-200 hover:bg-brand-700"
-        @click="openNewReport"
-      >
-        <component :is="ICONS.AddSquare" :size="16" weight="Linear" /> Create Report
-      </button>
-      <button v-if="store.scheduledReports.length > 0" class="text-sm hover:opacity-70 transition-opacity" :style="{ color: PRIMARY_BLUE }" @click="tab = 'scheduled'">
-        View {{ store.scheduledReports.length }} scheduled report{{ store.scheduledReports.length !== 1 ? "s" : "" }}
-      </button>
-    </div>
-
-    <!-- Schedules -->
-    <div v-if="tab === 'scheduled'" class="space-y-3">
+    <!-- Schedules — the only real sub-view now that Builder (a redundant CTA
+         card for the same modal the header's Create Report button already
+         opens) has been removed. -->
+    <div class="space-y-3">
       <div v-if="!store.scheduledReports.length" class="flex flex-col items-center justify-center py-16 gap-4 text-center">
         <div class="w-14 h-14 rounded-2xl flex items-center justify-center" :style="{ backgroundColor: `${PRIMARY_BLUE}12` }">
           <component :is="ICONS.Calendar" :size="24" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
@@ -185,7 +147,7 @@ async function runNow(rep: ScheduledReport) {
           <p class="text-sm font-medium text-gray-900 dark:text-white">No scheduled reports yet</p>
           <p class="text-xs mt-1 text-gray-400">Build a report and turn on Automation &amp; Scheduling to get here.</p>
         </div>
-        <button class="px-5 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity" style="background-color: #0055ff" @click="openNewReport">Open Builder</button>
+        <button class="px-5 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity" style="background-color: #0055ff" @click="openNewReport">Create Report</button>
       </div>
 
       <div v-for="rep in store.scheduledReports" :key="rep.id" class="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-start gap-4">
