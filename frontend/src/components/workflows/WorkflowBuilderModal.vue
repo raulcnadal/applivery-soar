@@ -27,7 +27,19 @@ const complianceStore = useComplianceStore();
 const actionLibraryStore = useActionLibraryStore();
 const actionLibraryEntries = computed(() => actionLibraryStore.entries);
 
+// "Common (all platforms)" is its own explicit chip, not just what happens
+// if you skip the question — same reasoning and pattern as
+// PolicyBuilderDrawer.vue's own PLATFORM_OPTIONS: a Compliance Policy of
+// Common type needs a Common Workflow to actually link to (autoRun's
+// workflow picker filters by matching/compatible targetPlatform), and a
+// workflow that only uses platform-agnostic steps (HTTP Request,
+// Notification, Wait, Monitor Compliance, policy steps) is a legitimate
+// case on its own, not just a fallback. MDM Action/Run Script steps are
+// already hidden from the step-type picker whenever targetPlatform is
+// empty (WorkflowStepEditor.vue's STEP_TYPES filter) — that behavior
+// predates this chip and needed no change.
 const PLATFORM_OPTIONS = [
+  { value: "", label: "Common (all platforms)" },
   { value: "apple", label: "iOS" },
   { value: "macos", label: "macOS" },
   { value: "android", label: "Android" },
@@ -71,6 +83,12 @@ function newStep(): WorkflowStep {
 }
 
 const screen = ref<"details" | "steps">("details");
+// Distinguishes "hasn't picked a target yet" (block continuing) from
+// "explicitly picked Common" (form.targetPlatform === "" is valid and
+// intentional) — a plain empty-string check on targetPlatform alone can't
+// tell those two states apart. Same pattern as PolicyBuilderDrawer.vue's
+// own hasChosenTarget.
+const hasChosenTarget = ref(false);
 const form = reactive<{
   name: string;
   description: string;
@@ -93,6 +111,10 @@ const error = ref<string | null>(null);
 function resetForm() {
   const w = props.workflow;
   screen.value = w ? "steps" : "details";
+  // An existing workflow always already has a target decision made — even
+  // when that decision was "Common" (targetPlatform: null/"") — so editing
+  // one should never re-trigger the "choose a target" block below.
+  hasChosenTarget.value = Boolean(w);
   form.name = w?.name ?? "";
   form.description = w?.description ?? "";
   form.targetPlatform = w?.targetPlatform ?? "";
@@ -145,6 +167,7 @@ function reconcileStepsForTarget(platform: string, deploymentModel: string) {
 }
 
 function pickPlatform(value: string) {
+  hasChosenTarget.value = true;
   form.targetPlatform = value;
   form.targetDeploymentModel = "";
   reconcileStepsForTarget(value, "");
@@ -186,8 +209,8 @@ function goToStepsScreen() {
     error.value = "Give this workflow a name.";
     return;
   }
-  if (!form.targetPlatform) {
-    error.value = "Choose a target platform before continuing — MDM Action steps need one to know which commands are valid.";
+  if (!hasChosenTarget.value) {
+    error.value = "Choose a target platform before continuing — pick \"Common (all platforms)\" if this workflow only needs platform-agnostic steps.";
     return;
   }
   if (needsDeploymentModel.value && !form.targetDeploymentModel) {
@@ -270,8 +293,8 @@ async function save() {
                 v-for="p in PLATFORM_OPTIONS"
                 :key="p.value"
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-500"
-                :class="form.targetPlatform !== p.value ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
-                :style="form.targetPlatform === p.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
+                :class="!(hasChosenTarget && form.targetPlatform === p.value) ? 'border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : ''"
+                :style="hasChosenTarget && form.targetPlatform === p.value ? { backgroundColor: PRIMARY_BLUE, color: '#fff' } : {}"
                 @click="pickPlatform(p.value)"
               >
                 {{ p.label }}
@@ -279,13 +302,15 @@ async function save() {
             </div>
             <p class="text-xs mb-3 text-gray-400">
               {{
-                form.targetPlatform === "aosp"
-                  ? "AOSP (rugged/kiosk Android without Google services) runs Device Owner only — no Step 2 here."
-                  : form.targetPlatform
-                    ? "Once you continue, every MDM Action step (Steps and Recovery) is locked to this platform + deployment model — come back here to change it. "
-                    : "Pick a platform to unlock MDM Action steps. "
+                !hasChosenTarget
+                  ? "Pick a platform to unlock MDM Action steps, or Common (all platforms) if this workflow only needs platform-agnostic steps. "
+                  : form.targetPlatform === "aosp"
+                    ? "AOSP (rugged/kiosk Android without Google services) runs Device Owner only — no Step 2 here."
+                    : form.targetPlatform
+                      ? "Once you continue, every MDM Action step (Steps and Recovery) is locked to this platform + deployment model — come back here to change it. "
+                      : "Common (all platforms): MDM Action and Run Script & Wait steps aren't offered, since neither has a single platform to run against. "
               }}
-              HTTP Request, Notification, Wait, Monitor Compliance, and the policy steps are common actions — always available on every platform, alongside that platform's MDM Actions.
+              HTTP Request, Notification, Wait, Monitor Compliance, and the policy steps are common actions — always available regardless of target, alongside that platform's MDM Actions when one is picked.
             </p>
 
             <template v-if="needsDeploymentModel">
@@ -313,7 +338,7 @@ async function save() {
           <div class="flex items-center justify-between mb-5 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
             <div class="flex items-center gap-2 text-xs font-semibold text-gray-900 dark:text-white">
               <component :is="ICONS.CheckCircle" :size="14" weight="Linear" :style="{ color: PRIMARY_BLUE }" />
-              Target: {{ form.targetPlatform ? PLATFORM_LABELS[form.targetPlatform] : "Common (no platform)" }}<template v-if="form.targetDeploymentModel"> · {{ modelLabel }}</template>
+              Target: {{ PLATFORM_LABELS[form.targetPlatform] }}<template v-if="form.targetDeploymentModel"> · {{ modelLabel }}</template>
             </div>
             <button class="text-xs font-medium rounded outline-none focus:ring-2 focus:ring-brand-500" :style="{ color: PRIMARY_BLUE }" @click="screen = 'details'">Change</button>
           </div>

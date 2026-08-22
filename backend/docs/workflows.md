@@ -18,9 +18,9 @@ Row actions:
 
 ### Step 1 — target
 
-Pick a **Platform** (iOS, macOS, Android, Windows, AOSP), and — for iOS, macOS, or Android — a **Deployment Model** (Supervised/Unsupervised for Apple; Work Profile/COPE/Device Owner for Android). Windows has one management model, so it's skipped. AOSP is Device Owner only.
+Pick a **Platform** — **Common (all platforms)**, iOS, macOS, Android, Windows, or AOSP — and, for iOS, macOS, or Android, a **Deployment Model** (Supervised/Unsupervised for Apple; Work Profile/COPE/Device Owner for Android). Windows has one management model, so it's skipped. AOSP is Device Owner only. **Common** is what a Workflow linked to a **Common**-type [Compliance Policy](compliance.md) needs — a policy with no platform restriction of its own requires a Workflow that isn't locked to one platform either, so it can actually fire for whichever platform violated it.
 
-The target you pick filters every MDM Action step to only the actions actually compatible with that platform/model. Changing the target later automatically clears any step whose action is no longer valid, so you have to re-pick it. Non-MDM steps (HTTP, Notification, Wait, Monitor, the policy steps) stay available regardless of target.
+The target you pick filters every MDM Action step to only the actions actually compatible with that platform/model. Changing the target later automatically clears any step whose action is no longer valid, so you have to re-pick it. Non-MDM steps (HTTP, Notification, Wait, Monitor, the policy steps) stay available regardless of target. **Common** is the one exception on the MDM side: since it isn't a single platform, MDM Action and Run Script & Wait steps aren't offered at all for a Common-targeted workflow — build it from the platform-agnostic step types above (HTTP, Notification, policy steps, etc.).
 
 ### Step 2 — steps
 
