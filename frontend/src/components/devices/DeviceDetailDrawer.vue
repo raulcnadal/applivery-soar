@@ -1003,7 +1003,7 @@ function traceTitle(t: Record<string, any>): string {
                   v-if="((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0) > 0"
                   class="space-y-1.5"
                 >
-                  <button type="button" class="flex items-center gap-1 text-xs font-medium hover:opacity-80" :style="{ color: (device.vulnServiceStatus as any).hasKev ? DANGER : WARNING }" @click="vulnServiceCvesExpanded = !vulnServiceCvesExpanded">
+                  <button type="button" class="flex items-start gap-1 text-left text-xs font-medium hover:opacity-80" :style="{ color: (device.vulnServiceStatus as any).hasKev ? DANGER : WARNING }" @click="vulnServiceCvesExpanded = !vulnServiceCvesExpanded">
                     <component :is="vulnServiceCvesExpanded ? ICONS.AltArrowUp : ICONS.AltArrowDown" :size="12" weight="Linear" class="shrink-0" />
                     {{ ((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0) }}
                     known CVE{{ (((device.vulnServiceStatus as any).counts?.CRITICAL || 0) + ((device.vulnServiceStatus as any).counts?.HIGH || 0) + ((device.vulnServiceStatus as any).counts?.MEDIUM || 0) + ((device.vulnServiceStatus as any).counts?.LOW || 0)) === 1 ? "" : "s" }}
