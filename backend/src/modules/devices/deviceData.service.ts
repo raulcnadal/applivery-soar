@@ -482,6 +482,28 @@ export interface AgentStatusResponse {
   };
 }
 
+// Last-known-good getAgentStatus result per (workspaceSlug, serialNumber) —
+// see getAgentStatus's own doc comment for why this exists: a real-device
+// bug where every agent-status call right after startup joined a slow live
+// getDevicesFull refresh (kicked off moments earlier by that same startup's
+// report/report-apps calls invalidating the workspace's devices cache) and
+// routinely exceeded the agent's 15s HTTP client timeout, leaving the tray
+// stuck showing "unavailable" — identically on every restart, since the
+// exact same race recurs every time. In-memory only, unbounded but
+// naturally capped by fleet size (one entry per distinct device that's ever
+// successfully polled this endpoint on this process) — same bound as
+// devices.service.ts's own devicesFullInFlight map, no extra eviction logic
+// needed for the scale this is meant to run at.
+const lastKnownAgentStatus = new Map<string, AgentStatusResponse>();
+function agentStatusCacheKey(workspaceSlug: string, serialNumber: string): string {
+  return `${workspaceSlug}:${serialNumber}`;
+}
+// Comfortably under every platform agent's own HTTP client timeout for this
+// call (15s on Windows — status_windows.go's fetchAgentStatus; macOS uses
+// the same figure) so this endpoint has room to actually respond before the
+// agent gives up, even when it loses the race against a slow live refresh.
+const AGENT_STATUS_FAST_PATH_MS = 6000;
+
 /**
  * Device-facing "what applies to me and how am I doing" read-back — the data
  * source for the Windows agent's tray icon context menu (and, eventually,
@@ -522,9 +544,18 @@ export async function getAgentStatus(workspaceSlug: string, serialNumber: string
     };
   }
 
-  try {
-    const { getDevicesFull } = await import("../devices/devices.service");
-    const devicesResp = await getDevicesFull(bearer, workspaceSlug, false);
+  const cacheKey = agentStatusCacheKey(workspaceSlug, serialNumber);
+
+  // policiesSummary is always freshly computed above (a plain Prisma read,
+  // not the slow part) — swapped into whatever response ends up returned,
+  // cached fallback included, so "which policies apply to me" never goes
+  // stale even on the fast-fallback path below.
+  const withFreshPolicies = (resp: AgentStatusResponse): AgentStatusResponse => ({
+    ...resp,
+    compliance: { ...resp.compliance, policies: policiesSummary },
+  });
+
+  const buildResponse = (devicesResp: { items: NormalizedDevice[] }): AgentStatusResponse => {
     const match = devicesResp.items.find((d: any) => d.serialNumber === serialNumber) ?? null;
     if (!match) {
       return {
@@ -552,8 +583,46 @@ export async function getAgentStatus(workspaceSlug: string, serialNumber: string
         })),
       },
     };
+  };
+
+  try {
+    const { getDevicesFull } = await import("../devices/devices.service");
+    // Deliberately not awaited directly — see this function's fast-path
+    // fallback below (and the doc comment on lastKnownAgentStatus above)
+    // for why: this call may be joining an already-in-flight *live*
+    // refresh a concurrent report/report-apps call kicked off moments ago
+    // on this same device, which is exactly the slow path that used to
+    // blow through the agent's own 15s HTTP client timeout.
+    const freshPromise = getDevicesFull(bearer, workspaceSlug, false).then(
+      (resp) => {
+        const built = buildResponse(resp);
+        lastKnownAgentStatus.set(cacheKey, built);
+        return built;
+      },
+    );
+    // Prevents an unhandled-rejection warning on the process when the
+    // fallback branch below wins the race and nothing else is awaiting
+    // freshPromise by the time it eventually rejects.
+    freshPromise.catch(() => {});
+
+    const fallback = lastKnownAgentStatus.get(cacheKey);
+    if (!fallback) {
+      // Nothing to fall back to yet (first-ever call for this device, or
+      // this process just restarted — the map is in-memory only) — this
+      // has to behave like before and just wait for the real answer,
+      // however long that takes.
+      return withFreshPolicies(await freshPromise);
+    }
+
+    const raced = await Promise.race([
+      freshPromise.then((v) => ({ fast: true as const, v })),
+      new Promise<{ fast: false }>((resolve) => setTimeout(() => resolve({ fast: false }), AGENT_STATUS_FAST_PATH_MS)),
+    ]);
+    return withFreshPolicies(raced.fast ? raced.v : fallback);
   } catch (e) {
     console.warn(`[DeviceData] getAgentStatus failed for workspace '${workspaceSlug}': ${e}`);
+    const fallback = lastKnownAgentStatus.get(cacheKey);
+    if (fallback) return withFreshPolicies(fallback);
     return {
       device: { matched: false, id: null, displayName: null },
       compliance: { available: false, reason: "Could not compute compliance status right now — try again later.", policies: policiesSummary },

@@ -138,6 +138,27 @@ const windowsAppDisplay = computed(() => {
 // fresh cached Vulnerability Service match appear in byVersion — a version
 // with none isn't shown as an error, it's just omitted, same convention as
 // the Risk column on the table view (ReportedAppsPanel.vue).
+// Installation paths — every distinct install path reported across this
+// app's devices, deduped. Previously only visible via the per-device
+// breakdown table further down (each row's own install-path line, still
+// there, unchanged), which reads fine for an app installed on exactly one
+// device but buries the path entirely once there are several devices each
+// scrolling past inside that table's own max-h-64 — this pulls it into its
+// own always-visible section instead. Sorted by how many devices report
+// each path (most common first), since a fleet is more likely to want to
+// confirm "is this the expected install location" than to enumerate every
+// device individually here (that's what the table below is for).
+const installPaths = computed(() => {
+  if (!props.app) return [];
+  const counts = new Map<string, number>();
+  for (const d of props.app.devices) {
+    if (d.installLocation) counts.set(d.installLocation, (counts.get(d.installLocation) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([path, deviceCount]) => ({ path, deviceCount }))
+    .sort((a, b) => b.deviceCount - a.deviceCount);
+});
+
 const SEVERITY_COLOR: Record<string, string> = { CRITICAL: "#EF4444", HIGH: "#F97316", MEDIUM: "#F59E0B", LOW: "#3B82F6" };
 const versionsWithVulns = computed(() => {
   if (!props.app?.vulnSummary) return [];
@@ -228,6 +249,22 @@ function toggleVersion(version: string) {
               <span v-if="formatBytes(windowsAppDisplay.sizeBytes)"> · {{ formatBytes(windowsAppDisplay.sizeBytes) }}</span>
               <span v-if="windowsAppDisplay.deploymentType"> · {{ windowsAppDisplay.deploymentType }}</span>
             </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Installation Paths — see installPaths' own doc comment for why
+           this is broken out of the per-device table below rather than
+           only living there. -->
+      <div v-if="installPaths.length > 0">
+        <p class="text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Installation Paths</p>
+        <div class="space-y-1">
+          <div v-for="ip in installPaths" :key="ip.path" class="flex items-start gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+            <component :is="ICONS.Folder" :size="13" weight="Linear" class="shrink-0 text-gray-400 mt-0.5" />
+            <span class="font-mono break-all select-all text-gray-900 dark:text-white flex-1">{{ ip.path }}</span>
+            <span v-if="ip.deviceCount > 1" class="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-500/10 text-gray-500 dark:text-gray-400">
+              {{ ip.deviceCount }} devices
+            </span>
           </div>
         </div>
       </div>
