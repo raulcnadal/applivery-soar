@@ -448,6 +448,10 @@ function onWorkflowChange(id: string) {
   const picked = workflowsStore.workflows.find((w) => w.id === id);
   form.workflowId = id;
   form.autoRunDestructiveAck = !!(picked as any)?.allowUnattendedDestructive;
+  // autoRun ("auto-run workflow") is meaningless without a workflow linked
+  // -- clearing the selection turns it off rather than leaving a checked
+  // box that save() would then have to reject.
+  if (!id) form.autoRun = false;
 }
 
 async function save() {
@@ -460,8 +464,12 @@ async function save() {
     saveError.value = "Add at least one condition to watch.";
     return;
   }
-  if (!form.workflowId) {
-    saveError.value = "Link a workflow to run when this policy is violated.";
+  if (form.autoRun && !form.workflowId) {
+    // autoRun means "auto-run the linked workflow" — with no workflow
+    // linked there's nothing for it to fire, so this combination can only
+    // happen if a workflow was cleared after autoRun was already checked
+    // (the checkbox itself is disabled while workflowId is empty).
+    saveError.value = "autoRun requires a linked workflow — link one below or turn off autoRun.";
     return;
   }
   if (form.autoRun && (isDestructiveWorkflow.value || isDestructiveEscalatedWorkflow.value) && !form.autoRunDestructiveAck) {
@@ -490,7 +498,7 @@ async function save() {
       conditions: form.conditions.map(({ field, operator, value }) => ({ field, operator, value })),
       targetPlatform: form.targetPlatform || null,
       targetDeploymentModel: form.targetDeploymentModel || null,
-      workflowId: form.workflowId,
+      workflowId: form.workflowId || null,
       autoRunBatchCap: form.noBatchCap ? null : Number.isFinite(Number(form.autoRunBatchCap)) && Number(form.autoRunBatchCap) > 0 ? Number(form.autoRunBatchCap) : 15,
       autoRunDestructiveAck: form.autoRunDestructiveAck,
       escalatedWorkflowId: form.escalatedWorkflowId || null,
@@ -643,8 +651,12 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700">
           <input v-model="form.enabled" type="checkbox" /> <span class="text-gray-900 dark:text-white">Enabled</span>
         </label>
-        <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700">
-          <input v-model="form.autoRun" type="checkbox" /> <span class="text-gray-900 dark:text-white">Auto-run workflow (skip review queue)</span>
+        <label
+          class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-gray-700"
+          :class="form.workflowId ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'"
+          :title="form.workflowId ? '' : 'Link a workflow below to enable autoRun.'"
+        >
+          <input v-model="form.autoRun" type="checkbox" :disabled="!form.workflowId" /> <span class="text-gray-900 dark:text-white">Auto-run workflow (skip review queue)</span>
         </label>
       </div>
 
@@ -765,14 +777,17 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
       />
 
       <div class="mt-5">
-        <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">Then run</p>
+        <p class="text-xs font-semibold uppercase tracking-wider mb-2 text-gray-400">Then run (optional)</p>
         <select :value="form.workflowId" class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-brand-500" @change="onWorkflowChange(($event.target as HTMLSelectElement).value)">
-          <option value="">Select a workflow…</option>
+          <option value="">No workflow — just tag/case/alert on violation</option>
           <option v-for="w in platformScopedWorkflows" :key="w.id" :value="w.id">{{ w.name }}</option>
         </select>
-        <p v-if="workflowsStore.workflows.length === 0" class="text-xs mt-1 text-gray-400">No workflows yet — create one from the Workflows tab first.</p>
+        <p v-if="workflowsStore.workflows.length === 0" class="text-xs mt-1 text-gray-400">No workflows yet — create one from the Workflows tab first, or leave this unset to use the policy purely for tagging, Case creation, and/or alerting.</p>
         <p v-else-if="platformScopedWorkflows.length === 0" class="text-xs mt-1 text-gray-400">
-          No {{ PLATFORM_LABELS[form.targetPlatform] }} (or platform-agnostic) workflows yet — create one from the Workflows tab first.
+          No {{ PLATFORM_LABELS[form.targetPlatform] }} (or platform-agnostic) workflows yet — create one from the Workflows tab, or leave this unset.
+        </p>
+        <p v-else class="text-[11px] mt-1.5 leading-relaxed text-gray-400">
+          Leave unset to use this policy purely for the tag/Smart Attribute marker, Case creation, and/or alerting below — no workflow will run, and violations are still recorded and shown in the review queue.
         </p>
       </div>
 

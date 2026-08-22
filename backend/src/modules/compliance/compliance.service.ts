@@ -59,6 +59,27 @@ function resolveAutoRunBatchCap(policy: { autoRunBatchCap: number | null }): num
   return raw > 0 ? raw : 15;
 }
 
+/**
+ * Coerces the incoming `autoRunBatchCap` value at create/update time.
+ *
+ * `null` is a deliberate sentinel meaning "No limit" (see the "No limit"
+ * checkbox in the Policy Builder's Autorun Safety Limits section) and must
+ * be persisted as-is. Using `??` here instead of an explicit `undefined`
+ * check would silently coerce that "No limit" choice back into a capped 15
+ * on every save, since `??` treats `null` and `undefined` identically —
+ * this was the exact bug an admin hit: the "No limit" checkbox looked
+ * saved, then reverted to a 15 cap on reopen.
+ *
+ * The Policy Builder's `compliancePolicySchema` (compliance.schemas.ts)
+ * already turns a genuinely-missing value into 15 via `.default(15)` at
+ * parse time, so by the time it reaches here `value` is only ever
+ * `undefined` for a caller that bypassed that schema — this still covers
+ * that case without corrupting a real `null`.
+ */
+export function resolveAutoRunBatchCapOnSave(value: number | null | undefined): number | null {
+  return value === undefined ? 15 : value;
+}
+
 // ── CRUD (main.py:10828-10957) ──
 
 export async function listCompliancePolicies(workspaceSlug: string) {
@@ -107,7 +128,7 @@ export async function createCompliancePolicy(workspaceSlug: string, payload: Com
       targetDeviceAudienceId: payload.targetDeviceAudienceId ?? null,
       segmentId: payload.segmentId ?? null,
       evaluationIntervalMinutes: clampEvalInterval(payload.evaluationIntervalMinutes) ?? 60,
-      autoRunBatchCap: payload.autoRunBatchCap ?? 15,
+      autoRunBatchCap: resolveAutoRunBatchCapOnSave(payload.autoRunBatchCap),
       autoRunDestructiveAck: payload.autoRunDestructiveAck,
       escalatedWorkflowId: payload.escalatedWorkflowId ?? null,
       escalatedWorkflowMinRiskTier: payload.escalatedWorkflowMinRiskTier,
@@ -180,7 +201,7 @@ export async function updateCompliancePolicy(workspaceSlug: string, policyId: st
       targetDeviceAudienceId: payload.targetDeviceAudienceId ?? null,
       segmentId: payload.segmentId ?? null,
       evaluationIntervalMinutes: clampEvalInterval(payload.evaluationIntervalMinutes) ?? 60,
-      autoRunBatchCap: payload.autoRunBatchCap ?? 15,
+      autoRunBatchCap: resolveAutoRunBatchCapOnSave(payload.autoRunBatchCap),
       autoRunDestructiveAck: payload.autoRunDestructiveAck,
       escalatedWorkflowId: payload.escalatedWorkflowId ?? null,
       escalatedWorkflowMinRiskTier: payload.escalatedWorkflowMinRiskTier,

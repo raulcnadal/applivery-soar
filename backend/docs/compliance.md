@@ -76,7 +76,7 @@ Each condition is Field → Operator → Value. Choose **Match ANY condition** (
 
 There is no dedicated "jailbreak/root" or "disk encryption" field type for every platform — those are built from **Custom device field** (Android) and **Self-Reported Attribute** (Windows/macOS agent) instead; iOS has no disk-encryption signal at all (Apple ties it to passcode enforcement).
 
-**Then run** — pick the primary Workflow (required to save).
+**Then run (optional)** — pick the primary Workflow to run when this policy is violated, or leave it unset to use the policy purely for the tag/Smart Attribute marker, Case creation, and/or alerting below — no workflow runs, and violations are still recorded and shown in the review queue (status "No workflow linked"). **Auto-run workflow (skip review queue)** is disabled while no workflow is linked, since there's nothing for it to auto-run.
 
 **Mark on Applivery console**: a **non-compliance tag** (applied while violated, removed on recovery — give each policy its own distinct tag) and/or a **Smart Attribute** to attach/detach. Either, both, or neither. Removal happens three ways, all independent of each other: automatically the next time this policy evaluates and finds the device genuinely no longer matching the conditions (works whether or not this policy opens Cases at all); immediately if an analyst manually resolves or closes the Case a violation opened (from the [Cases](cases.md) view); or immediately if an analyst **Approves** or **Dismisses** the violation from the review queue below — the manual "this is handled" action for policies with **Open a Case when violated** turned off, where there's no Case to close in the first place.
 
