@@ -253,6 +253,7 @@ onMounted(async () => {
     store.smartAttributeNames.length === 0 ? store.fetchSmartAttributeNames() : Promise.resolve(),
     store.selfReportedAttributeNames.length === 0 ? store.fetchSelfReportedAttributeNames() : Promise.resolve(),
     store.customCheckNames.length === 0 ? store.fetchCustomCheckNames() : Promise.resolve(),
+    store.triggerNames.length === 0 ? store.fetchTriggerNames() : Promise.resolve(),
     store.smartAttributes.length === 0 ? store.fetchSmartAttributes() : Promise.resolve(),
     store.appLists.length === 0 ? store.fetchAppLists() : Promise.resolve(),
     devicesStore.deviceTags.length === 0 ? devicesStore.fetchPickers() : Promise.resolve(),
@@ -752,6 +753,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         :smart-attribute-names="store.smartAttributeNames"
         :self-reported-attribute-names="store.selfReportedAttributeNames"
         :custom-check-names="filteredCustomCheckNames"
+        :trigger-names="store.triggerNames"
         :app-lists="store.appLists"
         :device-audiences="devicesStore.deviceAudiences as any"
         :device-tags="devicesStore.deviceTags"

@@ -315,7 +315,24 @@ async function fetchDevicesFullUncached(
     console.warn(`[Devices] osPatchLevel mapping lookup failed: ${e}`);
   }
 
-  const normalized = itemsAll.map((d) => normalizeDeviceFull(d, compIds, locCache, audienceMap, pushdataCache, osPatchLevelAttrName));
+  // Inbound Webhook (Trigger) per-device firing state — see
+  // TriggerFireState's schema.prisma doc comment and triggers.service.ts's
+  // fireTrigger. Grouped by deviceId then by triggerId so normalizeDeviceFull
+  // can attach each device's own slice directly, same batching philosophy as
+  // pushdataCache/locCache above (one query for the whole fleet, not one per
+  // device).
+  let triggerFiresCache: Record<string, Record<string, { lastFiredAt: string; fireCount: number }>> = {};
+  try {
+    const fires = await prisma.triggerFireState.findMany({ where: { workspaceSlug: slugKey } });
+    for (const f of fires) {
+      const entry = triggerFiresCache[f.deviceId] ?? (triggerFiresCache[f.deviceId] = {});
+      entry[f.triggerId] = { lastFiredAt: f.lastFiredAt.toISOString(), fireCount: f.fireCount };
+    }
+  } catch (e) {
+    console.warn(`[Devices] triggerFireState lookup failed: ${e}`);
+  }
+
+  const normalized = itemsAll.map((d) => normalizeDeviceFull(d, compIds, locCache, audienceMap, pushdataCache, osPatchLevelAttrName, triggerFiresCache));
 
   // Cases/Compliance-violations/Compliance-state lookups, loaded once per
   // fleet-wide call — same batching philosophy as everything else here,

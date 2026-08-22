@@ -253,6 +253,29 @@ export function evaluateCondition(
       if (!present) return false;
       return compareScalar(entry!.value, operator, target.compareValue);
     }
+    if (field === "triggerFired") {
+      // TriggerFireState (schema.prisma), attached onto NormalizedDevice as
+      // triggerFires by deviceNormalize.ts, populated inside
+      // triggers.service.ts's fireTrigger. Closes the visibility gap where
+      // an Inbound Webhook firing (external EDR/MTD/DEX tool) had no way to
+      // drive a compliance condition. `exists` optionally qualified by
+      // withinMinutes means "fired at least once in the last N minutes";
+      // `missing` is its exact inverse ("hasn't fired in the last N minutes,
+      // or never has") — same present/absent handling shape as
+      // customCheckResult above, just keyed by triggerId instead of a check
+      // key, and with a recency window instead of a value comparison.
+      const target = value ?? {};
+      const fires = (device.triggerFires as Record<string, { lastFiredAt: string; fireCount: number }> | null) ?? {};
+      const entry = fires[target.triggerId];
+      let present = Boolean(entry);
+      if (present && target.withinMinutes) {
+        const ageMinutes = (Date.now() - new Date(entry!.lastFiredAt).getTime()) / 60000;
+        present = ageMinutes >= 0 && ageMinutes <= Number(target.withinMinutes);
+      }
+      if (operator === "exists") return present;
+      if (operator === "missing") return !present;
+      return false;
+    }
     if (field === "hasSelfReported") {
       return Boolean(device.selfReported) === Boolean(value);
     }

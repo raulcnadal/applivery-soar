@@ -961,6 +961,24 @@ export function triggerEventDrivenReEvaluation(workspaceSlug: string, reason: st
     });
 }
 
+/**
+ * Policy Builder's "Inbound Webhook Fired" condition picker — deliberately
+ * a standalone query against the Trigger table rather than importing from
+ * triggers.service.ts (avoids a cross-module import purely for a 2-field
+ * projection, and sidesteps triggers.controller.ts's own `workflows` RBAC
+ * gate — a Compliance-area user listing trigger NAMEs to build a condition
+ * shouldn't need Workflows read access). Same "list everything enabled,
+ * not just what's fired at least once" reasoning as getCustomCheckNames —
+ * a Trigger just created should be immediately selectable.
+ */
+export async function getTriggerNames(workspaceSlug: string): Promise<Array<{ id: string; name: string }>> {
+  return prisma.trigger.findMany({
+    where: { workspaceSlug, enabled: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+}
+
 // ── Violations review queue (main.py:11429-11599) ──
 
 export async function listComplianceViolations(workspaceSlug: string, status: string | undefined, limit: number, offset: number) {

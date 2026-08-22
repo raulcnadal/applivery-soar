@@ -166,7 +166,9 @@ Each trigger gets a URL of the form `.../api/triggers/fire/{id}/{secret}` — bo
 
 Fields: **Name**, **Workflow to run** (disabled until at least one workflow exists), **Description**, **Device lookup field** (optional — which JSON key in the inbound body identifies the device, matched against serial number/id/MDM user email; leave blank if the workflow doesn't need a specific device target), **Enabled**, and an optional **Open a Case on fire** + severity.
 
-There's no rule-builder for matching on payload content beyond the device-lookup field — it's unconditional: any valid POST to the URL fires the workflow. Per-row **Rotate secret** (confirm-gated, breaks the existing integration immediately), Edit, Delete. No permission gate.
+There's no rule-builder for matching on payload content beyond the device-lookup field — it's unconditional: any valid POST to the URL fires the workflow. Per-row **Rotate secret** (confirm-gated, breaks the existing integration immediately), Edit, Delete. Gated by the same Workflows feature-area permission as the [Workflows](workflows.md) list itself (read to view, manage to create/edit/delete/rotate).
+
+**Visibility**: each fire is recorded per device (not just as a workspace-wide total) — this is what backs the [Policy Builder](compliance.md#conditions--the-full-field-catalog)'s **Inbound Webhook Fired** condition, so a Compliance Policy can react to (or simply surface) "did this device's EDR/MTD/DEX tool actually call this webhook, and when" instead of the firing being visible only as a one-line audit-log entry.
 
 ## Case Auto-Run Rules
 

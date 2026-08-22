@@ -86,6 +86,17 @@ export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   // via GET /api/compliance/custom-check-names?platform=, same reasoning as
   // selfReportedAttribute's `name` being free-text rather than an enum.
   { key: "customCheckResult", label: "Custom Check Result (agent)", type: "custom_check_result", operators: ["equals", "notEquals", "contains", "greaterThan", "lessThan", "exists", "missing"] },
+  // Disclosed new feature (TriggerFireState, schema.prisma) — closes the
+  // visibility gap where an Inbound Webhook (Settings > Inbound Webhooks,
+  // triggers.service.ts) fired by an external EDR/MTD/DEX tool had no way
+  // to surface inside a Compliance Policy. `value` is `{ triggerId,
+  // withinMinutes? }`; `exists`/`missing` optionally qualified by
+  // withinMinutes for "fired recently" / "hasn't fired recently (or ever)"
+  // — see complianceEvaluate.ts's "triggerFired" branch. Same reasoning as
+  // customCheckResult for omitting `platforms` here: a Trigger isn't
+  // platform-scoped, the Policy Builder just lists every enabled one via
+  // GET /api/compliance/trigger-names.
+  { key: "triggerFired", label: "Inbound Webhook Fired", type: "trigger_fired", operators: ["exists", "missing"] },
   { key: "selfReportDaysAgo", label: "Days since last self-report", type: "number", operators: ["greaterThan", "lessThan"] },
   { key: "hasSelfReported", label: "Has ever self-reported (agent installed)", type: "boolean", operators: ["equals"] },
   { key: "requiredAppList", label: "Missing a required app (from an App List)", type: "app_list", operators: ["equals"] },

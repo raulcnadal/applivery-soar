@@ -202,6 +202,10 @@ export interface NormalizedDevice {
   mdmUser: unknown;
   location: unknown;
   selfReported: unknown;
+  // Inbound Webhook (Trigger) firing state, keyed by triggerId — see
+  // triggerFiresCache param on normalizeDeviceFull below. Read by
+  // complianceEvaluate.ts's "Inbound Webhook Fired" condition.
+  triggerFires: Record<string, { lastFiredAt: string; fireCount: number }> | null;
   nativeSecurity: Record<string, any> | null;
   identifiers: { udid: string; emmDeviceId: string; winId: string };
   smartAttributes: Array<{ name: string; value: string }>;
@@ -269,6 +273,13 @@ export interface NormalizedDevice {
  *   osPatchLevelMapping.service.ts) — looked up ONCE per fleet-wide call by
  *   the caller (devices.service.ts), not per device. Null/undefined means
  *   no mapping configured.
+ * @param triggerFiresCache Per-device Inbound Webhook (Trigger) firing
+ *   state, keyed by device id (not serial number, unlike pushdataCache —
+ *   TriggerFireState.deviceId is the SOAR/Applivery device id
+ *   `resolveTriggerDevice` matched against, set in triggers.service.ts's
+ *   fireTrigger). Each entry is `{ [triggerId]: { lastFiredAt, fireCount } }`
+ *   — see devices.service.ts for how it's assembled. Empty for any device
+ *   no inbound webhook has ever fired against.
  */
 export function normalizeDeviceFull(
   raw: Record<string, any>,
@@ -277,6 +288,7 @@ export function normalizeDeviceFull(
   audienceMap: Record<string, DeviceAudienceRef[]> = {},
   pushdataCache: Record<string, unknown> = {},
   osPatchLevelAttrName: string | null = null,
+  triggerFiresCache: Record<string, Record<string, { lastFiredAt: string; fireCount: number }>> = {},
 ): NormalizedDevice {
   const devId = String(raw.id ?? raw._id ?? "");
   const rawPlatform = String(raw.type ?? raw.platform ?? "");
@@ -386,6 +398,7 @@ export function normalizeDeviceFull(
     mdmUser: raw.mdmUser ?? null,
     location: locCache[devId] ?? null,
     selfReported,
+    triggerFires: triggerFiresCache[devId] ?? null,
     nativeSecurity,
     identifiers: {
       udid: raw.udid || summary.udid || "",

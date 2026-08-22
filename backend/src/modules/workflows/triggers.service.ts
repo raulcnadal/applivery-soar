@@ -186,6 +186,26 @@ export async function fireTrigger(triggerId: string, secret: string, body: Recor
 
   await prisma.trigger.update({ where: { id: triggerId }, data: { lastFiredAt: new Date(), fireCount: { increment: 1 } } });
 
+  // Per-device firing state, separate from the workspace-wide aggregate
+  // just above — this is what backs both the Compliance Policy Builder's
+  // "Inbound Webhook Fired" condition (complianceEvaluate.ts reads it via
+  // NormalizedDevice.triggerFires, populated in deviceNormalize.ts) and
+  // admin-facing visibility into "did THIS device's EDR/MTD/DEX tool
+  // actually call this webhook." Only recorded when a device resolved —
+  // a device-less fire (no deviceLookupField configured at all) has
+  // nothing to key this row on. lastPayload is capped well under Postgres'
+  // JSONB practical limits purely so a chatty/misbehaving external sender
+  // can't bloat this table — it's kept for admin visibility only, never
+  // read by the evaluator.
+  if (matchedDevice) {
+    const cappedPayload = JSON.stringify(body).length > 8000 ? { truncated: true, keys: Object.keys(body) } : body;
+    await prisma.triggerFireState.upsert({
+      where: { workspaceSlug_triggerId_deviceId: { workspaceSlug: slugKey, triggerId, deviceId: matchedDevice.id } },
+      create: { workspaceSlug: slugKey, triggerId, deviceId: matchedDevice.id, lastFiredAt: new Date(), fireCount: 1, lastPayload: cappedPayload as any },
+      update: { lastFiredAt: new Date(), fireCount: { increment: 1 }, lastPayload: cappedPayload as any },
+    });
+  }
+
   // Opens a Case (source="workflow_trigger") when this trigger is configured
   // to — port of the case-opening block inside `fire_trigger` (main.py:12873-12896).
   let caseId: string | null = null;

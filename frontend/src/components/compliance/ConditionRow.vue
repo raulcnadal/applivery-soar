@@ -8,7 +8,7 @@
 // builder.
 import { computed, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
-import type { AppList, ComplianceFieldDef, ConditionRule, CustomCheckName } from "../../stores/compliance";
+import type { AppList, ComplianceFieldDef, ConditionRule, CustomCheckName, TriggerName } from "../../stores/compliance";
 import type { GeofenceZone } from "../../stores/geofencing";
 import PolicyPickerModal from "../devices/PolicyPickerModal.vue";
 import AudiencePickerField from "./AudiencePickerField.vue";
@@ -34,6 +34,12 @@ const props = defineProps<{
   // (unlike selfReportedAttributeNames' free-text observed strings) — a
   // real dropdown, not a datalist.
   customCheckNames: CustomCheckName[];
+  // Disclosed new feature — compliance.service.ts's getTriggerNames doc
+  // comment. Every enabled Inbound Webhook (Settings > Inbound Webhooks),
+  // not filtered by platform (a Trigger isn't platform-scoped the way a
+  // Custom Device Check is) — a real dropdown, same reasoning as
+  // customCheckNames above.
+  triggerNames: TriggerName[];
   appLists: AppList[];
   deviceAudiences: Array<{ id: string; name: string }>;
   deviceTags: string[];
@@ -62,6 +68,7 @@ function defaultValueForType(type: string | undefined, options: string[] | undef
   if (type === "smart_attribute") return { name: "", compareValue: "" };
   if (type === "self_reported_attribute") return { name: "", compareValue: "" };
   if (type === "custom_check_result") return { key: "", compareValue: "" };
+  if (type === "trigger_fired") return { triggerId: "", withinMinutes: null };
   if (type === "custom_field") return { path: "", compareValue: "" };
   if (type === "app_list") return "";
   return "";
@@ -231,6 +238,29 @@ function setPolicyPlatform(platform: string) {
         />
         <p v-if="customCheckNames.length === 0" class="text-[10px] w-full text-gray-400">
           No custom checks defined for this platform yet — add one from Settings &gt; Custom Device Checks.
+        </p>
+      </div>
+
+      <div v-else-if="fieldDef?.type === 'trigger_fired'" class="flex items-center gap-2 flex-wrap">
+        <select
+          :value="condition.value?.triggerId || ''"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+          @change="setValuePatch({ triggerId: ($event.target as HTMLSelectElement).value })"
+        >
+          <option value="">{{ triggerNames.length ? "Select an inbound webhook…" : "No enabled Inbound Webhooks yet" }}</option>
+          <option v-for="t in triggerNames" :key="t.id" :value="t.id">{{ t.name }}</option>
+        </select>
+        <span class="text-xs text-gray-400">within last</span>
+        <input
+          type="number" min="1"
+          :value="condition.value?.withinMinutes ?? ''"
+          placeholder="any time"
+          class="w-24 px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+          @input="setValuePatch({ withinMinutes: ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null })"
+        />
+        <span class="text-xs text-gray-400">minutes (optional)</span>
+        <p v-if="triggerNames.length === 0" class="text-[10px] w-full text-gray-400">
+          No enabled Inbound Webhooks yet — add one from Settings &gt; Inbound Webhooks.
         </p>
       </div>
 

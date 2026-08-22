@@ -24,6 +24,7 @@ import {
   bulkApproveViolations,
   dismissViolationCore,
   bulkDismissViolations,
+  getTriggerNames,
 } from "./compliance.service";
 import { COMPLIANCE_FIELDS, suggestMitreTechniquesForConditions, getComplianceTemplates } from "./complianceFields";
 import { getMitreTechniques, refreshMitreCatalog } from "../catalogs/mitreCatalog";
@@ -129,6 +130,11 @@ complianceRouter.delete("/api/compliance/custom-checks/:id", ...manageCompliance
 complianceRouter.get("/api/compliance/custom-check-names", ...readCompliance, asyncHandler(async (req, res) => {
   const platform = typeof req.query.platform === "string" ? req.query.platform : undefined;
   res.json({ items: await getCustomCheckNames(workspaceOf(req), platform) });
+}));
+
+/** Policy Builder's "Inbound Webhook Fired" condition picker — see compliance.service.ts's getTriggerNames doc comment. */
+complianceRouter.get("/api/compliance/trigger-names", ...readCompliance, asyncHandler(async (req, res) => {
+  res.json({ items: await getTriggerNames(workspaceOf(req)) });
 }));
 
 // ── Event-Driven Detection watches (Settings > Device Data Webhook) —

@@ -170,6 +170,11 @@ export interface CustomCheckName {
   platform: string;
 }
 
+export interface TriggerName {
+  id: string;
+  name: string;
+}
+
 export interface MatchedDevice {
   id: string;
   displayName?: string | null;
@@ -365,6 +370,7 @@ export const useComplianceStore = defineStore("compliance", () => {
   const isLoadingCustomChecks = ref(false);
   const customChecksError = ref<string | null>(null);
   const customCheckNames = ref<CustomCheckName[]>([]);
+  const triggerNames = ref<TriggerName[]>([]);
 
   const eventWatches = ref<EventWatchDefinition[]>([]);
   const isLoadingEventWatches = ref(false);
@@ -731,6 +737,13 @@ export const useComplianceStore = defineStore("compliance", () => {
     customCheckNames.value = res.data.items ?? [];
   }
 
+  /** Policy Builder's "Inbound Webhook Fired" condition picker — see backend's getTriggerNames doc comment. */
+  async function fetchTriggerNames() {
+    const { api } = await import("../api/http");
+    const res = await api.get("/compliance/trigger-names");
+    triggerNames.value = res.data.items ?? [];
+  }
+
   // ── Event-Driven Detection watches — Settings > Device Data Webhook. See
   // backend's eventWatches.service.ts module doc for the full design. ──
 
@@ -864,6 +877,8 @@ export const useComplianceStore = defineStore("compliance", () => {
     isLoadingCustomChecks,
     customChecksError,
     customCheckNames,
+    triggerNames,
+    fetchTriggerNames,
     fetchCustomChecks,
     createCustomCheck,
     updateCustomCheck,

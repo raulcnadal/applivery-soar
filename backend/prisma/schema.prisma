@@ -509,6 +509,31 @@ model Trigger {
   @@index([workspaceSlug])
 }
 
+// Per-(Trigger, device) firing state — Trigger's own lastFiredAt/fireCount
+// above are workspace-wide aggregates across every device that has ever hit
+// that inbound webhook, which can't answer "did THIS device's EDR/MTD/DEX
+// tool call this webhook (and when)". This table backs exactly that,
+// written inside fireTrigger (triggers.service.ts) each time a fire
+// resolves to a real device, and read by deviceNormalize.ts to attach onto
+// NormalizedDevice.triggerFires for the Compliance Policy Builder's
+// "Inbound Webhook Fired" condition (complianceFields.ts's triggerFired
+// field / complianceEvaluate.ts's evaluator) to read from. lastPayload is
+// kept purely for admin visibility (the gap this table exists to close in
+// the first place) — never read by the evaluator.
+model TriggerFireState {
+  id            String   @id @default(uuid())
+  workspaceSlug String
+  triggerId     String
+  deviceId      String
+  lastFiredAt   DateTime
+  fireCount     Int      @default(1)
+  lastPayload   Json?
+  updatedAt     DateTime @updatedAt
+
+  @@unique([workspaceSlug, triggerId, deviceId])
+  @@index([workspaceSlug, deviceId])
+}
+
 // The incident layer above raw Compliance Violations — port of main.py's
 // CASE MANAGEMENT section (main.py:11779-12360ish). A Case survives across
 // repeated detections of the same underlying problem and carries its own
