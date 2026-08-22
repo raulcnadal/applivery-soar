@@ -100,6 +100,7 @@ export async function createCompliancePolicy(workspaceSlug: string, payload: Com
       nonComplianceSmartAttributeId: payload.nonComplianceSmartAttributeId ?? null,
       openCaseOnViolation: payload.openCaseOnViolation,
       autoResolveCaseOnRecovery: payload.autoResolveCaseOnRecovery,
+      caseAssignee: payload.caseAssignee?.trim() || null,
       mitreTechniques: payload.mitreTechniques,
       framework: payload.framework ?? null,
       controlRef: payload.controlRef ?? null,
@@ -172,6 +173,7 @@ export async function updateCompliancePolicy(workspaceSlug: string, policyId: st
       nonComplianceSmartAttributeId: payload.nonComplianceSmartAttributeId ?? null,
       openCaseOnViolation: payload.openCaseOnViolation,
       autoResolveCaseOnRecovery: payload.autoResolveCaseOnRecovery,
+      caseAssignee: payload.caseAssignee?.trim() || null,
       mitreTechniques: payload.mitreTechniques,
       framework: payload.framework ?? null,
       controlRef: payload.controlRef ?? null,
@@ -358,6 +360,38 @@ async function applyComplianceSmartAttribute(headers: Record<string, string>, or
   }
   device.smartAttributeAssignmentIds = newIds;
   return true;
+}
+
+/**
+ * Removes this policy's configured non-compliance tag/smart-attribute from a
+ * device via the same Applivery API calls the automatic recovery branch of
+ * the evaluation pass uses below (see the `present: false` marker-action
+ * pushes) — but reachable on demand from a manual Case close/resolve
+ * (cases.service.ts's updateCase), for when an admin resolves or closes the
+ * case without the device ever actually stopping violating on its own (per
+ * the standard evaluation pass, which only clears the marker once the device
+ * genuinely recovers). Best-effort and silent: no-ops if the policy has no
+ * tag/smart-attr configured, has since been deleted, or the device can't be
+ * found; swallows API failures rather than surfacing them, mirroring the
+ * evaluation pass's own tolerance for marker-write failures.
+ */
+export async function removeComplianceMarkersForDevice(authorization: string, workspaceSlug: string, policyId: string, deviceId: string): Promise<void> {
+  const policy = await prisma.compliancePolicy.findFirst({ where: { workspaceSlug, id: policyId } });
+  if (!policy || (!policy.nonComplianceTag && !policy.nonComplianceSmartAttributeId)) return;
+  try {
+    const { getDevicesFull, invalidateDevicesCache } = await import("../devices/devices.service");
+    const devicesResp = await getDevicesFull(authorization, workspaceSlug, false);
+    const device = devicesResp.items.find((d: NormalizedDevice) => d.id === deviceId);
+    if (!device) return;
+    const headers = { Authorization: authorization, "Content-Type": "application/json" };
+    const orgBase = await resolveOrgBase(headers, workspaceSlug);
+    let changed = false;
+    if (policy.nonComplianceTag && (await applyComplianceTag(headers, orgBase, device, policy.nonComplianceTag, false))) changed = true;
+    if (policy.nonComplianceSmartAttributeId && (await applyComplianceSmartAttribute(headers, orgBase, device, policy.nonComplianceSmartAttributeId, false))) changed = true;
+    if (changed) invalidateDevicesCache(workspaceSlug);
+  } catch (e) {
+    console.warn(`[Compliance] Failed to remove marker(s) for device ${deviceId} on manual case close (policy ${policyId}): ${e instanceof Error ? e.message : e}`);
+  }
 }
 
 // ── Evaluation engine (main.py:11020-11374) ──
@@ -653,7 +687,7 @@ export async function runComplianceEvaluation(
       if (policy.openCaseOnViolation) {
         const upserted = await upsertCaseForViolation(
           workspaceSlug,
-          { id: policy.id, name: policy.name, severity: policy.severity, mitreTechniques: policy.mitreTechniques ?? [] },
+          { id: policy.id, name: policy.name, severity: policy.severity, mitreTechniques: policy.mitreTechniques ?? [], caseAssignee: policy.caseAssignee },
           { id: device.id, displayName: device.displayName, segmentId: (device as any).segmentId },
           violationId,
         );

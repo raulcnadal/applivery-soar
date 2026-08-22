@@ -32,6 +32,10 @@ export const compliancePolicySchema = z.object({
   nonComplianceSmartAttributeId: z.string().nullable().optional(),
   openCaseOnViolation: z.boolean().default(true),
   autoResolveCaseOnRecovery: z.boolean().default(false),
+  // Optional default assignee auto-set on every Case this policy opens (or
+  // reopens) -- see CompliancePolicy.caseAssignee in schema.prisma. Null
+  // means "leave unassigned," the pre-existing behavior.
+  caseAssignee: z.string().nullable().optional(),
   mitreTechniques: z.array(z.string()).default([]),
   framework: z.string().nullable().optional(),
   controlRef: z.string().nullable().optional(),

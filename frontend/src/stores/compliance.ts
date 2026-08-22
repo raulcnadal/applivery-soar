@@ -27,6 +27,7 @@ export interface CompliancePolicy {
   nonComplianceSmartAttributeId?: string | null;
   openCaseOnViolation: boolean;
   autoResolveCaseOnRecovery: boolean;
+  caseAssignee: string | null;
   mitreTechniques: string[];
   framework?: string | null;
   controlRef?: string | null;

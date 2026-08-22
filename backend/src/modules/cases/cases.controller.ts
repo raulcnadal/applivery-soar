@@ -65,7 +65,7 @@ casesRouter.post("/api/cases", ...manageGate, asyncHandler(async (req, res) => {
 
 casesRouter.put("/api/cases/:caseId", ...manageGate, asyncHandler(async (req, res) => {
   const payload = caseUpdateSchema.parse(req.body);
-  res.json(await updateCase(workspaceOf(req), req.params.caseId, payload, actorOf(req)));
+  res.json(await updateCase(workspaceOf(req), req.params.caseId, payload, actorOf(req), req.header("Authorization")));
 }));
 
 casesRouter.post("/api/cases/:caseId/run-workflow", ...manageGate, asyncHandler(async (req, res) => {
@@ -93,7 +93,7 @@ casesRouter.post("/api/cases/:caseId/sync-ticket-status", ...manageGate, asyncHa
 
 casesRouter.post("/api/cases/bulk-update", ...bulkTriageGate, asyncHandler(async (req, res) => {
   const payload = caseBulkUpdateSchema.parse(req.body);
-  res.json(await bulkUpdateCases(workspaceOf(req), payload, actorOf(req)));
+  res.json(await bulkUpdateCases(workspaceOf(req), payload, actorOf(req), req.header("Authorization")));
 }));
 
 casesRouter.post("/api/cases/:caseId/notes", ...manageGate, asyncHandler(async (req, res) => {

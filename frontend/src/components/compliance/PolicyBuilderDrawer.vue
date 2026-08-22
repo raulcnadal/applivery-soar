@@ -17,6 +17,7 @@
 import { Alert, Modal } from "@applivery/bluesky-vue";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ICONS } from "../../lib/solarIcons";
+import { useCasesStore } from "../../stores/cases";
 import { useComplianceStore, type CompliancePolicy, type ConditionRule, type MatchedDevice, type MatchedDevicesDiagnostics } from "../../stores/compliance";
 import { useDevicesStore } from "../../stores/devices";
 import { useGeofencingStore } from "../../stores/geofencing";
@@ -80,6 +81,7 @@ const props = defineProps<{
 const emit = defineEmits<{ close: []; saved: [] }>();
 
 const store = useComplianceStore();
+const casesStore = useCasesStore();
 const devicesStore = useDevicesStore();
 const segmentsStore = useSegmentsStore();
 const workflowsStore = useWorkflowsStore();
@@ -111,6 +113,7 @@ const form = reactive({
   nonComplianceSmartAttributeId: "",
   openCaseOnViolation: true,
   autoResolveCaseOnRecovery: false,
+  caseAssignee: "",
   mitreTechniques: [] as string[],
   targetDeviceAudienceId: "",
   segmentId: "0",
@@ -189,6 +192,7 @@ function resetForm() {
   form.nonComplianceSmartAttributeId = p?.nonComplianceSmartAttributeId ?? "";
   form.openCaseOnViolation = p?.openCaseOnViolation ?? true;
   form.autoResolveCaseOnRecovery = p?.autoResolveCaseOnRecovery ?? false;
+  form.caseAssignee = p?.caseAssignee ?? "";
   form.mitreTechniques = [...(p?.mitreTechniques ?? [])];
   form.targetDeviceAudienceId = p?.targetDeviceAudienceId ?? "";
   // New policies are internally assigned to whichever Segment is selected in
@@ -255,6 +259,7 @@ onMounted(async () => {
     workflowsStore.workflows.length === 0 ? workflowsStore.fetchWorkflows() : Promise.resolve(),
     workflowsStore.mdmActions.length === 0 ? workflowsStore.fetchMdmActions() : Promise.resolve(),
     geoStore.zones.length === 0 ? geoStore.fetchZones() : Promise.resolve(),
+    casesStore.assigneeSuggestions.length === 0 ? casesStore.fetchAssigneeSuggestions() : Promise.resolve(),
   ]);
 });
 
@@ -493,6 +498,7 @@ async function save() {
       nonComplianceSmartAttributeId: form.nonComplianceSmartAttributeId || null,
       openCaseOnViolation: form.openCaseOnViolation,
       autoResolveCaseOnRecovery: form.autoResolveCaseOnRecovery,
+      caseAssignee: form.caseAssignee.trim() || null,
       mitreTechniques: form.mitreTechniques,
       targetDeviceAudienceId: form.targetDeviceAudienceId || null,
       segmentId: form.segmentId,
@@ -796,6 +802,21 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
           <label class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border border-gray-200 dark:border-gray-700" :class="!form.openCaseOnViolation ? 'opacity-50' : ''">
             <input v-model="form.autoResolveCaseOnRecovery" type="checkbox" :disabled="!form.openCaseOnViolation" /> <span class="text-gray-900 dark:text-white">Auto-resolve the Case once the device recovers</span>
           </label>
+          <div :class="!form.openCaseOnViolation ? 'opacity-50' : ''">
+            <label class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Default assignee (optional)</label>
+            <input
+              v-model="form.caseAssignee"
+              list="policy-case-assignee-suggestions"
+              type="text"
+              :disabled="!form.openCaseOnViolation"
+              placeholder="Unassigned"
+              class="w-full px-3 py-2 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+            />
+            <datalist id="policy-case-assignee-suggestions">
+              <option v-for="email in casesStore.assigneeSuggestions" :key="email" :value="email" />
+            </datalist>
+            <p class="text-[11px] mt-1.5 leading-relaxed text-gray-400">Every Case this policy opens (or reopens) is auto-assigned to this person — still freely reassignable afterward from the Cases view.</p>
+          </div>
         </div>
       </div>
 

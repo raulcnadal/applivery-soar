@@ -77,9 +77,9 @@ There is no dedicated "jailbreak/root" or "disk encryption" field type for every
 
 **Then run** — pick the primary Workflow (required to save).
 
-**Mark on Applivery console**: a **non-compliance tag** (applied while violated, removed on recovery — give each policy its own distinct tag) and/or a **Smart Attribute** to attach/detach. Either, both, or neither.
+**Mark on Applivery console**: a **non-compliance tag** (applied while violated, removed on recovery — give each policy its own distinct tag) and/or a **Smart Attribute** to attach/detach. Either, both, or neither. The removal isn't limited to a device genuinely clearing the condition on its own — manually resolving or closing the Case a violation opened (from the [Cases](cases.md) view) removes the same tag/Smart Attribute right away too, so a case an analyst closes by hand doesn't leave a stale non-compliance marker on the device until the next natural recovery.
 
-**Case Management**: **Open a Case when violated** (default on) and, only if that's on, **Auto-resolve the Case once the device recovers** (default off — recommended only for conditions that reliably self-heal; otherwise let an analyst confirm the fix first).
+**Case Management**: **Open a Case when violated** (default on) and, only if that's on, **Auto-resolve the Case once the device recovers** (default off — recommended only for conditions that reliably self-heal; otherwise let an analyst confirm the fix first) and an optional **Default assignee** — every Case this policy opens (or reopens) is auto-assigned to that person, still freely reassignable afterward from the Cases view like any other case. Leave it blank to keep new cases unassigned, the pre-existing behavior.
 
 **Alerts**: **Send an alert when this policy is violated** (default off) fires one rolled-up message per evaluation pass that finds at least one new violation — e.g. "3 new violations" — not one per device, and independent of the workflow/autoRun settings above. Two channels, either or both:
 - **Webhook** — an optional per-policy URL override (leave blank to reuse [Settings → General](settings.md)'s single global Notifications Webhook URL), with a **Test** button to send a sample message before relying on it.

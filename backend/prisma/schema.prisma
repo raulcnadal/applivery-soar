@@ -247,6 +247,11 @@ model CompliancePolicy {
   nonComplianceSmartAttributeId String?
   openCaseOnViolation          Boolean   @default(true)
   autoResolveCaseOnRecovery     Boolean   @default(false)
+  // Optional default assignee auto-set on every Case this policy opens (or
+  // reopens) — purely a convenience default, still freely reassignable
+  // afterward from the Cases view like any other case. Null/empty means
+  // "leave unassigned," the pre-existing behavior.
+  caseAssignee                String?
   mitreTechniques              String[]
   framework                   String?
   controlRef                  String?

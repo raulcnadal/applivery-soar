@@ -297,7 +297,7 @@ export async function createCase(
   return serializeCase(final, settings.thresholds);
 }
 
-export async function updateCase(workspaceSlug: string, caseId: string, payload: CaseUpdatePayload, actorEmail: string) {
+export async function updateCase(workspaceSlug: string, caseId: string, payload: CaseUpdatePayload, actorEmail: string, authorization?: string | null) {
   const kase = await prisma.case.findFirst({ where: { workspaceSlug, id: caseId } });
   if (!kase) throw new HttpError(404, "Case not found");
   const now = new Date();
@@ -371,6 +371,20 @@ export async function updateCase(workspaceSlug: string, caseId: string, payload:
     // this device would keep showing the pre-close state for up to 15 more
     // minutes even on a plain refresh.
     invalidateDevicesCache(workspaceSlug);
+
+    // A compliance-violation Case closed/resolved manually here doesn't
+    // necessarily mean the device's underlying condition ever actually
+    // cleared — the automatic evaluation pass only removes the policy's
+    // configured device tag/smart-attribute once the device genuinely stops
+    // violating (compliance.service.ts's per-device recovery branch). Mirror
+    // that same removal here so a manually closed/resolved case doesn't
+    // leave a stale non-compliance marker on the device indefinitely.
+    if (notifyEvent === "closed" && kase.policyId && kase.deviceId && authorization) {
+      const { removeComplianceMarkersForDevice } = await import("../compliance/compliance.service");
+      await removeComplianceMarkersForDevice(authorization, workspaceSlug, kase.policyId, kase.deviceId).catch((e: unknown) =>
+        console.warn(`[Cases] Failed to remove compliance marker(s) for case ${caseId}: ${e instanceof Error ? e.message : e}`),
+      );
+    }
   }
 
   const settings = await getCaseSlaSettings(workspaceSlug);
@@ -473,7 +487,7 @@ export async function syncCaseTicketStatus(workspaceSlug: string, caseId: string
   return { case: await serializeCase(final), autoClosed };
 }
 
-export async function bulkUpdateCases(workspaceSlug: string, payload: CaseBulkUpdatePayload, actorEmail: string) {
+export async function bulkUpdateCases(workspaceSlug: string, payload: CaseBulkUpdatePayload, actorEmail: string, authorization?: string | null) {
   if (payload.status === undefined || payload.status === null) {
     if (payload.assignee === undefined || payload.assignee === null) {
       throw new HttpError(400, "Provide at least one of status or assignee");
@@ -483,7 +497,7 @@ export async function bulkUpdateCases(workspaceSlug: string, payload: CaseBulkUp
   const failed: Array<{ id: string; error: string }> = [];
   for (const cid of payload.caseIds) {
     try {
-      await updateCase(workspaceSlug, cid, { status: payload.status ?? null, assignee: payload.assignee ?? null }, actorEmail);
+      await updateCase(workspaceSlug, cid, { status: payload.status ?? null, assignee: payload.assignee ?? null }, actorEmail, authorization);
       updated.push(cid);
     } catch (e) {
       failed.push({ id: cid, error: e instanceof HttpError ? String(e.detail) : String(e) });
@@ -535,6 +549,7 @@ export interface CasePolicyRef {
   name: string;
   severity: string | null;
   mitreTechniques: string[];
+  caseAssignee?: string | null;
 }
 export interface CaseDeviceRef {
   id: string;
@@ -574,7 +589,11 @@ export async function upsertCaseForViolation(
       where: { id: closedMatch.id },
       data: {
         status: "open", closedAt: null, updatedAt: nowIso, violationIds: { push: violationId },
-        acknowledgedAt: null, slaClockStartedAt: nowIso, slaAckBreachNotifiedAt: null, slaResolveBreachNotifiedAt: null,
+        // Re-applies the policy's configured default assignee on reopen too
+        // (treated as a fresh incident from an assignment standpoint, same
+        // as the SLA clock reset below) rather than leaving it unassigned.
+        assignee: policy.caseAssignee || null,
+        acknowledgedAt: policy.caseAssignee ? nowIso : null, slaClockStartedAt: nowIso, slaAckBreachNotifiedAt: null, slaResolveBreachNotifiedAt: null,
         mitreTechniques: policy.mitreTechniques ?? [],
       },
     });
@@ -588,11 +607,17 @@ export async function upsertCaseForViolation(
       severity: policy.severity ?? "medium", source: "compliance_violation",
       deviceId: device.id, deviceName: device.displayName, segmentId: device.segmentId != null ? String(device.segmentId) : null,
       policyId: policy.id, policyName: policy.name, violationIds: [violationId], workflowRunIds: [],
+      assignee: policy.caseAssignee || null, acknowledgedAt: policy.caseAssignee ? nowIso : null,
       createdBy: "system", slaClockStartedAt: nowIso, mitreTechniques: policy.mitreTechniques ?? [],
       threatIntel: [], externalRefs: [],
     },
   });
-  await addCaseTimelineEntry(created.id, "created", `Case opened — "${policy.name}" violated by ${device.displayName ?? device.id}`);
+  await addCaseTimelineEntry(
+    created.id, "created",
+    policy.caseAssignee
+      ? `Case opened — "${policy.name}" violated by ${device.displayName ?? device.id} — auto-assigned to ${policy.caseAssignee}`
+      : `Case opened — "${policy.name}" violated by ${device.displayName ?? device.id}`,
+  );
   return { caseId: created.id, notifyEvent: "created" };
 }
 
