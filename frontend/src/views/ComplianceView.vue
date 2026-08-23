@@ -14,11 +14,14 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
+import DeviceDetailDrawer from "../components/devices/DeviceDetailDrawer.vue";
 import PoliciesTable from "../components/compliance/PoliciesTable.vue";
 import PolicyBuilderDrawer from "../components/compliance/PolicyBuilderDrawer.vue";
+import PolicyViolatorsModal from "../components/compliance/PolicyViolatorsModal.vue";
 import TemplateGallery from "../components/compliance/TemplateGallery.vue";
 import ViolationsQueue from "../components/compliance/ViolationsQueue.vue";
 import { useComplianceStore, type CompliancePolicy, type ComplianceTemplate, type ConditionRule } from "../stores/compliance";
+import { useDevicesStore } from "../stores/devices";
 import { useSegmentsStore } from "../stores/segments";
 
 const PRIMARY_BLUE = "#0241E3";
@@ -26,6 +29,28 @@ const DANGER = "#EF4444";
 
 const store = useComplianceStore();
 const segmentsStore = useSegmentsStore();
+const devicesStore = useDevicesStore();
+
+// Violators modal -> Device modal chain — same "own the Device modal state
+// like DevicesView.vue does" pattern, added here so a policy's Violators
+// count is actually clickable instead of a dead-end number.
+const violatorsTarget = ref<{ policyId: string; policyName: string } | null>(null);
+const selectedDeviceId = ref<string | null>(null);
+const selectedDevice = computed(() => devicesStore.devices.find((d) => d.id === selectedDeviceId.value) ?? null);
+
+function openViolators(p: CompliancePolicy) {
+  violatorsTarget.value = { policyId: p.id, policyName: p.name };
+}
+// Closes the Violators modal before opening the Device modal on top of it —
+// simpler and avoids any z-index tug-of-war than trying to stack the shared
+// bluesky-vue Modal (z-310) over DeviceDetailDrawer (z-260) or vice versa.
+function openDeviceFromViolators(deviceId: string) {
+  violatorsTarget.value = null;
+  selectedDeviceId.value = deviceId;
+}
+function closeDeviceModal() {
+  selectedDeviceId.value = null;
+}
 
 // Platform filter for the Policies list — separate from (and applied on top
 // of) the Segment scoping above. "" (All platforms) is the default; "common"
@@ -307,9 +332,19 @@ onMounted(async () => {
         :total-policies-count="store.policies.length"
         :segment-name="segmentsStore.selectedSegment.name"
         @edit="editPolicy"
+        @open-violators="openViolators"
       />
     </div>
     <ViolationsQueue />
+
+    <PolicyViolatorsModal
+      :open="!!violatorsTarget"
+      :policy-id="violatorsTarget?.policyId ?? null"
+      :policy-name="violatorsTarget?.policyName ?? null"
+      @close="violatorsTarget = null"
+      @open-device="openDeviceFromViolators"
+    />
+    <DeviceDetailDrawer :device="selectedDevice" @close="closeDeviceModal" />
 
     <PolicyBuilderDrawer
       :open="drawerOpen"

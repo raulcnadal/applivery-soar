@@ -69,7 +69,7 @@ Leave the box unchecked (the default) for workflows whose destructive steps shou
 
 ## Running a workflow
 
-Click **Run** (from the list, a device drawer, or a case) to open the device picker, which has three modes:
+Click **Run** (from the list, a device modal, or a case) to open the device picker, which has three modes:
 - **Pick devices** — search + checkbox multi-select.
 - **By Device Audience** — pick an Applivery Device Audience; every current member is targeted.
 - **By Tag** — pick a tag present on any device; every matching device is targeted.
@@ -121,7 +121,7 @@ Once saved, reference the rule set from a workflow's **Apply Firewall Rule Set**
 
 Like the other two sub-views, the library is a searchable, sortable table (search box, sortable Name/Rules columns, posture badges), dropping to a stacked card list below 768px wide.
 
-The device detail drawer's [Firewall Rule Sets section](devices.md#overview-tab-section-by-section) shows what's currently believed active per device, based on the last dispatched Apply/Restore action.
+The device detail modal's [Firewall Rule Sets section](devices.md#overview-tab-section-by-section) shows what's currently believed active per device, based on the last dispatched Apply/Restore action.
 
 ## Settings this view depends on
 
@@ -132,5 +132,5 @@ The device detail drawer's [Firewall Rule Sets section](devices.md#overview-tab-
 
 - [Compliance](compliance.md) — how a policy links to and auto-fires a workflow.
 - [Cases](cases.md) — running a workflow directly from a case.
-- [Devices](devices.md) — running a workflow against one device from its drawer, and the Firewall Rule Sets section.
+- [Devices](devices.md) — running a workflow against one device from its modal, and the Firewall Rule Sets section.
 - [Settings](settings.md) — role permissions and the automation credential background jobs use.

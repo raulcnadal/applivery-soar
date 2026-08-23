@@ -43,7 +43,7 @@ Geofence conditions combine with every other condition type the same way as anyt
 
 ## Where the location data comes from
 
-Device locations come from the same Applivery API location history already used elsewhere in the app (Devices drawer's Location tab, Playground's globe/map markers) — precise and network-based positions reported by the MDM agent. Geofencing doesn't add a new data source; it adds a background refresher that keeps a lightweight, per-device "last known location" cache warm specifically for Compliance Policy evaluation, plus the point-in-zone geometry to test it against a saved shape.
+Device locations come from the same Applivery API location history already used elsewhere in the app (Devices modal's Location tab, Playground's globe/map markers) — precise and network-based positions reported by the MDM agent. Geofencing doesn't add a new data source; it adds a background refresher that keeps a lightweight, per-device "last known location" cache warm specifically for Compliance Policy evaluation, plus the point-in-zone geometry to test it against a saved shape.
 
 ### Why a separate refresher
 

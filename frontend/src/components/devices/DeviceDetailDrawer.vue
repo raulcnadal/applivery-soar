@@ -532,8 +532,8 @@ function traceTitle(t: Record<string, any>): string {
 
 <template>
   <template v-if="props.device">
-    <div class="fixed inset-0 z-[260] bg-black/40" @click="emit('close')" />
-    <div class="fixed inset-y-0 right-0 z-[260] w-full sm:w-[440px] shadow-2xl flex flex-col bg-white dark:bg-gray-800">
+    <div class="fixed inset-0 z-[260] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" @click.self="emit('close')">
+      <div class="w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700" style="max-height: 90vh">
       <!-- Loading skeleton — shown only while resolving a lighter-shape
            device (Playground/Overview entry) into the full record. Devices
            view callers skip this entirely (device resolves synchronously). -->
@@ -625,16 +625,18 @@ function traceTitle(t: Record<string, any>): string {
           <template v-if="tab === 'overview'">
             <div class="mb-6">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Identifiers</p>
-              <div v-for="row in [
-                ['Serial number', device.serialNumber],
-                ['IMEI', device.imei],
-                ['UDID', device.identifiers?.udid],
-                ['EMM device ID', device.identifiers?.emmDeviceId],
-                ['Windows ID', device.identifiers?.winId],
-              ]" :key="row[0] as string">
-                <div v-if="row[1]" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
-                  <span class="text-gray-400">{{ row[0] }}</span>
-                  <span class="font-mono text-xs text-gray-900 dark:text-white">{{ row[1] }}</span>
+              <div class="sm:grid sm:grid-cols-2 sm:gap-x-8">
+                <div v-for="row in [
+                  ['Serial number', device.serialNumber],
+                  ['IMEI', device.imei],
+                  ['UDID', device.identifiers?.udid],
+                  ['EMM device ID', device.identifiers?.emmDeviceId],
+                  ['Windows ID', device.identifiers?.winId],
+                ]" :key="row[0] as string">
+                  <div v-if="row[1]" class="flex items-center justify-between gap-3 py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+                    <span class="text-gray-400 shrink-0">{{ row[0] }}</span>
+                    <span class="font-mono text-xs text-right truncate text-gray-900 dark:text-white">{{ row[1] }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -650,25 +652,27 @@ function traceTitle(t: Record<string, any>): string {
                    it only appears once the SOAR Agent has reported it
                    (selfReported.attributes.osEdition), so this row degrades
                    gracefully to just the version name until then. -->
-              <div v-for="row in [
-                ['Model', device.manufacturer ? `${device.manufacturer} ${device.model}`.trim() : device.model],
-                ['OS version', device.osVersion],
-                ['Windows version', (device as any).windowsVersionLabel
-                  ? `${(device as any).windowsVersionLabel}${(device.selfReported as any)?.attributes?.osEdition ? ` · ${(device.selfReported as any).attributes.osEdition}` : ''}`
-                  : null],
-                ['MAC address', (device as any).macAddress],
-                ['IP address', (device as any).ipAddress],
-                ['Management mode', (device as any).managementMode],
-                ['Battery', device.battery != null ? `${device.battery}%` : null],
-                ['Storage', device.totalStorageGb ? `${device.availableStorageGb ? device.availableStorageGb.toFixed(1) + ' GB free of ' : ''}${device.totalStorageGb.toFixed(1)} GB` : null],
-                ['RAM', device.ramGb ? `${device.ramGb.toFixed(1)} GB` : null],
-                ['State', device.state],
-                ['Enrolled', device.enrolledAt ? formatDate(device.enrolledAt) : null],
-                ['Last seen', device.lastSeen ? formatDate(device.lastSeen) : null],
-              ]" :key="row[0] as string">
-                <div v-if="row[1]" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
-                  <span class="text-gray-400">{{ row[0] }}</span>
-                  <span class="text-gray-900 dark:text-white">{{ row[1] }}</span>
+              <div class="sm:grid sm:grid-cols-2 sm:gap-x-8">
+                <div v-for="row in [
+                  ['Model', device.manufacturer ? `${device.manufacturer} ${device.model}`.trim() : device.model],
+                  ['OS version', device.osVersion],
+                  ['Windows version', (device as any).windowsVersionLabel
+                    ? `${(device as any).windowsVersionLabel}${(device.selfReported as any)?.attributes?.osEdition ? ` · ${(device.selfReported as any).attributes.osEdition}` : ''}`
+                    : null],
+                  ['MAC address', (device as any).macAddress],
+                  ['IP address', (device as any).ipAddress],
+                  ['Management mode', (device as any).managementMode],
+                  ['Battery', device.battery != null ? `${device.battery}%` : null],
+                  ['Storage', device.totalStorageGb ? `${device.availableStorageGb ? device.availableStorageGb.toFixed(1) + ' GB free of ' : ''}${device.totalStorageGb.toFixed(1)} GB` : null],
+                  ['RAM', device.ramGb ? `${device.ramGb.toFixed(1)} GB` : null],
+                  ['State', device.state],
+                  ['Enrolled', device.enrolledAt ? formatDate(device.enrolledAt) : null],
+                  ['Last seen', device.lastSeen ? formatDate(device.lastSeen) : null],
+                ]" :key="row[0] as string">
+                  <div v-if="row[1]" class="flex items-center justify-between gap-3 py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+                    <span class="text-gray-400 shrink-0">{{ row[0] }}</span>
+                    <span class="text-right truncate text-gray-900 dark:text-white">{{ row[1] }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1397,6 +1401,7 @@ function traceTitle(t: Record<string, any>): string {
           </template>
         </div>
       </template>
+    </div>
     </div>
 
     <template v-if="device">

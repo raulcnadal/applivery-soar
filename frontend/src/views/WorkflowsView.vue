@@ -9,6 +9,7 @@
 // it's Settings' "Inbound Webhooks" tab; moved there in this same pass.
 import { Alert } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ICONS } from "../lib/solarIcons";
 import HelpIcon from "../components/shared/HelpIcon.vue";
 import DryRunDialog from "../components/workflows/DryRunDialog.vue";
@@ -30,6 +31,8 @@ import { useFirewallRuleSetsStore, type FirewallRuleSet } from "../stores/firewa
 const store = useWorkflowsStore();
 const actionLibraryStore = useActionLibraryStore();
 const firewallStore = useFirewallRuleSetsStore();
+const route = useRoute();
+const router = useRouter();
 
 type Tab = "workflows" | "library" | "firewall";
 const tab = ref<Tab>("workflows");
@@ -121,6 +124,16 @@ async function selectTab(t: Tab) {
 
 onMounted(async () => {
   await store.fetchWorkflows();
+  // Arrived via a cross-link (Compliance's Workflow-column icon click) —
+  // auto-open that workflow's builder in edit mode, same query-param
+  // pattern as Devices' ?deviceId= and Cases' ?caseId=. Cleared from the
+  // URL immediately after so a manual refresh doesn't keep re-opening it.
+  const editWorkflowId = route.query.editWorkflowId;
+  if (typeof editWorkflowId === "string" && editWorkflowId) {
+    const target = store.workflows.find((w) => w.id === editWorkflowId);
+    if (target) openEdit(target);
+    router.replace({ path: "/workflows", query: {} });
+  }
 });
 </script>
 

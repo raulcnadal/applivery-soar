@@ -27,7 +27,7 @@ A platform filter and a name/identifier search sit above the table. Clicking a r
 - **Devices** — one row per physical device (a device seen via both the SOAR Agent and Applivery UEM is merged, not duplicated), with version, package-type badge, every "Reported by" source that saw it, "enforced by policy" badge (Windows only — assigned via Applivery's Windows App Distribution, not just incidentally present), update-available flag, and its own "Last sync" column showing freshness and any live-fetch error. Windows apps also show their full on-disk install path on its own line below the row when known (always for AppX/Store packages, sometimes for classic Win32 installs) — purely informational, not used for any matching logic.
 - **Applivery Application Library** is a *separate*, Windows-only lookup against Applivery's own Windows App Distribution/MDM catalog (a different system from SOAR's own App Catalog above) — matched by MSI product code when SOAR has one, name otherwise. "No matching entry found" here is expected, not a bug, for any app that was never deployed through Applivery itself (e.g. installed manually from the Microsoft Store) — it says nothing about whether the app is in SOAR's own App Catalog.
 
-Each app also appears, per device, in that device's own detail drawer under its **Apps** tab — clicking a row there jumps straight to this same App detail modal for that app.
+Each app also appears, per device, in that device's own detail modal under its **Apps** tab — clicking a row there jumps straight to this same App detail modal for that app.
 
 ### Vulnerability Service risk scoring
 

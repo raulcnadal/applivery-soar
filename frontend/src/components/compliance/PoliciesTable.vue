@@ -10,6 +10,7 @@
 // mini-badges into one "OS Version" column rather than one column each.
 import { EmptyState } from "@applivery/bluesky-vue";
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { ICONS } from "../../lib/solarIcons";
 import { useBreakpoint } from "../../composables/useBreakpoint";
 import { useComplianceStore, type CompliancePolicy } from "../../stores/compliance";
@@ -38,14 +39,28 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   edit: [policy: CompliancePolicy];
+  "open-violators": [policy: CompliancePolicy];
 }>();
 
 const store = useComplianceStore();
 const workflowsStore = useWorkflowsStore();
+const router = useRouter();
 const { isMobile } = useBreakpoint();
 const evaluatingPolicyId = ref<string | null>(null);
 
 const workflowsById = computed(() => Object.fromEntries(workflowsStore.workflows.map((w) => [w.id, w])));
+
+// Workflow column shows only an icon (see the desktop table below) — the
+// policy name and the workflow name were fighting for space in the same
+// row, and the workflow name reading as plain text made it look
+// informational rather than a link. Clicking it opens that workflow
+// straight into edit mode via WorkflowsView.vue's own ?editWorkflowId=
+// query-param handling — the same cross-view-link pattern already used by
+// openDeviceAudit/openCase/openApp in DeviceDetailDrawer.vue.
+function openWorkflowEdit(p: CompliancePolicy) {
+  if (!p.workflowId) return;
+  router.push({ path: "/workflows", query: { editWorkflowId: p.workflowId } });
+}
 
 onMounted(async () => {
   if (workflowsStore.workflows.length === 0) await workflowsStore.fetchWorkflows();
@@ -162,10 +177,12 @@ function toggleSort(key: SortKey) {
   }
 }
 
+// "Workflow" is deliberately not in this list — its column shows only an
+// icon (see openWorkflowEdit above), so a sortable text header for it would
+// be misleading (nothing in the column itself reflects sort order visually).
 const COLUMNS: Array<{ key: SortKey; label: string }> = [
   { key: "name", label: "Policy" },
   { key: "platform", label: "Platform" },
-  { key: "workflow", label: "Workflow" },
   { key: "violators", label: "Violators" },
   { key: "lastEvaluated", label: "Last Evaluated" },
 ];
@@ -229,13 +246,27 @@ const COLUMNS: Array<{ key: SortKey; label: string }> = [
             </div>
             <p class="text-xs mt-0.5 text-gray-400">{{ conditionSummary(p) }}</p>
             <div class="flex items-center gap-x-4 gap-y-1 mt-2 flex-wrap">
-              <p class="text-xs inline-flex items-center gap-1 text-gray-400">
-                <component :is="ICONS.Structure" :size="11" weight="Linear" /> {{ workflowsById[p.workflowId ?? ""]?.name || "No workflow linked" }}
+              <button
+                v-if="p.workflowId"
+                class="text-xs inline-flex items-center gap-1 text-gray-400 hover:underline"
+                :title="`Edit workflow: ${workflowsById[p.workflowId]?.name || 'linked workflow'}`"
+                @click="openWorkflowEdit(p)"
+              >
+                <component :is="ICONS.Routing" :size="11" weight="Linear" /> {{ workflowsById[p.workflowId]?.name || "Linked workflow" }}
+              </button>
+              <p v-else class="text-xs inline-flex items-center gap-1 text-gray-400">
+                <component :is="ICONS.Routing" :size="11" weight="Linear" /> No workflow linked
               </p>
-              <p class="text-xs inline-flex items-center gap-1" :style="{ color: (store.violatorCounts[p.id] ?? 0) > 0 ? DANGER : '#9CA3AF' }">
+              <button
+                class="text-xs inline-flex items-center gap-1 disabled:cursor-default"
+                :class="store.violatorCounts[p.id] ? 'hover:underline' : ''"
+                :style="{ color: (store.violatorCounts[p.id] ?? 0) > 0 ? DANGER : '#9CA3AF' }"
+                :disabled="store.violatorCounts[p.id] == null"
+                @click="store.violatorCounts[p.id] ? emit('open-violators', p) : undefined"
+              >
                 <component :is="ICONS.Smartphone" :size="11" weight="Linear" />
                 {{ store.violatorCounts[p.id] == null ? "Violators unavailable" : `${store.violatorCounts[p.id]} violating` }}
-              </p>
+              </button>
             </div>
             <div class="flex items-center gap-1.5 mt-2 flex-wrap">
               <button class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase" :style="{ backgroundColor: p.enabled ? `${SUCCESS}15` : '#9CA3AF15', color: p.enabled ? SUCCESS : '#9CA3AF' }" @click="toggleField(p, 'enabled')">
@@ -261,15 +292,39 @@ const COLUMNS: Array<{ key: SortKey; label: string }> = [
       </div>
     </div>
 
-    <!-- Desktop — sortable column table. Enabled/Auto-run/Cases/Alerts each
-         get their own column (rather than one crowded "Status" cluster) per
-         user request — padding is trimmed (px-2 instead of px-3) across
-         every cell to make room. -->
+    <!-- Desktop — sortable column table. table-fixed + an explicit colgroup
+         (rather than the previous auto-layout table) so every narrow column
+         gets a sane, consistent width instead of the browser splitting
+         leftover space unevenly across them — that's what was producing the
+         huge gaps between Violators/Last Evaluated/Enabled/Auto-run/Cases/
+         Alerts. Only the Policy column has no fixed width, so it's the one
+         that absorbs whatever space is left. The Workflow column shows only
+         an icon (see openWorkflowEdit above) rather than the linked
+         workflow's name — that name was the other half of the overflow
+         problem, colliding with the Violators column whenever it ran long. -->
     <div v-else class="overflow-x-auto">
-      <table class="w-full text-sm text-left">
+      <table class="w-full text-sm text-left table-fixed">
+        <colgroup>
+          <col />
+          <col style="width: 108px" />
+          <col style="width: 40px" />
+          <col style="width: 64px" />
+          <col style="width: 92px" />
+          <col style="width: 60px" />
+          <col style="width: 76px" />
+          <col style="width: 92px" />
+          <col style="width: 56px" />
+          <col style="width: 104px" />
+        </colgroup>
         <thead class="bg-gray-50 dark:bg-gray-900/50">
           <tr>
-            <th v-for="col in COLUMNS" :key="col.key" class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider">
+            <th v-for="col in COLUMNS.slice(0, 2)" :key="col.key" class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider">
+              <button class="inline-flex items-center gap-1 uppercase tracking-wider whitespace-nowrap" :style="{ color: sortBy === col.key ? PRIMARY_BLUE : '#9CA3AF' }" @click="toggleSort(col.key)">
+                {{ col.label }} <component :is="ICONS.SortVertical" :size="11" weight="Linear" />
+              </button>
+            </th>
+            <th class="px-1 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 text-center" title="Linked workflow">Wf</th>
+            <th v-for="col in COLUMNS.slice(2)" :key="col.key" class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider">
               <button class="inline-flex items-center gap-1 uppercase tracking-wider whitespace-nowrap" :style="{ color: sortBy === col.key ? PRIMARY_BLUE : '#9CA3AF' }" @click="toggleSort(col.key)">
                 {{ col.label }} <component :is="ICONS.SortVertical" :size="11" weight="Linear" />
               </button>
@@ -278,38 +333,53 @@ const COLUMNS: Array<{ key: SortKey; label: string }> = [
             <th class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap">Auto-run</th>
             <th class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap">Cases</th>
             <th class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap">Alerts</th>
-            <th class="px-2 py-2.5 w-[104px]"></th>
+            <th class="px-2 py-2.5"></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(p, idx) in sorted" :key="p.id" class="align-top" :class="idx > 0 ? 'border-t border-gray-100 dark:border-gray-800' : ''">
-            <td class="px-2 py-2.5 max-w-[220px]">
-              <div class="flex items-start gap-2">
+            <td class="px-2 py-2.5">
+              <div class="flex items-start gap-2 min-w-0">
                 <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: `${WARNING}12` }">
                   <component :is="ICONS.ShieldWarning" :size="13" weight="Linear" :style="{ color: WARNING }" />
                 </div>
                 <div class="min-w-0">
                   <p class="font-semibold truncate text-gray-900 dark:text-white" :title="p.name">{{ p.name }}</p>
-                  <p class="text-[11px] text-gray-400 mt-0.5">{{ conditionSummary(p) }}</p>
+                  <p class="text-[11px] text-gray-400 mt-0.5 truncate">{{ conditionSummary(p) }}</p>
                   <p v-if="p.description" class="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{{ p.description }}</p>
                 </div>
               </div>
             </td>
             <td class="px-2 py-2.5">
-              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="{ backgroundColor: p.targetPlatform ? `${PRIMARY_BLUE}12` : '#9CA3AF15', color: p.targetPlatform ? PRIMARY_BLUE : '#9CA3AF' }">
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-block max-w-full truncate align-middle" :title="platformLabel(p) + (p.targetDeploymentModel ? ` · ${DEPLOYMENT_MODEL_LABELS[p.targetDeploymentModel] ?? p.targetDeploymentModel}` : '')" :style="{ backgroundColor: p.targetPlatform ? `${PRIMARY_BLUE}12` : '#9CA3AF15', color: p.targetPlatform ? PRIMARY_BLUE : '#9CA3AF' }">
                 {{ platformLabel(p) }}{{ p.targetDeploymentModel ? ` · ${DEPLOYMENT_MODEL_LABELS[p.targetDeploymentModel] ?? p.targetDeploymentModel}` : "" }}
               </span>
             </td>
-            <td class="px-2 py-2.5 max-w-[140px]">
-              <p class="text-xs inline-flex items-center gap-1 text-gray-400 truncate" :title="workflowsById[p.workflowId ?? '']?.name || 'No workflow linked'">
-                <component :is="ICONS.Structure" :size="11" weight="Linear" class="shrink-0" /> <span class="truncate">{{ workflowsById[p.workflowId ?? ""]?.name || "No workflow linked" }}</span>
-              </p>
+            <td class="px-1 py-2.5 text-center">
+              <button
+                v-if="p.workflowId"
+                :title="`Edit workflow: ${workflowsById[p.workflowId]?.name || 'linked workflow'}`"
+                class="p-1 rounded-lg text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+                @click="openWorkflowEdit(p)"
+              >
+                <component :is="ICONS.Routing" :size="15" weight="Linear" />
+              </button>
+              <span v-else title="No workflow linked" class="inline-flex text-gray-300 dark:text-gray-600">
+                <component :is="ICONS.Routing" :size="15" weight="Linear" />
+              </span>
             </td>
             <td class="px-2 py-2.5">
-              <p class="text-xs inline-flex items-center gap-1 whitespace-nowrap" :style="{ color: (store.violatorCounts[p.id] ?? 0) > 0 ? DANGER : '#9CA3AF' }">
+              <button
+                class="text-xs inline-flex items-center gap-1 whitespace-nowrap disabled:cursor-default"
+                :style="{ color: (store.violatorCounts[p.id] ?? 0) > 0 ? DANGER : '#9CA3AF' }"
+                :disabled="store.violatorCounts[p.id] == null"
+                :title="store.violatorCounts[p.id] ? 'View violating devices' : undefined"
+                :class="store.violatorCounts[p.id] ? 'hover:underline' : ''"
+                @click="store.violatorCounts[p.id] ? emit('open-violators', p) : undefined"
+              >
                 <component :is="ICONS.Smartphone" :size="11" weight="Linear" />
                 {{ store.violatorCounts[p.id] == null ? "N/A" : store.violatorCounts[p.id] }}
-              </p>
+              </button>
             </td>
             <td class="px-2 py-2.5">
               <p class="text-xs inline-flex items-center gap-1 text-gray-400 whitespace-nowrap" :title="p.lastEvaluatedAt ? new Date(p.lastEvaluatedAt).toLocaleString() : undefined">
@@ -365,7 +435,7 @@ const COLUMNS: Array<{ key: SortKey; label: string }> = [
               </span>
               <span v-else class="text-[10px] font-semibold px-1.5 py-1 uppercase whitespace-nowrap text-gray-400">Off</span>
             </td>
-            <td class="px-2 py-2.5 w-[104px]">
+            <td class="px-2 py-2.5">
               <div class="flex items-center gap-1 justify-end flex-nowrap">
                 <button title="Evaluate just this policy now" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40 shrink-0" :disabled="evaluatingPolicyId !== null" @click="evaluate(p)">
                   <component :is="ICONS.Refresh" :size="13" weight="Linear" :class="evaluatingPolicyId === p.id ? 'animate-spin' : ''" />

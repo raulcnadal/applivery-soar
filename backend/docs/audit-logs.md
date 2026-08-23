@@ -19,7 +19,7 @@ A category icon (color-coded), the message, timestamp, actor, a severity pill, a
 
 ## Getting here
 
-- From a device's **Active Violations** section in its [detail drawer](devices.md#overview-tab-section-by-section) — jumps here pre-filtered to that exact device.
+- From a device's **Active Violations** section in its [detail modal](devices.md#overview-tab-section-by-section) — jumps here pre-filtered to that exact device.
 - From the workspace/profile menu (top right) — a plain, unfiltered **Audit Logs** entry.
 
 ## Export

@@ -17,7 +17,7 @@ Selecting **Compliance Policies** reveals a second dropdown next to the toggle �
 
 ## Fleet table
 
-**Columns**: a select-all checkbox, **Device** (name + platform badge), **Employee** (assigned user or "Unassigned"), **Hardware** (manufacturer/model + a color-coded battery bar), **OS Version** (version string plus up to five stacked status mini-badges, see below), **Compliance** (pill), **Risk** (sortable — tier + numeric score, plus small "active violations" / "open cases" chips), **Last Seen**, and a chevron to open the device drawer.
+**Columns**: a select-all checkbox, **Device** (name + platform badge), **Employee** (assigned user or "Unassigned"), **Hardware** (manufacturer/model + a color-coded battery bar), **OS Version** (version string plus up to five stacked status mini-badges, see below), **Compliance** (pill), **Risk** (sortable — tier + numeric score, plus small "active violations" / "open cases" chips), **Last Seen**, and a chevron to open the device modal.
 
 **OS Version mini-badges** (hover any of them for detail):
 - OS update status — Up to date / N updates behind / Patch level unconfirmed.
@@ -44,9 +44,9 @@ Select one or more rows via their checkboxes to reveal a bulk action bar:
 
 Both "Add tag" and "Move segment" report a summary afterward (e.g. "Applied on 8/10 devices — 2 failed").
 
-## Device detail drawer
+## Device detail modal
 
-Click any row to open the drawer. The header shows device name, platform + hardware, Compliance badge, Risk badge, assigned user, and a **Run workflow** button — plus an **(i)** help icon that opens this guide. Five tabs: **Overview**, **Compliance**, **Apps**, **Location**, and **Agent**.
+Click any row to open the modal — a centered, wide card with a blurred backdrop (matching the styling used across Settings and other modals), rather than a side panel, so long names and dense fields have room to breathe. The header shows device name, platform + hardware, Compliance badge, Risk badge, assigned user, and a **Run workflow** button — plus an **(i)** help icon that opens this guide. Five tabs: **Overview**, **Compliance**, **Apps**, **Location**, and **Agent**. The same modal opens from Overview widgets, Playground map pins, and the Apps view's Reported Apps panel.
 
 ### Overview tab, section by section
 
@@ -88,9 +88,9 @@ Shows last-known coordinates with an **Open in Google Maps** link, or an empty s
 
 ### Agent tab
 
-On-demand only — Applivery's own per-device diagnostic feed (`GET /mdm/agent-logs`, `GET /mdm/agent-trace`), troubleshooting data rather than fleet/compliance state, so this tab never fetches it live on its own. A **Fetch Agent Logs & Trace** button is the only trigger; whatever it last retrieved stays visible for reference (stored server-side, re-read on every drawer open) until fetched again, alongside a "Last fetched" timestamp or "Never fetched for this device." **Agent Logs** shows each entry's title, status badge (ERROR/WARN/other, color-coded), timestamp, body text, any parse error, and an attachment link when the log carries one (e.g. a full crash dump). **Agent Trace** shows each event's title, event-type badge, timestamp, and content. Both sections show "Not fetched yet" until the button above is used at least once.
+On-demand only — Applivery's own per-device diagnostic feed (`GET /mdm/agent-logs`, `GET /mdm/agent-trace`), troubleshooting data rather than fleet/compliance state, so this tab never fetches it live on its own. A **Fetch Agent Logs & Trace** button is the only trigger; whatever it last retrieved stays visible for reference (stored server-side, re-read on every modal open) until fetched again, alongside a "Last fetched" timestamp or "Never fetched for this device." **Agent Logs** shows each entry's title, status badge (ERROR/WARN/other, color-coded), timestamp, body text, any parse error, and an attachment link when the log carries one (e.g. a full crash dump). **Agent Trace** shows each event's title, event-type badge, timestamp, and content. Both sections show "Not fetched yet" until the button above is used at least once.
 
-### Actions available from the drawer
+### Actions available from the modal
 
 - **Run workflow** — runs a chosen workflow against just this device.
 - **Change segment / Add or remove a policy / Edit tags** — as described above.
@@ -114,7 +114,7 @@ A tab switcher at the top of the Devices header ("Devices" / "Playground") switc
 ## Related guides
 
 - [Compliance](compliance.md) — how Compliance Policies compute the "Compliance Policies" signal and the risk-affecting conditions shown here.
-- [Workflows](workflows.md) — running workflows against one or many devices, and the Firewall Policy Library referenced in the drawer.
+- [Workflows](workflows.md) — running workflows against one or many devices, and the Firewall Policy Library referenced in the modal.
 - [Cases](cases.md) — the cases linked from a device's Open Cases section.
 - [Apps](apps.md) — the fleet-wide Reported Apps table and App Catalog the Apps tab's per-device view is scoped from.
 - [Settings](settings.md) — Vulnerability Service, Applivery SOAR Agent (self-report scripts), and OS Updates/Lifecycle catalogs that feed the badges on this page.

@@ -124,6 +124,6 @@ Below that, a **Recent activity** table lists resolved/handled violations with s
 
 - [Workflows](workflows.md) — build the workflows a policy links to, including the destructive-action rules that gate auto-run.
 - [Cases](cases.md) — how policy violations become Cases and inherit MITRE tags.
-- [Devices](devices.md) — the "Compliance Policies" signal shown on the fleet table and device drawer, including the per-condition status modal opened from a policy pill.
+- [Devices](devices.md) — the "Compliance Policies" signal shown on the fleet table and device modal, including the per-condition status modal opened from a policy pill.
 - [Apps](apps.md#app-lists-tab) — App Lists, the mandatory/disallowed app catalogs the "Missing a required app"/"Has a disallowed app" conditions reference.
 - [Geofencing](geofencing.md) — drawing zones and the background location refresher behind the Geofence Zone condition.

@@ -1,6 +1,6 @@
 # Playground — Admin Guide
 
-**Playground** is a full-screen, live visualization of your device fleet's geographic locations — a rotating 3D globe by default, with an optional flat, clustered map for zoomed-in regions (see [Map View](#map-view) below). It's a genuinely live view — it fetches real device data on its own, not a static demo. Clicking any device opens its own detail card, which now includes a **Compliance** tab (risk score, risk factors, policy violations, open cases) sourced live from the same compliance engine as the [Devices](devices.md) view's detail drawer — a separate, lighter card from the Devices table's drawer (different tab set: Overview/Compliance/Assets/Agent vs. Overview/Compliance/Location), not literally the same component, but now covering the same compliance ground.
+**Playground** is a full-screen, live visualization of your device fleet's geographic locations — a rotating 3D globe by default, with an optional flat, clustered map for zoomed-in regions (see [Map View](#map-view) below). It's a genuinely live view — it fetches real device data on its own, not a static demo. Clicking any device opens its own detail card, which now includes a **Compliance** tab (risk score, risk factors, policy violations, open cases) sourced live from the same compliance engine as the [Devices](devices.md) view's detail modal — a separate, lighter card from the Devices table's modal (different tab set: Overview/Compliance/Assets/Agent vs. Overview/Compliance/Location), not literally the same component, but now covering the same compliance ground.
 
 Reach it via the **Devices / Playground** tab switcher at the top of the [Devices](devices.md) header, and switch back the same way from inside Playground.
 
@@ -13,7 +13,7 @@ The same sliding **Segments** panel available from Overview, Devices, Compliance
 - Device count and a live breakdown: compliant / non-compliant counts, plus per-platform counts (Apple, Android, Windows) — all scoped to the active segment, if one is selected.
 - **Policy filter** — pick a [Compliance Policy](compliance.md) to show only the devices currently violating it (the globe tints purple while this filter is active).
 - **Non-Compliant Only** toggle (tints red while active).
-- **Sync Locations** — refreshes GPS data for the fleet (same action as the Devices drawer's Location tab).
+- **Sync Locations** — refreshes GPS data for the fleet (same action as the Devices modal's Location tab).
 - **Pause Rotation / Rotation Paused** — freezes the globe's auto-rotation and its cloud layer in place. Useful before clicking a device — a still globe is much easier to hit precisely than a rotating one. Toggle back to resume.
 - **Map View / Globe View** — manually switch between the 3D globe and the flat clustered map (see below). Switching to the globe again drops any in-progress map pan/zoom; switching to the map re-centers on wherever the globe was last pointed.
 
@@ -33,7 +33,7 @@ A curved 3D surface makes devices clustered in the same city or campus nearly im
 
 Only devices with a real, resolved location are plotted on the map — unlike the globe, there are no placeholder pseudo-random pins here, since a flat map has no decorative use for a fake position. A small counter in the bottom-left shows how many devices were left off for lacking location data; run **Sync Locations** to fill them in.
 
-Map tiles are the same OpenStreetMap data source used elsewhere in the app (e.g. the Devices drawer's embedded location map) — no separate API key or paid mapping service involved.
+Map tiles are the same OpenStreetMap data source used elsewhere in the app (e.g. the Devices modal's embedded location map) — no separate API key or paid mapping service involved.
 
 ### Geofence zones
 
@@ -52,6 +52,6 @@ The Map View toolbar also has **Draw Circle**, **Draw Polygon**, and **Manage Zo
 
 ## Related guides
 
-- [Devices](devices.md) — the fleet table and detail drawer this view shares its data and device-click behavior with.
+- [Devices](devices.md) — the fleet table and detail modal this view shares its data and device-click behavior with.
 - [Compliance](compliance.md) — the policy filter's source list, and where geofence zones become policy conditions.
 - [Geofencing](geofencing.md) — drawing and managing zones on the Map View.
