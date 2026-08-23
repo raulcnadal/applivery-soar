@@ -210,22 +210,35 @@ export async function signDeviceCsr(params: {
 }
 
 /**
- * SHA-256 thumbprint of a PEM-encoded certificate, colon-separated uppercase
- * hex (the conventional display format, matching what a browser's own
- * certificate viewer shows) — for admin-facing display only (Settings > mTLS
- * > Issued Device Certificates). Returns null if the stored PEM can't be
- * parsed, which should never happen for a certificate this system issued
- * itself, but this reads straight back from the database rather than
- * trusting that invariant blindly.
+ * SHA-256 thumbprint of a PEM-encoded certificate as plain uppercase hex, no
+ * colon separators — the storage/search form (DeviceCertificate.thumbprintHex,
+ * certificates.service.ts's issueCertificateRecord), kept separate from the
+ * colon-formatted display form (formatThumbprint below) specifically so it
+ * stays cheaply searchable with a plain SQL `contains` regardless of whether
+ * an admin pastes a thumbprint with or without colons. Returns null if the
+ * stored PEM can't be parsed, which should never happen for a certificate
+ * this system issued itself, but this reads straight back from the database
+ * rather than trusting that invariant blindly.
  */
-export async function getCertificateThumbprint(certPem: string): Promise<string | null> {
+export async function getCertificateThumbprintHex(certPem: string): Promise<string | null> {
   try {
     const cert = new x509.X509Certificate(certPem);
     const digest = await cert.getThumbprint({ name: "SHA-256" });
-    return Buffer.from(digest).toString("hex").toUpperCase().replace(/(.{2})(?=.)/g, "$1:");
+    return Buffer.from(digest).toString("hex").toUpperCase();
   } catch {
     return null;
   }
+}
+
+/** Colon-separated uppercase hex — the conventional display format, matching what a browser's own certificate viewer shows. */
+export function formatThumbprint(hex: string | null): string | null {
+  if (!hex) return null;
+  return hex.replace(/(.{2})(?=.)/g, "$1:");
+}
+
+/** Convenience wrapper — display-formatted thumbprint straight from a PEM, for callers that don't need the raw hex separately. */
+export async function getCertificateThumbprint(certPem: string): Promise<string | null> {
+  return formatThumbprint(await getCertificateThumbprintHex(certPem));
 }
 
 /** Builds an unsigned-request-ready CSR — used only by tests/tooling to simulate an agent's registration call; the real agent does this in Go (roadmap §6). */

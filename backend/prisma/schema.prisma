@@ -146,6 +146,16 @@ model WorkspaceState {
   // yet (that would lock out the entire fleet with no way back in except
   // flipping this back off).
   mtlsEnforcementEnabled            Boolean   @default(false)
+  // Bulk-purge (hard delete, not another revocation) of DeviceCertificate
+  // rows already revoked more than certPurgeRetentionDays ago — a fleet with
+  // real device churn (re-enrollments, replacements) accumulates revoked
+  // rows indefinitely otherwise, since revoking one never deletes it (it's
+  // kept for the audit trail / Revoked section). Off by default: purging is
+  // irreversible, unlike every other retention knob in this file which only
+  // trims logs/metrics. See certificates.service.ts's purgeRevokedCertificates
+  // and jobs/backgroundJobs.ts's "mtls_cert_purge" job.
+  certPurgeEnabled                  Boolean   @default(false)
+  certPurgeRetentionDays            Int       @default(90)
   // Hostname only (e.g. "agents.soar.example.com"), no scheme, no path,
   // null until an admin sets one. Single source of truth for the dedicated
   // reverse-proxy vhost that carries the mTLS client-cert directives (see
@@ -1389,6 +1399,15 @@ model DeviceCertificate {
   serialNumber  String // device identity (matches Applivery's own device serial), the cert's CN
   serialHex     String // the certificate's OWN X.509 serial number (hex) — distinct from serialNumber above; what revocation/CRL checks key on
   certPem       String    @db.Text // issued certificate, public only — the private key never leaves the device
+  // SHA-256 thumbprint, plain uppercase hex with no colon separators — kept
+  // display-format-free specifically so it's cheaply searchable with a plain
+  // `contains` (certificates.service.ts's listCertificates normalizes a
+  // pasted "AB:12:..."-style search term the same way before querying).
+  // Colons are re-added only at the API/display layer (mtlsPki.ts's
+  // formatThumbprint). Nullable + backfilled lazily on read for rows issued
+  // before this column existed, rather than a data migration — see
+  // listCertificates's own doc comment.
+  thumbprintHex String?
   notBefore     DateTime
   notAfter      DateTime
   supersededAt  DateTime? // set when a renewal issues a newer cert for the same serialNumber
@@ -1398,6 +1417,12 @@ model DeviceCertificate {
 
   @@unique([workspaceSlug, serialHex])
   @@index([workspaceSlug, serialNumber])
+  // Backs the Active/Revoked section split and their counts in the Issued
+  // Device Certificates panel, and the bulk purge-old-revoked-certs query —
+  // all filter on (workspaceSlug, revokedAt) at fleet scale (thousands of
+  // rows), so this needs its own index rather than relying on the
+  // serialNumber one above.
+  @@index([workspaceSlug, revokedAt])
 }
 
 /**

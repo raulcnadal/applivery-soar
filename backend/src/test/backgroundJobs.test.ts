@@ -3,8 +3,9 @@ import { JOBS } from "../jobs/backgroundJobs";
 import { runComplianceSchedulerTick } from "../modules/compliance/complianceJobs";
 import { runInstalledAppsRefresherTick } from "../modules/appLists/installedAppsJobs";
 import { runLocationRefresherTick } from "../modules/geofencing/locationJobs";
+import { purgeRevokedCertificatesForAllWorkspaces } from "../modules/mtls/certificates.service";
 
-// The full 17 loops from migration-plan.md §5, plus eight disclosed
+// The full 17 loops from migration-plan.md §5, plus nine disclosed
 // post-migration additions: the geofencing location refresher
 // (locationJobs.ts), the Apple hardware-identifier resolver
 // (appleDeviceIdentifiers.ts), event-driven detection's notify metrics
@@ -12,8 +13,9 @@ import { runLocationRefresherTick } from "../modules/geofencing/locationJobs";
 // (mispService.ts), the VulnCheck threat intel refresher
 // (vulncheckService.ts), the binary integrity refresher
 // (binaryIntegrityService.ts), the Android Security Bulletin (OSV.dev)
-// refresher (osvAndroidService.ts), and the Apple Security Releases (SOFA)
-// refresher (sofaService.ts) — this list is the sign-off artifact itself,
+// refresher (osvAndroidService.ts), the Apple Security Releases (SOFA)
+// refresher (sofaService.ts), and the mTLS revoked-certificate purge
+// (certificates.service.ts) — this list is the sign-off artifact itself,
 // not just a test fixture: if a jobKey here doesn't appear in JOBS, that
 // loop either was never wired in or got silently dropped.
 const EXPECTED_JOB_KEYS = [
@@ -42,11 +44,12 @@ const EXPECTED_JOB_KEYS = [
   "catalog:mitre",
   "system_health_monitor",
   "event_notify_metrics_rotation",
+  "mtls_cert_purge",
 ];
 
-describe("all 17 background jobs from migration-plan.md §5 (+8 disclosed additions) are registered", () => {
-  it("JOBS has exactly 25 entries", () => {
-    expect(JOBS.length).toBe(25);
+describe("all 17 background jobs from migration-plan.md §5 (+9 disclosed additions) are registered", () => {
+  it("JOBS has exactly 26 entries", () => {
+    expect(JOBS.length).toBe(26);
   });
 
   it("every expected jobKey is present exactly once", () => {
@@ -80,5 +83,9 @@ describe("Phase 9 background jobs — no-op cleanly with no data", () => {
 
   it("runLocationRefresherTick resolves without throwing", async () => {
     await expect(runLocationRefresherTick()).resolves.toBeUndefined();
+  });
+
+  it("purgeRevokedCertificatesForAllWorkspaces resolves without throwing (0 workspaces opted in)", async () => {
+    await expect(purgeRevokedCertificatesForAllWorkspaces()).resolves.toBe(0);
   });
 });

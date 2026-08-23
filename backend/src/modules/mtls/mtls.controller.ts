@@ -3,9 +3,9 @@ import { verifyDashboardToken } from "../../middleware/auth.middleware";
 import { requirePermission } from "../../middleware/rbac.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { env } from "../../config/env";
-import { agentSubdomainPayloadSchema, caGeneratePayloadSchema, caLeafValidityPayloadSchema, caUploadPayloadSchema, certificateRevokePayloadSchema, mtlsEnforcementPayloadSchema } from "./mtls.schemas";
+import { agentSubdomainPayloadSchema, caGeneratePayloadSchema, caLeafValidityPayloadSchema, caUploadPayloadSchema, certPurgeNowPayloadSchema, certPurgeSettingsPayloadSchema, certificateRevokePayloadSchema, mtlsEnforcementPayloadSchema } from "./mtls.schemas";
 import { generateCa, getCaStatus, setLeafValidityDays, uploadCa } from "./ca.service";
-import { listCertificates, revokeCertificate } from "./certificates.service";
+import { getCertPurgeSettings, getCertificateCounts, listCertificates, purgeRevokedCertificates, revokeCertificate, setCertPurgeSettings } from "./certificates.service";
 import { getMtlsEnforcementEnabled, setMtlsEnforcementEnabled } from "./mtlsEnforcement.service";
 import { clearGlobalBootstrapToken, getGlobalBootstrapTokenStatus, rotateGlobalBootstrapToken } from "./globalBootstrapToken.service";
 import { getAgentSubdomain, setAgentSubdomain } from "./agentSubdomain.service";
@@ -75,15 +75,51 @@ mtlsRouter.delete("/api/mtls/bootstrap-token", ...manageMtls, asyncHandler(async
 }));
 
 // ── Issued certificates ──
+//
+// Split into an Active section (revokedAt IS NULL — includes expiring-soon/
+// expired/superseded sub-statuses, shown via each row's own status badge)
+// and a Revoked one, each independently paginated + searchable (serial
+// number, the cert's own X.509 serial, or its thumbprint) server-side —
+// see certificates.service.ts's listCertificates doc comment for why this
+// moved off the old "load every row, filter client-side" shape once fleets
+// reach thousands of issued certificates.
+
+function certStatusOf(req: { query: Record<string, unknown> }): "active" | "revoked" {
+  return req.query.status === "revoked" ? "revoked" : "active";
+}
 
 mtlsRouter.get("/api/mtls/certificates", ...readMtls, asyncHandler(async (req, res) => {
-  res.json({ items: await listCertificates(workspaceOf(req), req.header("Authorization")) });
+  const limit = req.query.limit ? Number(req.query.limit) : undefined;
+  const offset = req.query.offset ? Number(req.query.offset) : undefined;
+  const search = typeof req.query.search === "string" ? req.query.search : undefined;
+  res.json(await listCertificates(workspaceOf(req), { status: certStatusOf(req), search, limit, offset }, req.header("Authorization")));
+}));
+
+mtlsRouter.get("/api/mtls/certificates/counts", ...readMtls, asyncHandler(async (req, res) => {
+  res.json(await getCertificateCounts(workspaceOf(req)));
 }));
 
 mtlsRouter.post("/api/mtls/certificates/:id/revoke", ...manageMtls, asyncHandler(async (req, res) => {
   const payload = certificateRevokePayloadSchema.parse(req.body);
   await revokeCertificate(workspaceOf(req), req.params.id, actorOf(req), payload.reason);
   res.json({ status: "ok" });
+}));
+
+// ── Purge old revoked certificates — hard delete, gated the same as any
+// other mTLS-management mutation (canManageMtlsCA), same as revoking itself.
+
+mtlsRouter.get("/api/mtls/certificates/purge-settings", ...readMtls, asyncHandler(async (req, res) => {
+  res.json(await getCertPurgeSettings(workspaceOf(req)));
+}));
+
+mtlsRouter.put("/api/mtls/certificates/purge-settings", ...manageMtls, asyncHandler(async (req, res) => {
+  const payload = certPurgeSettingsPayloadSchema.parse(req.body);
+  res.json(await setCertPurgeSettings(workspaceOf(req), actorOf(req), payload));
+}));
+
+mtlsRouter.post("/api/mtls/certificates/purge-now", ...manageMtls, asyncHandler(async (req, res) => {
+  const payload = certPurgeNowPayloadSchema.parse(req.body);
+  res.json(await purgeRevokedCertificates(workspaceOf(req), payload.olderThanDays, actorOf(req)));
 }));
 
 // ── Enforcement (Phase C cutover switch) ──

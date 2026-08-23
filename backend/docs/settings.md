@@ -139,10 +139,16 @@ permission. Supported on both Windows and macOS agents.
   `canManageMtlsCA`-gated) is the single source of truth: TLS client-certificate verification is a whole-domain setting in nginx (and most
   reverse proxies), never scoped to a URL path, so it cannot be added to the same proxy host serving the dashboard without breaking normal
   browser access to it. Applivery SOAR Agent's **Agent Base URL** reads this value back read-only, so there's exactly one place to change it.
-- **Issued Device Certificates** — a status-count summary (active/expiring-soon/expired/revoked/superseded) plus a **View all** button opening a
-  scrollable list of the full issued fleet, each row showing the matched device name, its serial number, the certificate's SHA-256 thumbprint,
-  the assigned employee (from Applivery's own device record, when known), and a **Revoke** action — kept out of a plain inline list so this
-  section stays readable as the fleet grows.
+- **Issued Device Certificates** — an active/revoked status-count summary plus a **View all** button opening a wide modal built for fleets in the
+  thousands, not a plain scrollable list: **Active Device Certificates** (everything not revoked — expiring-soon/expired/superseded still show
+  via each row's own status badge) and a **Revoked** section, collapsed by default, each independently paginated (Load more) and searchable
+  server-side by serial number or SHA-256 thumbprint (with or without colons). Each row shows the matched device name, its serial number, the
+  thumbprint, the assigned employee (from Applivery's own device record, when known), and — for Active rows only — a **Revoke** action.
+  - **Remove old revoked certificates**, at the bottom of the modal: a hard delete (not another revocation) of revoked rows past a configurable
+    age, either **on-demand** ("Purge now — older than N days") or on an opt-in **daily schedule** (off by default — every other retention knob
+    in this app only trims logs/metrics, but this one genuinely deletes certificate history). Both are `canManageMtlsCA`-gated and record an
+    audit event with the exact count removed. A fleet with real device churn (re-enrollments, replacements, offboarding) otherwise accumulates
+    revoked rows indefinitely, since revoking a certificate keeps it (for the audit trail) rather than deleting it.
 - **Enforcement** — the cutover switch: once enabled, every device-caller route requires a valid client certificate and the legacy secret stops
   being accepted for that workspace. Roll out the fleet first, then flip this.
 

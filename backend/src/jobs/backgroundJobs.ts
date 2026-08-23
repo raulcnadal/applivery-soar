@@ -22,6 +22,7 @@ import { runComplianceSchedulerTick, COMPLIANCE_SCHEDULER_TICK_MS } from "../mod
 import { runInstalledAppsRefresherTick, INSTALLED_APPS_REFRESH_TICK_MS } from "../modules/appLists/installedAppsJobs";
 import { runLocationRefresherTick, LOCATION_REFRESH_TICK_MS } from "../modules/geofencing/locationJobs";
 import { rotateEventNotifyMetrics } from "../modules/compliance/eventWatches.service";
+import { purgeRevokedCertificatesForAllWorkspaces } from "../modules/mtls/certificates.service";
 import { isQueueBackedJobsEnabled, registerRepeatableJobs, startBackgroundJobWorker, stopBackgroundJobQueue } from "../queue/backgroundQueue";
 import { releaseJobSlot, tryAcquireJobSlot } from "./jobReentrancyGuard";
 
@@ -86,6 +87,14 @@ import { releaseJobSlot, tryAcquireJobSlot } from "./jobReentrancyGuard";
  * key — both are bulk public reference-data fetches, not per-device/
  * per-app queries.
  *
+ * Post-migration addition (26th job): mtls_cert_purge (certificates.service.ts's
+ * purgeRevokedCertificatesForAllWorkspaces) — daily bulk-delete of revoked
+ * mTLS device certificates past a per-workspace retention window, for
+ * workspaces that have explicitly opted in (WorkspaceState.certPurgeEnabled,
+ * off by default). Added alongside the Issued Device Certificates panel
+ * redesign (Settings > mTLS Authentication) once fleets with real device
+ * churn started accumulating thousands of revoked-but-never-deleted rows.
+ *
  * Post-migration scale review: with REDIS_URL configured, every job below
  * instead runs as a BullMQ repeatable job (queue/backgroundQueue.ts) so
  * exactly one instance of each job runs cluster-wide even with multiple
@@ -137,6 +146,13 @@ export const JOBS: readonly CatalogJob[] = [
   { jobKey: "installed_apps_refresher", tickMs: INSTALLED_APPS_REFRESH_TICK_MS, run: runInstalledAppsRefresherTick },
   { jobKey: "location_refresher", tickMs: LOCATION_REFRESH_TICK_MS, run: runLocationRefresherTick },
   { jobKey: "event_notify_metrics_rotation", tickMs: AUDIT_LOG_ROTATION_TICK_MS, run: rotateEventNotifyMetrics },
+  // Post-migration addition (26th job): bulk-purges revoked mTLS device
+  // certificates past a per-workspace retention window, for workspaces that
+  // have opted in (WorkspaceState.certPurgeEnabled) — see
+  // certificates.service.ts's purgeRevokedCertificatesForAllWorkspaces doc
+  // comment. Same daily cadence as audit_log_rotation; a true no-op (0
+  // workspaces opted in) is the default on any freshly-deployed instance.
+  { jobKey: "mtls_cert_purge", tickMs: AUDIT_LOG_ROTATION_TICK_MS, run: purgeRevokedCertificatesForAllWorkspaces },
 ];
 
 // Stagger initial runs so five outbound HTTP calls don't fire in the same

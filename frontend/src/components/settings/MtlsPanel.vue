@@ -150,16 +150,75 @@ async function doRevokeCert(id: string, serialNumber: string) {
 }
 
 // Fleet-wide, so the inline card only ever shows a status-count summary —
-// the full scrollable list (see PolicyPickerModal.vue's max-h + overflow-y
-// pattern) lives in a dedicated Modal instead, since a growing fleet quickly
-// makes a plain inline list too tall for the Settings panel.
+// the full browsable list lives in a dedicated, wide Modal instead, split
+// into Active/Revoked sections (each independently paginated + searchable
+// server-side — see mtls.ts's fetchCertificates doc comment), since a
+// growing fleet quickly makes a plain "load everything" list both too tall
+// for the Settings panel and too slow to fetch at all.
 const showCertsModal = ref(false);
 const showProxyModal = ref(false);
-const certStatusCounts = computed(() => {
-  const counts: Record<string, number> = { active: 0, "expiring-soon": 0, expired: 0, revoked: 0, superseded: 0 };
-  for (const c of store.certificates) counts[c.status] = (counts[c.status] ?? 0) + 1;
-  return counts;
+// Collapsed by default, per the redesign — a fleet with real device churn
+// accumulates far more revoked history than an admin needs to see by
+// default; expanding lazy-loads it the first time (see the watcher below).
+const revokedExpanded = ref(false);
+
+const activeSearchInput = ref("");
+const revokedSearchInput = ref("");
+let activeSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+let revokedSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+watch(activeSearchInput, (val) => {
+  if (activeSearchDebounce) clearTimeout(activeSearchDebounce);
+  activeSearchDebounce = setTimeout(() => void store.setCertSearch("active", val), 300);
 });
+watch(revokedSearchInput, (val) => {
+  if (revokedSearchDebounce) clearTimeout(revokedSearchDebounce);
+  revokedSearchDebounce = setTimeout(() => void store.setCertSearch("revoked", val), 300);
+});
+
+watch(showCertsModal, (open) => {
+  if (open && store.activeCerts.items.length === 0 && !store.activeCerts.loading) void store.fetchCertificates("active");
+});
+function toggleRevokedSection() {
+  revokedExpanded.value = !revokedExpanded.value;
+  if (revokedExpanded.value && store.revokedCerts.items.length === 0 && !store.revokedCerts.loading) void store.fetchCertificates("revoked");
+}
+
+// ── Purge old revoked certificates ──
+
+const purgeRetentionInput = ref(90);
+const purgeScheduleEnabled = ref(false);
+const purgeScheduleDirty = ref(false);
+const purgeNowDays = ref(90);
+const purgeBusy = ref(false);
+watch(() => store.certPurgeSettings, (settings) => {
+  if (!settings) return;
+  purgeRetentionInput.value = settings.retentionDays;
+  purgeScheduleEnabled.value = settings.enabled;
+  purgeScheduleDirty.value = false;
+  purgeNowDays.value = settings.retentionDays;
+});
+
+async function doSavePurgeSchedule() {
+  purgeBusy.value = true;
+  try {
+    await store.saveCertPurgeSettings({ enabled: purgeScheduleEnabled.value, retentionDays: purgeRetentionInput.value });
+    purgeScheduleDirty.value = false;
+  } catch {
+    // Surfaced via store.certPurgeSettingsError in the template.
+  } finally {
+    purgeBusy.value = false;
+  }
+}
+
+async function doPurgeNow() {
+  const revokedCount = store.certCounts?.revoked ?? 0;
+  if (!confirm(`Permanently delete every revoked device certificate older than ${purgeNowDays.value} day(s)? Up to ${revokedCount} revoked certificate(s) exist in total; this cannot be undone.`)) return;
+  try {
+    await store.purgeRevokedCertificatesNow(purgeNowDays.value);
+  } catch {
+    // Surfaced via store.certPurgeError in the template.
+  }
+}
 
 // ── Reverse-proxy config reference ──
 //
@@ -254,7 +313,10 @@ async function doToggleEnforcement() {
 onMounted(async () => {
   await store.fetchCaStatus();
   await store.fetchBootstrapTokenStatus();
-  await store.fetchCertificates();
+  // Cheap counts only here — the full Active/Revoked lists lazy-load the
+  // first time the modal (and, for Revoked, its collapsed section) opens.
+  await store.fetchCertCounts();
+  await store.fetchCertPurgeSettings();
   await store.fetchEnforcement();
   await store.fetchProxyConfig();
   await store.fetchAgentSubdomain();
@@ -497,60 +559,159 @@ onMounted(async () => {
     <div>
       <div class="flex items-center justify-between mb-2">
         <h3 class="text-sm font-bold text-gray-900 dark:text-white">Issued Device Certificates</h3>
-        <Button v-if="store.certificates.length > 0" variant="ghost" size="sm" @click="showCertsModal = true">
-          View all ({{ store.certificates.length }})
+        <Button v-if="(store.certCounts?.active ?? 0) + (store.certCounts?.revoked ?? 0) > 0" variant="ghost" size="sm" @click="showCertsModal = true">
+          View all ({{ (store.certCounts?.active ?? 0) + (store.certCounts?.revoked ?? 0) }})
         </Button>
       </div>
       <div class="p-5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2 max-w-2xl shadow-sm">
         <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
           The fleet-migration dashboard — check this covers every device before flipping enforcement on below.
         </p>
-        <Alert v-if="store.certsError" type="danger">{{ store.certsError }}</Alert>
-        <div v-if="store.certificates.length > 0" class="flex flex-wrap items-center gap-1.5">
-          <span
-            v-for="status in (['active', 'expiring-soon', 'expired', 'revoked', 'superseded'] as const)"
-            v-show="certStatusCounts[status] > 0"
-            :key="status"
-            class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-gray-50 dark:bg-gray-900/50 text-gray-600 dark:text-gray-300"
-          >
-            <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR[status]" />
-            {{ certStatusCounts[status] }} {{ status }}
+        <div v-if="store.certCounts && store.certCounts.active + store.certCounts.revoked > 0" class="flex flex-wrap items-center gap-1.5">
+          <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-gray-50 dark:bg-gray-900/50 text-gray-600 dark:text-gray-300">
+            <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR.active" />
+            {{ store.certCounts.active }} active
+          </span>
+          <span v-if="store.certCounts.revoked > 0" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-gray-50 dark:bg-gray-900/50 text-gray-600 dark:text-gray-300">
+            <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR.revoked" />
+            {{ store.certCounts.revoked }} revoked
           </span>
         </div>
-        <p v-else-if="!store.certsLoading" class="text-xs text-gray-500 dark:text-gray-400">No devices have registered yet.</p>
+        <p v-else-if="!store.certCountsLoading" class="text-xs text-gray-500 dark:text-gray-400">No devices have registered yet.</p>
       </div>
     </div>
 
-    <Modal :open="showCertsModal" title="Issued Device Certificates" size="lg" @close="showCertsModal = false">
-      <div class="space-y-1.5 max-h-[65vh] overflow-y-auto">
-        <div v-for="c in store.certificates" :key="c.id" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR[c.status]" />
-              <span class="text-xs font-semibold truncate text-gray-900 dark:text-white">{{ c.deviceDisplayName || "Unmatched device" }}</span>
-              <span class="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">{{ c.status }}</span>
-            </div>
-            <p class="text-[10px] font-mono truncate text-gray-500 dark:text-gray-400">
-              S/N {{ c.serialNumber }}
-              <template v-if="c.thumbprint">
-                · SHA-256 <span :title="c.thumbprint">{{ c.thumbprint }}</span>
-              </template>
-            </p>
-            <p class="text-[10px] text-gray-500 dark:text-gray-400">
-              <template v-if="c.employeeName">{{ c.employeeName }} · </template>Issued {{ fmt(c.issuedAt) }} · valid until {{ fmt(c.notAfter) }}
-              <template v-if="c.revokedAt"> · revoked {{ fmt(c.revokedAt) }} ({{ c.revokedReason }})</template>
-            </p>
+    <Modal :open="showCertsModal" title="Issued Device Certificates" size="lg" class="max-w-5xl" @close="showCertsModal = false">
+      <div class="space-y-4">
+        <!-- Active section -->
+        <div>
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <h4 class="text-xs font-bold text-gray-900 dark:text-white">Active Device Certificates ({{ store.activeCerts.total }})</h4>
           </div>
-          <button
-            v-if="c.status === 'active' || c.status === 'expiring-soon'"
-            type="button"
-            class="p-1.5 rounded disabled:opacity-40 shrink-0"
-            style="color: #ef4444"
-            :disabled="!canEdit()"
-            @click="doRevokeCert(c.id, c.serialNumber)"
-          >
-            <component :is="ICONS.TrashBinMinimalistic" :size="13" weight="Linear" />
+          <div class="relative mb-2">
+            <component :is="ICONS.Magnifer" :size="13" weight="Linear" class="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+            <input
+              v-model="activeSearchInput"
+              type="text"
+              placeholder="Search by serial number or thumbprint…"
+              class="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <Alert v-if="store.activeCerts.error" type="danger">{{ store.activeCerts.error }}</Alert>
+          <div class="space-y-1.5 max-h-[40vh] overflow-y-auto">
+            <div v-for="c in store.activeCerts.items" :key="c.id" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR[c.status]" />
+                  <span class="text-xs font-semibold truncate text-gray-900 dark:text-white">{{ c.deviceDisplayName || "Unmatched device" }}</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">{{ c.status }}</span>
+                </div>
+                <p class="text-[10px] font-mono truncate text-gray-500 dark:text-gray-400">
+                  S/N {{ c.serialNumber }}
+                  <template v-if="c.thumbprint">
+                    · SHA-256 <span :title="c.thumbprint">{{ c.thumbprint }}</span>
+                  </template>
+                </p>
+                <p class="text-[10px] text-gray-500 dark:text-gray-400">
+                  <template v-if="c.employeeName">{{ c.employeeName }} · </template>Issued {{ fmt(c.issuedAt) }} · valid until {{ fmt(c.notAfter) }}
+                </p>
+              </div>
+              <button
+                v-if="c.status === 'active' || c.status === 'expiring-soon'"
+                type="button"
+                class="p-1.5 rounded disabled:opacity-40 shrink-0"
+                style="color: #ef4444"
+                :disabled="!canEdit()"
+                @click="doRevokeCert(c.id, c.serialNumber)"
+              >
+                <component :is="ICONS.TrashBinMinimalistic" :size="13" weight="Linear" />
+              </button>
+            </div>
+            <p v-if="!store.activeCerts.loading && store.activeCerts.items.length === 0" class="text-xs text-center py-4 text-gray-400">
+              {{ activeSearchInput ? "No matching active certificates." : "No active certificates." }}
+            </p>
+            <p v-if="store.activeCerts.loading" class="text-xs text-center py-4 text-gray-400">Loading…</p>
+          </div>
+          <div v-if="store.activeCerts.hasMore" class="flex justify-center pt-2">
+            <Button size="sm" variant="ghost" :loading="store.activeCerts.loading" @click="store.fetchCertificates('active', { append: true })">
+              Load more ({{ store.activeCerts.items.length }} of {{ store.activeCerts.total }})
+            </Button>
+          </div>
+        </div>
+
+        <!-- Revoked section — collapsed by default -->
+        <div class="pt-3 border-t border-gray-100 dark:border-gray-800">
+          <button type="button" class="flex items-center gap-1.5 w-full text-left mb-2" @click="toggleRevokedSection">
+            <component :is="revokedExpanded ? ICONS.AltArrowDown : ICONS.AltArrowRight" :size="13" weight="Linear" class="text-gray-400" />
+            <h4 class="text-xs font-bold text-gray-900 dark:text-white">Revoked ({{ store.certCounts?.revoked ?? store.revokedCerts.total }})</h4>
           </button>
+          <template v-if="revokedExpanded">
+            <div class="relative mb-2">
+              <component :is="ICONS.Magnifer" :size="13" weight="Linear" class="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+              <input
+                v-model="revokedSearchInput"
+                type="text"
+                placeholder="Search by serial number or thumbprint…"
+                class="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+            <Alert v-if="store.revokedCerts.error" type="danger">{{ store.revokedCerts.error }}</Alert>
+            <div class="space-y-1.5 max-h-[40vh] overflow-y-auto">
+              <div v-for="c in store.revokedCerts.items" :key="c.id" class="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="CERT_STATUS_COLOR.revoked" />
+                    <span class="text-xs font-semibold truncate text-gray-900 dark:text-white">{{ c.deviceDisplayName || "Unmatched device" }}</span>
+                  </div>
+                  <p class="text-[10px] font-mono truncate text-gray-500 dark:text-gray-400">
+                    S/N {{ c.serialNumber }}
+                    <template v-if="c.thumbprint">
+                      · SHA-256 <span :title="c.thumbprint">{{ c.thumbprint }}</span>
+                    </template>
+                  </p>
+                  <p class="text-[10px] text-gray-500 dark:text-gray-400">
+                    <template v-if="c.employeeName">{{ c.employeeName }} · </template>revoked {{ fmt(c.revokedAt) }} ({{ c.revokedReason }})
+                  </p>
+                </div>
+              </div>
+              <p v-if="!store.revokedCerts.loading && store.revokedCerts.items.length === 0" class="text-xs text-center py-4 text-gray-400">
+                {{ revokedSearchInput ? "No matching revoked certificates." : "No revoked certificates." }}
+              </p>
+              <p v-if="store.revokedCerts.loading" class="text-xs text-center py-4 text-gray-400">Loading…</p>
+            </div>
+            <div v-if="store.revokedCerts.hasMore" class="flex justify-center pt-2">
+              <Button size="sm" variant="ghost" :loading="store.revokedCerts.loading" @click="store.fetchCertificates('revoked', { append: true })">
+                Load more ({{ store.revokedCerts.items.length }} of {{ store.revokedCerts.total }})
+              </Button>
+            </div>
+          </template>
+        </div>
+
+        <!-- Purge old revoked certificates -->
+        <div class="pt-3 border-t border-gray-100 dark:border-gray-800">
+          <h4 class="text-xs font-bold mb-1 text-gray-900 dark:text-white">Remove old revoked certificates</h4>
+          <p class="text-[11px] leading-relaxed mb-2 text-gray-500 dark:text-gray-400">
+            Permanently deletes revoked certificate rows — never active ones — past the age below. This is a hard delete, not another revocation; it can't be undone.
+          </p>
+          <Alert v-if="store.certPurgeSettingsError" type="danger">{{ store.certPurgeSettingsError }}</Alert>
+          <Alert v-if="store.certPurgeError" type="danger">{{ store.certPurgeError }}</Alert>
+          <Alert v-if="store.certPurgeLastResult" type="success">{{ store.certPurgeLastResult.purged }} revoked certificate(s) permanently deleted.</Alert>
+          <div class="flex flex-wrap items-end gap-3">
+            <label class="flex items-center gap-2 text-xs font-medium cursor-pointer text-gray-900 dark:text-white">
+              <input v-model="purgeScheduleEnabled" type="checkbox" :disabled="!canEdit()" @change="purgeScheduleDirty = true" /> Automatically purge on a daily schedule
+            </label>
+            <div>
+              <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Older than (days)</label>
+              <Input v-model.number="purgeRetentionInput" type="number" min="1" :disabled="!canEdit()" class="w-24" @update:model-value="purgeScheduleDirty = true" />
+            </div>
+            <Button size="sm" variant="ghost" :disabled="!canEdit() || !purgeScheduleDirty" :loading="purgeBusy" @click="doSavePurgeSchedule">Save schedule</Button>
+            <span class="flex-1" />
+            <div>
+              <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Purge now — older than (days)</label>
+              <Input v-model.number="purgeNowDays" type="number" min="1" :disabled="!canEdit()" class="w-24" />
+            </div>
+            <Button size="sm" :disabled="!canEdit()" :loading="store.certPurgeBusy" @click="doPurgeNow">Purge now</Button>
+          </div>
         </div>
       </div>
     </Modal>

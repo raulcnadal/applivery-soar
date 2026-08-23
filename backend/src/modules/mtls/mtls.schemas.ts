@@ -19,6 +19,15 @@ export const certificateRevokePayloadSchema = z.object({
   reason: z.string().min(1),
 });
 
+export const certPurgeSettingsPayloadSchema = z.object({
+  enabled: z.boolean(),
+  retentionDays: z.number().int().min(1).max(3650),
+});
+
+export const certPurgeNowPayloadSchema = z.object({
+  olderThanDays: z.number().int().min(1).max(3650),
+});
+
 export const mtlsEnforcementPayloadSchema = z.object({
   enabled: z.boolean(),
 });

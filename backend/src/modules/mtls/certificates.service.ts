@@ -1,7 +1,7 @@
 import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
 import { HttpError } from "../../utils/httpError";
-import { getCertificateThumbprint } from "../../utils/mtlsPki";
+import { formatThumbprint, getCertificateThumbprintHex } from "../../utils/mtlsPki";
 
 /**
  * Issued device certificates — the fleet-migration/status dashboard an admin
@@ -64,33 +64,116 @@ async function matchDevicesBySerial(workspaceSlug: string, authorization: string
   return matches;
 }
 
-export async function listCertificates(workspaceSlug: string, authorization?: string): Promise<CertificateStatus[]> {
-  const rows = await prisma.deviceCertificate.findMany({
-    where: { workspaceSlug },
-    orderBy: { issuedAt: "desc" },
-  });
-  const deviceBySerial = await matchDevicesBySerial(workspaceSlug, authorization);
-  return Promise.all(
-    rows.map(async (row: (typeof rows)[number]) => {
-      const device = deviceBySerial.get(row.serialNumber) ?? null;
-      return {
-        id: row.id,
-        serialNumber: row.serialNumber,
-        serialHex: row.serialHex,
-        thumbprint: await getCertificateThumbprint(row.certPem),
-        status: computeStatus(row),
-        notBefore: row.notBefore.toISOString(),
-        notAfter: row.notAfter.toISOString(),
-        supersededAt: row.supersededAt?.toISOString() ?? null,
-        revokedAt: row.revokedAt?.toISOString() ?? null,
-        revokedReason: row.revokedReason,
-        issuedAt: row.issuedAt.toISOString(),
-        deviceId: device?.id ?? null,
-        deviceDisplayName: device?.displayName ?? null,
-        employeeName: device?.employeeName ?? null,
-      };
+export interface ListCertificatesOptions {
+  /** "active" = revokedAt IS NULL (includes expiring-soon/expired/superseded sub-statuses); "revoked" = revokedAt IS NOT NULL. Matches the two-section split in the Issued Device Certificates panel. */
+  status: "active" | "revoked";
+  /** Matched against serial number, the cert's own X.509 serial (hex), and its SHA-256 thumbprint (with or without colons — normalized before querying). */
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListCertificatesResult {
+  items: CertificateStatus[];
+  total: number;
+}
+
+const CERT_LIST_DEFAULT_LIMIT = 50;
+const CERT_LIST_MAX_LIMIT = 200;
+
+/** Strips everything but hex characters and uppercases — same normalization on both the write side (thumbprintHex column) and a pasted search term, so "ab:12:cd" and "AB12CD" match the same stored row via a plain `contains`. */
+export function normalizeHexSearch(raw: string): string {
+  return raw.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+}
+
+export function buildCertificatesWhere(workspaceSlug: string, options: Pick<ListCertificatesOptions, "status" | "search">) {
+  const where: Record<string, unknown> = {
+    workspaceSlug,
+    revokedAt: options.status === "revoked" ? { not: null } : null,
+  };
+  const search = options.search?.trim();
+  if (search) {
+    const hexSearch = normalizeHexSearch(search);
+    const or: Record<string, unknown>[] = [
+      { serialNumber: { contains: search, mode: "insensitive" } },
+      { serialHex: { contains: search, mode: "insensitive" } },
+    ];
+    // Only add the thumbprint branch when there's actually a hex-ish
+    // substring to look for — an all-punctuation/whitespace search (or one
+    // that's just device-name-ish text with no hex in it) would otherwise
+    // turn into `contains: ""`, matching every row and defeating the filter.
+    if (hexSearch) or.push({ thumbprintHex: { contains: hexSearch } });
+    where.OR = or;
+  }
+  return where;
+}
+
+/** Backfills thumbprintHex for any row in this page still missing it (issued before the column existed) — computed from the already-stored certPem, persisted once, never recomputed again. Best-effort: a PEM that fails to parse just stays null (matches getCertificateThumbprintHex's own null-on-failure contract) rather than blocking the list. */
+async function backfillThumbprints(rows: Array<{ id: string; certPem: string; thumbprintHex: string | null }>): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  await Promise.all(
+    rows.map(async (row) => {
+      if (row.thumbprintHex) {
+        result.set(row.id, row.thumbprintHex);
+        return;
+      }
+      const hex = await getCertificateThumbprintHex(row.certPem);
+      result.set(row.id, hex);
+      if (hex) {
+        await prisma.deviceCertificate.update({ where: { id: row.id }, data: { thumbprintHex: hex } }).catch(() => {
+          /* best-effort backfill — a lost race with a concurrent request or revoke isn't worth failing the list over */
+        });
+      }
     }),
   );
+  return result;
+}
+
+export async function listCertificates(workspaceSlug: string, options: ListCertificatesOptions, authorization?: string): Promise<ListCertificatesResult> {
+  const where = buildCertificatesWhere(workspaceSlug, options);
+  const take = Math.max(1, Math.min(options.limit || CERT_LIST_DEFAULT_LIMIT, CERT_LIST_MAX_LIMIT));
+  const skip = Math.max(0, options.offset || 0);
+
+  const [rows, total] = await Promise.all([
+    prisma.deviceCertificate.findMany({ where, orderBy: { issuedAt: "desc" }, skip, take }),
+    prisma.deviceCertificate.count({ where }),
+  ]);
+
+  const [deviceBySerial, thumbprintById] = await Promise.all([
+    matchDevicesBySerial(workspaceSlug, authorization),
+    backfillThumbprints(rows),
+  ]);
+
+  const items = rows.map((row: (typeof rows)[number]) => {
+    const device = deviceBySerial.get(row.serialNumber) ?? null;
+    return {
+      id: row.id,
+      serialNumber: row.serialNumber,
+      serialHex: row.serialHex,
+      thumbprint: formatThumbprint(thumbprintById.get(row.id) ?? null),
+      status: computeStatus(row),
+      notBefore: row.notBefore.toISOString(),
+      notAfter: row.notAfter.toISOString(),
+      supersededAt: row.supersededAt?.toISOString() ?? null,
+      revokedAt: row.revokedAt?.toISOString() ?? null,
+      revokedReason: row.revokedReason,
+      issuedAt: row.issuedAt.toISOString(),
+      deviceId: device?.id ?? null,
+      deviceDisplayName: device?.displayName ?? null,
+      employeeName: device?.employeeName ?? null,
+    };
+  });
+
+  return { items, total };
+}
+
+/** Cheap counts backing the panel's section headers ("Active (1,204)" / "Revoked (38)") — two indexed `count()`s instead of loading every row, so this stays fast at fleet scale. */
+export async function getCertificateCounts(workspaceSlug: string): Promise<{ active: number; revoked: number }> {
+  const [active, revoked] = await Promise.all([
+    prisma.deviceCertificate.count({ where: { workspaceSlug, revokedAt: null } }),
+    prisma.deviceCertificate.count({ where: { workspaceSlug, revokedAt: { not: null } } }),
+  ]);
+  return { active, revoked };
 }
 
 export async function issueCertificateRecord(params: {
@@ -101,6 +184,7 @@ export async function issueCertificateRecord(params: {
   notBefore: Date;
   notAfter: Date;
 }): Promise<void> {
+  const thumbprintHex = await getCertificateThumbprintHex(params.certPem);
   await prisma.deviceCertificate.create({
     data: {
       workspaceSlug: params.workspaceSlug,
@@ -109,6 +193,7 @@ export async function issueCertificateRecord(params: {
       certPem: params.certPem,
       notBefore: params.notBefore,
       notAfter: params.notAfter,
+      thumbprintHex,
     },
   });
 }
@@ -161,4 +246,96 @@ export async function revokeCertificate(workspaceSlug: string, id: string, actor
     targetId: row.serialNumber,
     message: `mTLS device certificate for '${row.serialNumber}' revoked by ${actor}: ${reason}`,
   });
+}
+
+// ── Bulk purge of old revoked certificates ──
+//
+// Revoking a certificate keeps its row (revokedAt set) for the audit trail —
+// it's never deleted by revokeCertificate itself. A fleet with real device
+// churn (re-enrollments, replacements, employee offboarding) accumulates
+// revoked rows indefinitely otherwise. This is a genuine hard DELETE, unlike
+// every other retention knob in this app (which only trims logs/metrics),
+// so it's off by default (WorkspaceState.certPurgeEnabled) and always
+// records exactly what it did.
+
+const CERT_PURGE_DEFAULT_RETENTION_DAYS = 90;
+const CERT_PURGE_MIN_RETENTION_DAYS = 1;
+
+export interface CertPurgeSettings {
+  enabled: boolean;
+  retentionDays: number;
+}
+
+export async function getCertPurgeSettings(workspaceSlug: string): Promise<CertPurgeSettings> {
+  const state = await prisma.workspaceState.findUnique({ where: { workspaceSlug } });
+  return {
+    enabled: state?.certPurgeEnabled ?? false,
+    retentionDays: state?.certPurgeRetentionDays ?? CERT_PURGE_DEFAULT_RETENTION_DAYS,
+  };
+}
+
+export async function setCertPurgeSettings(workspaceSlug: string, actor: string, settings: CertPurgeSettings): Promise<CertPurgeSettings> {
+  const retentionDays = Math.max(CERT_PURGE_MIN_RETENTION_DAYS, Math.trunc(settings.retentionDays) || CERT_PURGE_DEFAULT_RETENTION_DAYS);
+  await prisma.workspaceState.upsert({
+    where: { workspaceSlug },
+    create: { workspaceSlug, certPurgeEnabled: settings.enabled, certPurgeRetentionDays: retentionDays },
+    update: { certPurgeEnabled: settings.enabled, certPurgeRetentionDays: retentionDays },
+  });
+  await recordAuditEvent(workspaceSlug, {
+    category: "settings",
+    action: "mtls_cert_purge_settings_updated",
+    actor,
+    severity: "info",
+    message: settings.enabled
+      ? `Automatic purge of revoked mTLS certificates enabled by ${actor} — certificates revoked more than ${retentionDays} day(s) ago are deleted daily.`
+      : `Automatic purge of revoked mTLS certificates disabled by ${actor}.`,
+  });
+  return { enabled: settings.enabled, retentionDays };
+}
+
+/**
+ * Hard-deletes revoked certificates past retention, on-demand (Settings >
+ * mTLS's "Purge now" button) or from the daily scheduled job below. Only
+ * ever touches rows that are ALREADY revoked — an active/expired/superseded-
+ * but-not-revoked certificate is never a purge candidate, regardless of age,
+ * since those still matter for fleet-migration history and aren't what the
+ * user asked to clean up.
+ */
+export async function purgeRevokedCertificates(workspaceSlug: string, olderThanDays: number, actor: string): Promise<{ purged: number }> {
+  const days = Math.max(CERT_PURGE_MIN_RETENTION_DAYS, Math.trunc(olderThanDays) || CERT_PURGE_DEFAULT_RETENTION_DAYS);
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const result = await prisma.deviceCertificate.deleteMany({
+    where: { workspaceSlug, revokedAt: { not: null, lt: cutoff } },
+  });
+  if (result.count > 0) {
+    await recordAuditEvent(workspaceSlug, {
+      category: "settings",
+      action: "mtls_certificates_purged",
+      actor,
+      severity: "warning",
+      message: `${result.count} revoked mTLS device certificate(s) older than ${days} day(s) permanently deleted by ${actor}.`,
+    });
+  }
+  return { purged: result.count };
+}
+
+/**
+ * Daily background job (jobs/backgroundJobs.ts's "mtls_cert_purge") —
+ * iterates every workspace that has opted in (certPurgeEnabled) and purges
+ * using that workspace's own retentionDays. A workspace with no
+ * WorkspaceState row yet, or with certPurgeEnabled left at its false
+ * default, is never touched — this is deliberately opt-in per workspace,
+ * not a global default.
+ */
+export async function purgeRevokedCertificatesForAllWorkspaces(): Promise<number> {
+  const enabledWorkspaces = await prisma.workspaceState.findMany({
+    where: { certPurgeEnabled: true },
+    select: { workspaceSlug: true, certPurgeRetentionDays: true },
+  });
+  let totalPurged = 0;
+  for (const ws of enabledWorkspaces) {
+    const { purged } = await purgeRevokedCertificates(ws.workspaceSlug, ws.certPurgeRetentionDays, "system");
+    totalPurged += purged;
+  }
+  return totalPurged;
 }
