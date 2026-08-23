@@ -70,5 +70,14 @@ export const useAppliveryWebhookSettingsStore = defineStore("appliveryWebhookSet
     config.value = res.data;
   }
 
-  return { config, isLoading, error, fetchConfig, saveConfig, rotateSecret };
+  // Applivery's own "Create integration" webhook form takes a single URL
+  // field, no separate secret field — the secret only has anywhere useful
+  // to go once it's embedded in a full URL (same secret-in-path pattern as
+  // triggers.ts's fireUrl/resolveUrl). Pure client-side templating, same
+  // window.location.origin approach, for consistency.
+  function receiverUrl(): string {
+    return `${window.location.origin}/api/applivery-webhook/receive/${config.value?.secret ?? ""}`;
+  }
+
+  return { config, isLoading, error, fetchConfig, saveConfig, rotateSecret, receiverUrl };
 });

@@ -8,6 +8,8 @@ import { useBreakpoint } from "../../composables/useBreakpoint";
 import { useAppliveryWebhookSettingsStore } from "../../stores/appliveryWebhookSettings";
 import { useWorkflowsStore } from "../../stores/workflows";
 
+const APPLIVERY_WEBHOOK_DOCS_URL = "https://www.applivery.com/docs/platform/integrations/platform/integrations/webhooks/";
+
 const { isMobile } = useBreakpoint();
 
 const OUTCOME_COLORS: Record<string, string> = {
@@ -65,6 +67,17 @@ async function rotateSecret() {
   try { await store.rotateSecret(); } finally { busy.value = false; }
 }
 
+const urlCopied = ref(false);
+async function copyReceiverUrl() {
+  try {
+    await navigator.clipboard.writeText(store.receiverUrl());
+    urlCopied.value = true;
+    setTimeout(() => { urlCopied.value = false; }, 1500);
+  } catch {
+    /* clipboard API unavailable — no-op, the URL is still selectable/visible */
+  }
+}
+
 onMounted(async () => {
   await Promise.all([store.fetchConfig(), workflowsStore.fetchWorkflows()]);
 });
@@ -73,7 +86,13 @@ onMounted(async () => {
 <template>
   <div class="space-y-4">
     <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-      Lets Applivery push its own events (device enrolled, build processed, certificate expiring…) into this app — open a Case and/or run a Workflow automatically. The inbound receiver ships in a later phase; this tab lets you review and pre-configure rules now.
+      Lets Applivery push its own events (device enrolled, build processed, certificate expiring…) into this app — open a Case and/or run a Workflow automatically.
+    </p>
+    <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+      In Applivery's own console: <strong>Integrations → Create integration → Webhook</strong>, paste the Receiver URL below into the <strong>Url</strong> field, select the events you want, and Save
+      (<a :href="APPLIVERY_WEBHOOK_DOCS_URL" target="_blank" rel="noopener noreferrer" class="underline">Applivery's webhook docs ↗</a>).
+      Applivery's webhook form only takes a URL — no separate secret field — so the secret is embedded directly in this URL, the same secret-in-path pattern the <strong>Inbound Webhooks</strong> tab uses for its own Fire/Resolve URLs.
+      If your account has access to several workspaces, this URL is specific to whichever workspace is currently active — repeat this setup once per workspace.
     </p>
     <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
     <Alert v-if="saveError" type="danger">{{ saveError }}</Alert>
@@ -84,8 +103,12 @@ onMounted(async () => {
         <Button size="sm" variant="ghost" :loading="busy" @click="rotateSecret">Rotate secret</Button>
       </div>
       <div>
-        <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Webhook secret (paste into Applivery's Integrations settings)</label>
-        <code class="block px-2.5 py-2 rounded-lg text-[11px] font-mono border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 break-all">{{ store.config.secret }}</code>
+        <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Receiver URL (paste into Applivery's Integrations → Create integration → Url field)</label>
+        <div class="flex items-center gap-1.5">
+          <code class="flex-1 min-w-0 block px-2.5 py-2 rounded-lg text-[11px] font-mono border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 break-all">{{ store.receiverUrl() }}</code>
+          <Button size="sm" variant="ghost" @click="copyReceiverUrl">{{ urlCopied ? "Copied" : "Copy" }}</Button>
+        </div>
+        <p class="text-[10px] mt-1 text-gray-400">Rotating the secret changes this URL — update Applivery's integration afterward.</p>
       </div>
     </div>
 

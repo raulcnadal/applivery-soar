@@ -186,12 +186,14 @@ Fields: **Name**, **Workflow to run**, **Min severity** (only cases at or above 
 
 Applivery has its own native outbound webhook system, configured entirely inside **Applivery's own console** (Workspace or App → Integrations); this page is where you receive and act on it.
 
-- **Receiver URL** — `.../api/applivery-webhook/receive/{secret}`, with a link to Applivery's own docs on adding a webhook.
-- **Webhook receiver enabled** toggle, **Rotate URL** (confirm-gated).
+- **Receiver URL** — `.../api/applivery-webhook/receive/{secret}`, shown with a **Copy** button and a link to [Applivery's own webhook docs](https://www.applivery.com/docs/platform/integrations/platform/integrations/webhooks/). Applivery's own "Create integration → Webhook" form only takes a single URL (no separate secret field on their side), so this URL — secret embedded in the path — is the one thing to paste there.
+- **Webhook enabled** toggle, **Rotate secret** (confirm-gated — changes the Receiver URL immediately; update Applivery's integration afterward).
 - **Per-event-type rules** — one row per Applivery event type (device enrollment, MDM user changes, builds, bug/feedback reports, certificate expiry — new types appear automatically the first time Applivery sends one, nothing to pre-configure). Each expands to: Enabled, **Open a Case** + severity, **Run a Workflow** + workflow picker, with the same destructive-action acknowledgment (and same author-set pre-fill) as Case Auto-Run Rules if the chosen workflow has a destructive step.
 - **Recent events** feed — last 15, with outcome pills (fired / case opened / blocked / no automation credential / device fleet resync / etc.).
 
 No permission gate on the settings themselves; the receive endpoint is unauthenticated by design (the secret in the URL *is* the auth).
+
+**Per workspace**: the secret (and therefore the Receiver URL), enabled toggle, and per-event rules are all scoped to whichever workspace is currently active in SOAR — an admin with access to several workspaces needs to repeat this setup (create the integration in Applivery, paste this workspace's URL) once per workspace, the same way [Inbound Webhooks](#inbound-webhooks) triggers are per-workspace.
 
 ### Subscribing to Device Enrolled is required for smooth Agent registration
 
