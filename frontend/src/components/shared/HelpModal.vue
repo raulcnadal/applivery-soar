@@ -18,6 +18,25 @@ const history = ref<Array<{ slug: string; anchor: string | null }>>([]);
 const html = ref("");
 const status = ref<"loading" | "ready" | "error">("loading");
 const bodyRef = ref<HTMLElement | null>(null);
+const isDownloading = ref(false);
+
+async function downloadPdf() {
+  if (isDownloading.value) return;
+  isDownloading.value = true;
+  try {
+    const res = await api.get(`/help/${slug.value}/pdf`, { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Applivery_SOAR_${slug.value}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    alert("Couldn't generate the PDF for this guide. Try again in a moment.");
+  } finally {
+    isDownloading.value = false;
+  }
+}
 
 async function load() {
   status.value = "loading";
@@ -82,6 +101,16 @@ watch(slug, load, { immediate: true });
           ←
         </button>
         <h3 class="text-sm font-semibold flex-1 truncate text-gray-900 dark:text-white">{{ DOC_TITLES[slug] || slug }}</h3>
+        <button
+          v-if="status === 'ready'"
+          type="button"
+          class="text-xs font-medium px-2 py-1 rounded-md hover:bg-black/5 dark:hover:bg-white/5 shrink-0 text-gray-500 dark:text-gray-400 disabled:opacity-40"
+          title="Download this guide as a PDF"
+          :disabled="isDownloading"
+          @click="downloadPdf"
+        >
+          {{ isDownloading ? "Preparing…" : "Download PDF" }}
+        </button>
         <button type="button" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5 dark:hover:bg-white/5 shrink-0 text-gray-500 dark:text-gray-400" title="Close" @click="emit('close')">
           ✕
         </button>

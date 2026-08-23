@@ -162,6 +162,8 @@ Every destination has Name, Enabled, and per-row **Test**, an inline enable/disa
 
 Lets any third-party tool that can POST JSON (EDR, firewall, SIEM, IDS) fire a specific [Workflow](workflows.md) directly, bypassing Compliance Policies entirely.
 
+**Integrating an EDR, XDR, MTD, or DEX tool specifically?** See the [Applivery SOAR Integration Guide](edr-xdr-mtd-dex-integration-guide.md) — also linked directly from this page in the app, with a PDF download — for the full notify → contain → escalate → wipe/unenroll response ladder, identity-mapping guidance, and worked payload examples.
+
 Each trigger gets a URL of the form `.../api/triggers/fire/{id}/{secret}` — both the ID and a secret are embedded in the path, so pasting that one URL into a third-party tool is sufficient; no separate auth header is needed.
 
 Fields: **Name**, **Workflow to run** (disabled until at least one workflow exists), **Description**, **Device lookup field** (which JSON key in the inbound body identifies the device, matched against serial number/id/MDM user email; leave blank if the workflow doesn't need a specific device target — **required** for the Resolved URL below to have anything to act on), **Enabled**, and an optional **Open a Case on fire** + severity.

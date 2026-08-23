@@ -38,6 +38,7 @@ export const DOC_FILE_TO_SLUG: Record<string, string> = {
   "audit-logs.md": "audit-logs",
   "playground.md": "playground",
   "apps.md": "apps",
+  "edr-xdr-mtd-dex-integration-guide.md": "edr-xdr-mtd-dex-integration-guide",
   "README.md": "readme",
   "ARCHITECTURE.md": "architecture",
 };
@@ -53,6 +54,7 @@ export const DOC_TITLES: Record<string, string> = {
   "audit-logs": "Audit Logs — Admin Guide",
   playground: "Playground — Admin Guide",
   apps: "Apps — Admin Guide",
+  "edr-xdr-mtd-dex-integration-guide": "Applivery SOAR Integration Guide — EDR, XDR, MTD & DEX",
   readme: "README",
   architecture: "Architecture Guide",
 };

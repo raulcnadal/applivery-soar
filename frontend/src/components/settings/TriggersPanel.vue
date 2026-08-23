@@ -7,12 +7,36 @@
 // TriggerDialog.vue pair.
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { onMounted, reactive, ref } from "vue";
+import { api } from "../../api/http";
 import { ICONS } from "../../lib/solarIcons";
 import { useTriggersStore, type Trigger } from "../../stores/triggers";
 import { useWorkflowsStore } from "../../stores/workflows";
+import HelpModal from "../shared/HelpModal.vue";
 
 const store = useTriggersStore();
 const workflowsStore = useWorkflowsStore();
+
+const INTEGRATION_GUIDE_SLUG = "edr-xdr-mtd-dex-integration-guide";
+const showGuide = ref(false);
+const isDownloadingGuide = ref(false);
+
+async function downloadIntegrationGuidePdf() {
+  if (isDownloadingGuide.value) return;
+  isDownloadingGuide.value = true;
+  try {
+    const res = await api.get(`/help/${INTEGRATION_GUIDE_SLUG}/pdf`, { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Applivery_SOAR_${INTEGRATION_GUIDE_SLUG}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    alert("Couldn't generate the PDF for the Integration Guide. Try again in a moment.");
+  } finally {
+    isDownloadingGuide.value = false;
+  }
+}
 
 function blankForm() {
   return { name: "", description: "", workflowId: "", enabled: true, openCase: false, caseSeverity: "medium", deviceLookupField: "" };
@@ -92,6 +116,19 @@ onMounted(async () => {
       condition — the second, <strong>Resolved</strong> URL below the Fire URL is how the same external system reports that
       condition cleared, so a device it moved out of compliance can actually recover instead of staying flagged forever.
     </p>
+    <div class="flex items-center justify-between gap-3 p-3 rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50/60 dark:bg-brand-900/10">
+      <p class="text-[11px] leading-relaxed text-gray-600 dark:text-gray-300">
+        Wiring up an EDR, XDR, MTD, or DEX tool? The <strong>Applivery SOAR Integration Guide</strong> covers Fire/Resolve
+        URLs, feeding a Compliance Policy, and the full notify → contain → escalate → wipe/unenroll response ladder, with
+        practical examples.
+      </p>
+      <div class="flex items-center gap-2 shrink-0">
+        <Button variant="ghost" @click="showGuide = true">Read the guide</Button>
+        <Button variant="ghost" :loading="isDownloadingGuide" @click="downloadIntegrationGuidePdf">Download PDF</Button>
+      </div>
+    </div>
+    <HelpModal v-if="showGuide" :slug="INTEGRATION_GUIDE_SLUG" @close="showGuide = false" />
+
     <Alert v-if="store.error" type="danger">{{ store.error }}</Alert>
 
     <form v-if="editing !== undefined" class="p-4 rounded-xl mb-3 space-y-3 border border-brand-200 dark:border-brand-800 bg-white dark:bg-gray-800" @submit.prevent="save">

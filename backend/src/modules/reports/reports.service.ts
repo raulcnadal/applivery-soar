@@ -1,9 +1,7 @@
-import fs from "node:fs";
 import axios from "axios";
 import nodemailer from "nodemailer";
-import puppeteer from "puppeteer-core";
-import { env } from "../../config/env";
 import { prisma } from "../../services/prisma";
+import { renderHtmlToPdf } from "../../utils/htmlToPdf";
 import { getWidgetData, type WidgetResponse } from "../analytics/widgets.service";
 import { buildReportHtml, type ReportDisplayOptions } from "./reportTemplate";
 import type { ReportPayload } from "./reports.schemas";
@@ -54,50 +52,6 @@ export async function sendEmailReport(smtpConfig: Record<string, any> | null | u
     });
   } catch (e) {
     console.warn(`[Reports] Failed to send SMTP email: ${e}`);
-  }
-}
-
-function resolvePuppeteerExecutable(): string | undefined {
-  if (env.puppeteerExecutablePath) return env.puppeteerExecutablePath;
-  // Common local-dev fallbacks so `npm run dev` works without setting the env
-  // var explicitly on a machine that already has a browser installed.
-  const candidates = [
-    "/usr/bin/chromium-browser",
-    "/usr/bin/chromium",
-    "/usr/bin/google-chrome",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-  ];
-  for (const c of candidates) {
-    try {
-      if (fs.existsSync(c)) return c;
-    } catch {
-      /* ignore */
-    }
-  }
-  return undefined;
-}
-
-async function renderHtmlToPdf(html: string): Promise<Buffer> {
-  const executablePath = resolvePuppeteerExecutable();
-  if (!executablePath) {
-    throw new Error(
-      "No Chromium executable found for report PDF rendering. Set PUPPETEER_EXECUTABLE_PATH (the Docker image installs the `chromium` apk package and sets this automatically).",
-    );
-  }
-  const browser = await puppeteer.launch({ executablePath, headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
-  try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "load" });
-    try {
-      await page.waitForSelector('body[data-charts-ready="true"]', { timeout: 5000 });
-    } catch {
-      // No canvases on this report (table/scorecard-only sources) — fine.
-    }
-    const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
-    return Buffer.from(pdf);
-  } finally {
-    await browser.close();
   }
 }
 
@@ -175,6 +129,6 @@ export async function generateReportPdf(payload: ReportPayload, authorization: s
     customTemplate,
   });
 
-  const pdfBuffer = await renderHtmlToPdf(html);
+  const pdfBuffer = await renderHtmlToPdf(html, { waitForSelector: 'body[data-charts-ready="true"]' });
   return { pdfBuffer, filename: `Applivery_Report_${payload.workspace}.pdf`, orgName };
 }
