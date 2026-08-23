@@ -6,7 +6,7 @@ Compliance Policies are managed from a single view — Policies (the list + buil
 
 ## Policies list
 
-Each policy is a card showing: name, description, a condition summary ("N conditions, match ANY/ALL"), the linked workflow's name (or "No workflow linked"), when it was last evaluated, and a live count of devices currently violating it. Three toggle chips let you flip settings without opening the editor: **Enabled/Disabled**, **Auto-run/Review first**, and **Cases: on/off/auto-resolve**. If auto-run has tripped (see below), a red "autoRun tripped" badge appears with the reason as a tooltip.
+The list is a searchable, sortable table — the same list experience as the Devices view: a search box (matches name, description, framework/control reference, and linked workflow name), an Enabled/Disabled status filter, and sortable columns (Policy, Platform, Workflow, Violators, Last Evaluated). Each row shows the condition summary ("N conditions, match ANY/ALL") under the policy name, the linked workflow's name (or "No workflow linked"), and a live count of devices currently violating it. A Status column groups the toggle chips that let you flip settings without opening the editor: **Enabled/Disabled**, **Auto-run/Review first**, and **Cases: on/off/auto-resolve**. If auto-run has tripped (see below), a red "Tripped" badge appears with the reason as a tooltip. Below 768px wide, the table becomes a stacked card list instead.
 
 The list is scoped by whatever [Segment](devices.md) is selected in the left panel.
 

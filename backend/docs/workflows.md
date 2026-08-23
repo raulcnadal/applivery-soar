@@ -4,7 +4,7 @@
 
 ## Workflow list
 
-Each card shows: name, step count, a target platform badge (e.g. "iOS · Supervised") if the workflow has a locked target, description, and an orange **MDM** warning badge if any step touches a device directly. If the workflow also has a destructive step (wipe, unenroll, and similar) and its author has marked it **"approved to run unattended"** (see [Unattended auto-run approval](#unattended-auto-run-approval) below), a second green **Auto-run approved** badge sits next to the MDM one.
+The list is a searchable, sortable table — the same list experience as the Devices view: a search box (matches name and description) and sortable columns (Workflow, Platform, Steps). Each row shows the step count, a target platform badge (e.g. "iOS · Supervised") if the workflow has a locked target, description, and an orange **MDM** warning badge in the Flags column if any step touches a device directly. If the workflow also has a destructive step (wipe, unenroll, and similar) and its author has marked it **"approved to run unattended"** (see [Unattended auto-run approval](#unattended-auto-run-approval) below), a second green **Auto-run approved** badge sits next to the MDM one. Below 768px wide, the table becomes a stacked card list instead.
 
 Row actions:
 - **Run** — opens the [device picker](#running-a-workflow). Disabled with a tooltip if the workflow has an MDM step and your role lacks the destructive-workflow permission.
@@ -95,7 +95,7 @@ A named reference library you can pick from a workflow's "Run script" and "Custo
 - **Script** — points at a script Asset already uploaded to Applivery (or write a new one directly here, which uploads it to Applivery's Global segment for you). Fields: Type, Platform (Windows/macOS), Name, Description, and either a search-and-pick of existing Applivery script Assets, a pasted Asset ID, or a new script written inline. Execution **scope** (Machine/User) and optional **Arguments** (with quick-insert buttons for variables Applivery itself resolves at execution time: `device.id`, `device.displayName`, `device.serialNumber`, `device.osVersion`, `device.chip`, `device.hostName`, `user.id`, `user.email`, `user.name`). Script execution is a direct, per-device push — Applivery resolves the argument variables itself when the script runs.
 - **OMA-URI command** — a direct, one-off Windows CSP command, not tied to a Policy. Fields: Path, Action (Add/Replace/Delete/Exec/Get/Copy), Format, and an optional Value that supports local `{{ device.x }}` templating (resolved before the command is sent — a different, wider variable set than the script Arguments above).
 
-**Fetch from Applivery** bulk-imports existing script Assets already uploaded to your org. **Import from Git repo** connects an external script repository and imports from there. Filter the library by type and platform; each entry has Edit and Remove actions.
+**Fetch from Applivery** bulk-imports existing script Assets already uploaded to your org. **Import from Git repo** connects an external script repository and imports from there. Like the Workflow list above, the library is a searchable, sortable table (search box plus Type/Platform filter pills, sortable Name/Type/Platform columns), and drops to a stacked card list below 768px wide; each entry has Edit and Remove actions.
 
 ## Firewall Policy Library
 
@@ -116,6 +116,8 @@ Every rule this library creates is tagged with a unique group name so it can alw
 - **Block Outbound to IP/CIDR** — a disabled placeholder Block rule for ad-hoc containment of a specific address (e.g. a threat-intel hit); fill in the address and enable it.
 
 Once saved, reference the rule set from a workflow's **Apply Firewall Rule Set** (destructive) or **Restore Firewall** (non-destructive) MDM Action step. Deleting a rule set from the library does **not** auto-restore any device it's already been applied to — it only removes your ability to apply/restore it via new workflow runs going forward; a device keeps its rules until an explicit Restore action runs.
+
+Like the other two sub-views, the library is a searchable, sortable table (search box, sortable Name/Rules columns, posture badges), dropping to a stacked card list below 768px wide.
 
 The device detail drawer's [Firewall Rule Sets section](devices.md#overview-tab-section-by-section) shows what's currently believed active per device, based on the last dispatched Apply/Restore action.
 

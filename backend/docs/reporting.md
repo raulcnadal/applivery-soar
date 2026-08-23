@@ -20,7 +20,7 @@ Click **Create Report** to open the Report Builder:
 
 ## Schedules tab
 
-Each saved schedule is a card: name, frequency pill, execution time + timezone, source count + time lapse, and recipients if email delivery is on.
+The list is a searchable, sortable table — the same list experience as the Devices view: a search box (matches name and recipients), a frequency filter (All/Daily/Weekly/Monthly), and sortable columns (Report, Frequency, Sources). Each row also shows the execution time + timezone and recipients if email delivery is on. Below 768px wide, the table becomes a stacked card list instead.
 
 - **Run now** — generates immediately using the schedule's saved config, and **always downloads a PDF to your browser** regardless of that schedule's own "Download PDF directly" setting — a manual run always drops a copy locally in addition to whatever email/webhook delivery is configured.
 - **Edit** — reopens the Builder pre-filled.
