@@ -189,7 +189,7 @@ const COLUMNS: Array<{ key: SortKey; label: string }> = [
               </button>
             </th>
             <th class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Flags</th>
-            <th class="px-3 py-2.5 w-52"></th>
+            <th class="px-3 py-2.5 w-[232px]"></th>
           </tr>
         </thead>
         <tbody>
@@ -228,30 +228,30 @@ const COLUMNS: Array<{ key: SortKey; label: string }> = [
                 </span>
               </div>
             </td>
-            <td class="px-3 py-3">
-              <div class="flex items-center gap-1.5 justify-end flex-wrap">
+            <td class="px-3 py-3 w-[232px]">
+              <div class="flex items-center gap-1.5 justify-end flex-nowrap whitespace-nowrap">
                 <button
                   :disabled="hasDestructive(w) && !canRunDestructive"
                   :title="hasDestructive(w) && !canRunDestructive ? notRunTitle : undefined"
-                  class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                   :style="{ backgroundColor: PRIMARY_BLUE }"
                   @click="emit('run', w)"
                 >
                   <component :is="ICONS.Play" :size="12" weight="Linear" /> Run
                 </button>
-                <button title="Dry run — safe preview, nothing is executed" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400" @click="emit('dryRun', w)">
+                <button title="Dry run — safe preview, nothing is executed" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 shrink-0" @click="emit('dryRun', w)">
                   <component :is="ICONS.TestTube" :size="13" weight="Linear" />
                 </button>
-                <button title="Version history" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400" @click="emit('versions', w)">
+                <button title="Version history" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 shrink-0" @click="emit('versions', w)">
                   <component :is="ICONS.History" :size="13" weight="Linear" />
                 </button>
-                <button class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400" @click="emit('edit', w)">
+                <button class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 shrink-0" @click="emit('edit', w)">
                   <component :is="ICONS.Pen" :size="13" weight="Linear" />
                 </button>
                 <button
                   :disabled="!canDelete"
                   :title="!canDelete ? notDeleteTitle : undefined"
-                  class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   style="color: #ef4444"
                   @click="remove(w)"
                 >

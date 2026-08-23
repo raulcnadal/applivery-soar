@@ -5,10 +5,15 @@ export interface ScriptRepo {
   id: string;
   workspaceSlug: string;
   name: string;
+  vendor: "github" | "gitlab" | "custom";
   owner: string;
   repo: string;
   branch: string;
   path?: string | null;
+  baseUrl?: string | null;
+  // Whether an access token is configured — the encrypted token itself is
+  // never sent to the frontend.
+  hasToken: boolean;
   createdAt: string;
 }
 
@@ -41,7 +46,7 @@ export const useScriptReposStore = defineStore("scriptRepos", () => {
     }
   }
 
-  async function createRepo(payload: { name: string; owner: string; repo: string; branch?: string; path?: string }): Promise<ScriptRepo> {
+  async function createRepo(payload: { name: string; vendor?: string; owner: string; repo: string; branch?: string; path?: string; baseUrl?: string; token?: string }): Promise<ScriptRepo> {
     const { api } = await import("../api/http");
     const res = await api.post("/script-repos", payload);
     await fetchRepos();

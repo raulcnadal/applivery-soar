@@ -27,8 +27,49 @@ const selected = ref<Set<string>>(new Set());
 const isImporting = ref(false);
 const importResult = ref<{ imported: unknown[]; failed: Array<{ name?: string; error: string }> } | null>(null);
 
+const VENDOR_OPTIONS: Array<{ value: "github" | "gitlab" | "custom"; label: string }> = [
+  { value: "github", label: "GitHub" },
+  { value: "gitlab", label: "GitLab" },
+  { value: "custom", label: "Custom / self-hosted (GitHub-compatible API)" },
+];
+
 const showAddForm = ref(false);
-const newRepo = reactive({ name: "", owner: "", repo: "", branch: "main", path: "" });
+const newRepo = reactive({ name: "", vendor: "github" as "github" | "gitlab" | "custom", url: "", owner: "", repo: "", branch: "main", path: "", baseUrl: "", token: "" });
+
+function resetNewRepo() {
+  Object.assign(newRepo, { name: "", vendor: "github", url: "", owner: "", repo: "", branch: "main", path: "", baseUrl: "", token: "" });
+}
+
+// Best-effort client-side parse of a pasted repo URL into owner/repo (and,
+// for a non-default host, an API base URL) — lets a user paste
+// "https://github.com/owner/repo" or "https://gitlab.mycompany.com/group/
+// project" instead of having to split it into fields by hand. Always
+// editable afterward; this is a convenience prefill, not a hard requirement.
+function parseRepoUrl(rawUrl: string, vendor: "github" | "gitlab" | "custom"): { owner: string; repo: string; baseUrl: string } | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  let u: URL;
+  try {
+    u = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+  const parts = u.pathname.replace(/\.git$/, "").split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  const repo = parts[parts.length - 1];
+  const owner = parts.slice(0, -1).join("/");
+  const isDefaultHost = (vendor === "github" && u.hostname === "github.com") || (vendor === "gitlab" && u.hostname === "gitlab.com");
+  const baseUrl = isDefaultHost ? "" : vendor === "github" ? `${u.origin}/api/v3` : u.origin;
+  return { owner, repo, baseUrl };
+}
+
+watch([() => newRepo.url, () => newRepo.vendor], () => {
+  const parsed = parseRepoUrl(newRepo.url, newRepo.vendor);
+  if (!parsed) return;
+  newRepo.owner = parsed.owner;
+  newRepo.repo = parsed.repo;
+  newRepo.baseUrl = parsed.baseUrl;
+});
 
 watch(
   () => props.open,
@@ -61,9 +102,18 @@ async function browse(repoId: string, path?: string) {
 
 async function handleAddRepo() {
   if (!newRepo.name.trim() || !newRepo.owner.trim() || !newRepo.repo.trim()) return;
-  const repo = await store.createRepo({ ...newRepo });
+  const repo = await store.createRepo({
+    name: newRepo.name,
+    vendor: newRepo.vendor,
+    owner: newRepo.owner,
+    repo: newRepo.repo,
+    branch: newRepo.branch,
+    path: newRepo.path,
+    baseUrl: newRepo.baseUrl || undefined,
+    token: newRepo.token || undefined,
+  });
   showAddForm.value = false;
-  Object.assign(newRepo, { name: "", owner: "", repo: "", branch: "main", path: "" });
+  resetNewRepo();
   await store.fetchRepos();
   await browse((repo as any).id, (repo as any).path || "");
 }
@@ -79,7 +129,8 @@ async function handleRemoveRepo(id: string) {
 }
 
 function quickAddApplivery() {
-  Object.assign(newRepo, { name: "Applivery official scripts", owner: "applivery", repo: "applivery-mdm-scripts", branch: "main", path: "" });
+  resetNewRepo();
+  Object.assign(newRepo, { name: "Applivery official scripts", vendor: "github", owner: "applivery", repo: "applivery-mdm-scripts", branch: "main" });
   showAddForm.value = true;
 }
 
@@ -111,7 +162,7 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
 
 <template>
   <div v-if="open" class="fixed inset-0 z-[280] flex items-center justify-center bg-black/45 p-4" @click.self="emit('close')">
-    <div class="w-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg flex flex-col bg-white dark:bg-gray-800" style="max-width: 700px; max-height: 85vh">
+    <div class="w-full rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg flex flex-col bg-white dark:bg-gray-800" style="max-width: 820px; max-height: 88vh">
       <div class="flex items-start justify-between gap-3 p-4 border-b border-gray-200 dark:border-gray-700">
         <div class="min-w-0">
           <h3 class="text-sm font-semibold truncate text-gray-900 dark:text-white">Import scripts from a Git repo</h3>
@@ -145,11 +196,16 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
             <p v-if="store.repos.length === 0" class="text-[10px] text-gray-400">None yet.</p>
             <div v-for="r in store.repos" :key="r.id" class="flex items-center gap-1">
               <button
-                class="flex-1 text-left px-2 py-1.5 rounded-lg text-[11px] truncate"
+                class="flex-1 min-w-0 text-left px-2 py-1.5 rounded-lg text-[11px]"
+                :title="`${r.owner}/${r.repo}${r.hasToken ? ' (private token set)' : ''}`"
                 :style="activeRepoId === r.id ? { backgroundColor: `${PRIMARY_BLUE}12`, color: PRIMARY_BLUE } : { color: 'var(--foreground)' }"
                 @click="browse(r.id)"
               >
-                {{ r.name }}
+                <span class="truncate block">{{ r.name }}</span>
+                <span class="flex items-center gap-1 text-[9px] font-medium uppercase text-gray-400">
+                  {{ r.vendor || "github" }}
+                  <component v-if="r.hasToken" :is="ICONS.Lock" :size="9" weight="Linear" title="Access token configured" />
+                </span>
               </button>
               <button class="p-1 rounded shrink-0" :style="{ color: DANGER }" @click="handleRemoveRepo(r.id)">
                 <component :is="ICONS.TrashBinMinimalistic" :size="11" weight="Linear" />
@@ -161,14 +217,6 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
             <button class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] border border-dashed border-gray-200 dark:border-gray-700 text-gray-400" @click="showAddForm = !showAddForm">
               <component :is="ICONS.LinkCircle" :size="11" weight="Linear" /> Custom repo…
             </button>
-            <div v-if="showAddForm" class="space-y-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
-              <input v-model="newRepo.name" placeholder="name" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-              <input v-model="newRepo.owner" placeholder="owner" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-              <input v-model="newRepo.repo" placeholder="repo" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-              <input v-model="newRepo.branch" placeholder="branch" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-              <input v-model="newRepo.path" placeholder="path (optional)" class="w-full px-2 py-1 rounded text-[10px] outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-              <button class="w-full px-2 py-1 rounded text-[10px] font-semibold text-white" :style="{ backgroundColor: PRIMARY_BLUE }" @click="handleAddRepo">Connect</button>
-            </div>
           </div>
 
           <div>
@@ -214,6 +262,74 @@ const pathParts = computed(() => (currentPath.value ? currentPath.value.split("/
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div v-if="showAddForm" class="mt-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 space-y-2">
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Connect a repo</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] text-gray-400">Vendor</label>
+              <select v-model="newRepo.vendor" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                <option v-for="v in VENDOR_OPTIONS" :key="v.value" :value="v.value">{{ v.label }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] text-gray-400">Display name</label>
+              <input v-model="newRepo.name" placeholder="e.g. Security scripts" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-[10px] text-gray-400">Repository URL <span class="font-normal">(paste to auto-fill the fields below)</span></label>
+            <input v-model="newRepo.url" placeholder="https://github.com/owner/repo" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] text-gray-400">Owner / namespace</label>
+              <input v-model="newRepo.owner" placeholder="owner" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="text-[10px] text-gray-400">Repository</label>
+              <input v-model="newRepo.repo" placeholder="repo" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] text-gray-400">Branch</label>
+              <input v-model="newRepo.branch" placeholder="main" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+            </div>
+            <div>
+              <label class="text-[10px] text-gray-400">Path (optional)</label>
+              <input v-model="newRepo.path" placeholder="scripts/" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+            </div>
+          </div>
+
+          <div v-if="newRepo.vendor !== 'github' || newRepo.baseUrl">
+            <label class="text-[10px] text-gray-400">
+              {{ newRepo.vendor === "gitlab" ? "Self-hosted instance URL (blank = gitlab.com)" : newRepo.vendor === "custom" ? "API base URL (required — e.g. a GitHub Enterprise or Gitea instance)" : "GitHub Enterprise API base URL (blank = public github.com)" }}
+            </label>
+            <input v-model="newRepo.baseUrl" placeholder="https://git.mycompany.com" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+          </div>
+
+          <div>
+            <label class="text-[10px] text-gray-400">Access token <span class="font-normal">(optional — only needed for a private repo)</span></label>
+            <input v-model="newRepo.token" type="password" autocomplete="off" placeholder="Personal/project access token" class="w-full px-2 py-1.5 rounded text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+          </div>
+
+          <div class="flex items-center gap-2 pt-1">
+            <button
+              :disabled="!newRepo.name.trim() || !newRepo.owner.trim() || !newRepo.repo.trim()"
+              class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+              :style="{ backgroundColor: PRIMARY_BLUE }"
+              @click="handleAddRepo"
+            >
+              Connect
+            </button>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400" @click="showAddForm = false">Cancel</button>
           </div>
         </div>
       </div>

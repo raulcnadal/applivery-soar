@@ -1023,10 +1023,29 @@ model ScriptRepo {
   id            String   @id @default(uuid())
   workspaceSlug String
   name          String
+  // "github" (default) | "gitlab" | "custom" (a GitHub-Contents-API-
+  // compatible self-hosted server — covers GitHub Enterprise Server and
+  // Gitea, both of which mirror GitHub's response shape). See
+  // scriptRepos.service.ts's browseScriptRepo/importFromScriptRepo for the
+  // per-vendor request logic this drives.
+  vendor        String   @default("github")
   owner         String
   repo          String
   branch        String   @default("main")
   path          String?
+  // API base URL override — required for vendor "custom" (there's no public
+  // default to fall back to), optional for "gitlab" (blank = gitlab.com) and
+  // "github" (blank = api.github.com; set this to a GitHub Enterprise
+  // server's own API base, e.g. "https://git.example.com/api/v3", to point
+  // at one instead of the public API).
+  baseUrl       String?
+  // Personal/project access token for a private repo — encrypted at rest
+  // (secretCipher), same treatment as every other stored credential in this
+  // schema (DeviceReportSecret.secret, VulncheckConfig.apiKeyEncrypted, and
+  // so on). Sent as an `Authorization: Bearer` header for github/custom, a
+  // `PRIVATE-TOKEN` header for gitlab. Never returned to the frontend —
+  // listScriptRepos exposes only a `hasToken` boolean.
+  tokenEncrypted String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

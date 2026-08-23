@@ -261,106 +261,119 @@ const COLUMNS: Array<{ key: SortKey; label: string }> = [
       </div>
     </div>
 
-    <!-- Desktop — sortable column table -->
+    <!-- Desktop — sortable column table. Enabled/Auto-run/Cases/Alerts each
+         get their own column (rather than one crowded "Status" cluster) per
+         user request — padding is trimmed (px-2 instead of px-3) across
+         every cell to make room. -->
     <div v-else class="overflow-x-auto">
       <table class="w-full text-sm text-left">
         <thead class="bg-gray-50 dark:bg-gray-900/50">
           <tr>
-            <th v-for="col in COLUMNS" :key="col.key" class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider">
-              <button class="inline-flex items-center gap-1 uppercase tracking-wider" :style="{ color: sortBy === col.key ? PRIMARY_BLUE : '#9CA3AF' }" @click="toggleSort(col.key)">
+            <th v-for="col in COLUMNS" :key="col.key" class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider">
+              <button class="inline-flex items-center gap-1 uppercase tracking-wider whitespace-nowrap" :style="{ color: sortBy === col.key ? PRIMARY_BLUE : '#9CA3AF' }" @click="toggleSort(col.key)">
                 {{ col.label }} <component :is="ICONS.SortVertical" :size="11" weight="Linear" />
               </button>
             </th>
-            <th class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Status</th>
-            <th class="px-3 py-2.5 w-40"></th>
+            <th class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap">Enabled</th>
+            <th class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap">Auto-run</th>
+            <th class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap">Cases</th>
+            <th class="px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap">Alerts</th>
+            <th class="px-2 py-2.5 w-[104px]"></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(p, idx) in sorted" :key="p.id" class="align-top" :class="idx > 0 ? 'border-t border-gray-100 dark:border-gray-800' : ''">
-            <td class="px-3 py-3 max-w-[280px]">
-              <div class="flex items-start gap-2.5">
-                <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: `${WARNING}12` }">
-                  <component :is="ICONS.ShieldWarning" :size="14" weight="Linear" :style="{ color: WARNING }" />
+            <td class="px-2 py-2.5 max-w-[220px]">
+              <div class="flex items-start gap-2">
+                <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" :style="{ backgroundColor: `${WARNING}12` }">
+                  <component :is="ICONS.ShieldWarning" :size="13" weight="Linear" :style="{ color: WARNING }" />
                 </div>
                 <div class="min-w-0">
-                  <p class="font-semibold truncate text-gray-900 dark:text-white">{{ p.name }}</p>
+                  <p class="font-semibold truncate text-gray-900 dark:text-white" :title="p.name">{{ p.name }}</p>
                   <p class="text-[11px] text-gray-400 mt-0.5">{{ conditionSummary(p) }}</p>
                   <p v-if="p.description" class="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{{ p.description }}</p>
                 </div>
               </div>
             </td>
-            <td class="px-3 py-3">
-              <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" :style="{ backgroundColor: p.targetPlatform ? `${PRIMARY_BLUE}12` : '#9CA3AF15', color: p.targetPlatform ? PRIMARY_BLUE : '#9CA3AF' }">
+            <td class="px-2 py-2.5">
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="{ backgroundColor: p.targetPlatform ? `${PRIMARY_BLUE}12` : '#9CA3AF15', color: p.targetPlatform ? PRIMARY_BLUE : '#9CA3AF' }">
                 {{ platformLabel(p) }}{{ p.targetDeploymentModel ? ` · ${DEPLOYMENT_MODEL_LABELS[p.targetDeploymentModel] ?? p.targetDeploymentModel}` : "" }}
               </span>
             </td>
-            <td class="px-3 py-3">
-              <p class="text-xs inline-flex items-center gap-1 text-gray-400 whitespace-nowrap">
-                <component :is="ICONS.Structure" :size="11" weight="Linear" /> {{ workflowsById[p.workflowId ?? ""]?.name || "No workflow linked" }}
+            <td class="px-2 py-2.5 max-w-[140px]">
+              <p class="text-xs inline-flex items-center gap-1 text-gray-400 truncate" :title="workflowsById[p.workflowId ?? '']?.name || 'No workflow linked'">
+                <component :is="ICONS.Structure" :size="11" weight="Linear" class="shrink-0" /> <span class="truncate">{{ workflowsById[p.workflowId ?? ""]?.name || "No workflow linked" }}</span>
               </p>
             </td>
-            <td class="px-3 py-3">
+            <td class="px-2 py-2.5">
               <p class="text-xs inline-flex items-center gap-1 whitespace-nowrap" :style="{ color: (store.violatorCounts[p.id] ?? 0) > 0 ? DANGER : '#9CA3AF' }">
                 <component :is="ICONS.Smartphone" :size="11" weight="Linear" />
-                {{ store.violatorCounts[p.id] == null ? "Unavailable" : `${store.violatorCounts[p.id]} device${store.violatorCounts[p.id] === 1 ? "" : "s"}` }}
+                {{ store.violatorCounts[p.id] == null ? "N/A" : store.violatorCounts[p.id] }}
               </p>
             </td>
-            <td class="px-3 py-3">
+            <td class="px-2 py-2.5">
               <p class="text-xs inline-flex items-center gap-1 text-gray-400 whitespace-nowrap" :title="p.lastEvaluatedAt ? new Date(p.lastEvaluatedAt).toLocaleString() : undefined">
                 <component :is="ICONS.ClockCircle" :size="11" weight="Linear" /> {{ p.lastEvaluatedAt ? timeAgo(p.lastEvaluatedAt) : "Never" }}
               </p>
             </td>
-            <td class="px-3 py-3">
-              <div class="flex items-center gap-1.5 flex-wrap max-w-[220px]">
+            <td class="px-2 py-2.5">
+              <button
+                class="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-semibold uppercase whitespace-nowrap"
+                :style="{ backgroundColor: p.enabled ? `${SUCCESS}15` : '#9CA3AF15', color: p.enabled ? SUCCESS : '#9CA3AF' }"
+                @click="toggleField(p, 'enabled')"
+              >
+                <component :is="p.enabled ? ICONS.CheckCircle : ICONS.CloseCircle" :size="10" weight="Linear" /> {{ p.enabled ? "On" : "Off" }}
+              </button>
+            </td>
+            <td class="px-2 py-2.5">
+              <div class="flex flex-col items-start gap-1">
                 <button
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
-                  :style="{ backgroundColor: p.enabled ? `${SUCCESS}15` : '#9CA3AF15', color: p.enabled ? SUCCESS : '#9CA3AF' }"
-                  @click="toggleField(p, 'enabled')"
-                >
-                  <component :is="p.enabled ? ICONS.CheckCircle : ICONS.CloseCircle" :size="10" weight="Linear" /> {{ p.enabled ? "Enabled" : "Disabled" }}
-                </button>
-                <button
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
+                  class="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-semibold uppercase whitespace-nowrap"
                   :style="{ backgroundColor: p.autoRun ? `${DANGER}12` : '#9CA3AF15', color: p.autoRun ? DANGER : '#9CA3AF' }"
                   @click="toggleField(p, 'autoRun')"
                 >
-                  <component :is="ICONS.Refresh" :size="10" weight="Linear" /> {{ p.autoRun ? "Auto-run" : "Review first" }}
+                  <component :is="ICONS.Refresh" :size="10" weight="Linear" /> {{ p.autoRun ? "Auto" : "Review" }}
                 </button>
                 <span
                   v-if="p.autoRun && p.autoRunTripped"
                   :title="p.autoRunTrippedReason || 'autoRun tripped — edit and re-save this policy to re-arm it'"
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
+                  class="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-semibold uppercase whitespace-nowrap"
                   :style="{ backgroundColor: `${DANGER}15`, color: DANGER }"
                 >
                   <component :is="ICONS.CloseCircle" :size="10" weight="Linear" /> Tripped
                 </span>
-                <button
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
-                  :style="{ backgroundColor: (p.openCaseOnViolation ?? true) ? `${PRIMARY_BLUE}12` : '#9CA3AF15', color: (p.openCaseOnViolation ?? true) ? PRIMARY_BLUE : '#9CA3AF' }"
-                  title="Whether violating this policy opens a Case — edit the policy to also control auto-resolve on recovery"
-                  @click="toggleField(p, 'openCaseOnViolation')"
-                >
-                  <component :is="ICONS.Folder" :size="10" weight="Linear" /> {{ (p.openCaseOnViolation ?? true) ? (p.autoResolveCaseOnRecovery ? "Cases: auto-resolve" : "Cases: on") : "Cases: off" }}
-                </button>
-                <span
-                  v-if="p.alertOnViolation"
-                  :title="p.lastAlertError ? `Last alert attempt had a problem: ${p.lastAlertError}` : 'Sends a rolled-up webhook/email alert when this policy is violated'"
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold uppercase"
-                  :style="{ backgroundColor: p.lastAlertError ? `${WARNING}15` : `${PRIMARY_BLUE}12`, color: p.lastAlertError ? WARNING : PRIMARY_BLUE }"
-                >
-                  <component :is="p.lastAlertError ? ICONS.DangerTriangle : ICONS.Bell" :size="10" weight="Linear" /> {{ p.lastAlertError ? "Alerts: error" : "Alerts: on" }}
-                </span>
               </div>
             </td>
-            <td class="px-3 py-3">
-              <div class="flex items-center gap-2 justify-end">
-                <button title="Evaluate just this policy now" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40" :disabled="evaluatingPolicyId !== null" @click="evaluate(p)">
+            <td class="px-2 py-2.5">
+              <button
+                class="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-semibold uppercase whitespace-nowrap"
+                :style="{ backgroundColor: (p.openCaseOnViolation ?? true) ? `${PRIMARY_BLUE}12` : '#9CA3AF15', color: (p.openCaseOnViolation ?? true) ? PRIMARY_BLUE : '#9CA3AF' }"
+                title="Whether violating this policy opens a Case — edit the policy to also control auto-resolve on recovery"
+                @click="toggleField(p, 'openCaseOnViolation')"
+              >
+                <component :is="ICONS.Folder" :size="10" weight="Linear" /> {{ (p.openCaseOnViolation ?? true) ? (p.autoResolveCaseOnRecovery ? "Auto-resolve" : "On") : "Off" }}
+              </button>
+            </td>
+            <td class="px-2 py-2.5">
+              <span
+                v-if="p.alertOnViolation"
+                :title="p.lastAlertError ? `Last alert attempt had a problem: ${p.lastAlertError}` : 'Sends a rolled-up webhook/email alert when this policy is violated'"
+                class="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-semibold uppercase whitespace-nowrap"
+                :style="{ backgroundColor: p.lastAlertError ? `${WARNING}15` : `${PRIMARY_BLUE}12`, color: p.lastAlertError ? WARNING : PRIMARY_BLUE }"
+              >
+                <component :is="p.lastAlertError ? ICONS.DangerTriangle : ICONS.Bell" :size="10" weight="Linear" /> {{ p.lastAlertError ? "Error" : "On" }}
+              </span>
+              <span v-else class="text-[10px] font-semibold px-1.5 py-1 uppercase whitespace-nowrap text-gray-400">Off</span>
+            </td>
+            <td class="px-2 py-2.5 w-[104px]">
+              <div class="flex items-center gap-1 justify-end flex-nowrap">
+                <button title="Evaluate just this policy now" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40 shrink-0" :disabled="evaluatingPolicyId !== null" @click="evaluate(p)">
                   <component :is="ICONS.Refresh" :size="13" weight="Linear" :class="evaluatingPolicyId === p.id ? 'animate-spin' : ''" />
                 </button>
-                <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200" @click="emit('edit', p)">
-                  <component :is="ICONS.Pen" :size="12" weight="Linear" /> Edit
+                <button title="Edit" class="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 shrink-0" @click="emit('edit', p)">
+                  <component :is="ICONS.Pen" :size="13" weight="Linear" />
                 </button>
-                <button class="p-1.5 rounded-lg" style="color: #ef4444" @click="remove(p)">
+                <button title="Delete" class="p-1.5 rounded-lg shrink-0" style="color: #ef4444" @click="remove(p)">
                   <component :is="ICONS.TrashBinMinimalistic" :size="13" weight="Linear" />
                 </button>
               </div>
