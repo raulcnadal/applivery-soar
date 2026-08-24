@@ -3,6 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { deviceAppReportPayloadSchema, deviceReportPayloadSchema, eventNotifyPayloadSchema } from "./deviceData.schemas";
 import { getAgentStatus, handleEventNotify, reportDeviceApps, reportDeviceData, verifyDeviceIdentity } from "./deviceData.service";
 import { listEnabledChecksForAgent } from "../compliance/customChecks.service";
+import { CHECK_PLATFORMS } from "../compliance/customChecks.schemas";
 import { getEventDrivenSettings, listEnabledWatchesForAgent } from "../compliance/eventWatches.service";
 import { WATCH_PLATFORMS } from "../compliance/eventWatches.schemas";
 import { forceEvaluateNow } from "../compliance/compliance.service";
@@ -36,12 +37,21 @@ deviceDataRouter.post(
 );
 
 /**
- * Agent poll endpoint — GET /api/device-data/custom-checks?platform=windows|macos
+ * Agent poll endpoint — GET /api/device-data/custom-checks?platform=windows|macos|ios|android
  * (customChecks.service.ts's module doc has the full design). Same auth as
  * the two report endpoints above: this is an unattended device caller, not
  * a logged-in admin. The agent calls this once per report cycle, runs every
  * check it gets back locally, and includes the results in its next
  * POST /api/device-data/report call (customCheckResults field).
+ *
+ * ios/android are accepted here the same as windows/macos, but
+ * validateCheckParams (customChecks.schemas.ts) refuses to let an admin
+ * create anything but an `appInstalled` check for those two platforms in
+ * the first place — a sandboxed mobile OS has no API surface for the other
+ * checker types (process/service/registry-or-file/command). So this route
+ * never needs its own platform-specific filtering: whatever
+ * listEnabledChecksForAgent returns for ios/android is already
+ * appInstalled-only by construction.
  */
 deviceDataRouter.get(
   "/api/device-data/custom-checks",
@@ -49,8 +59,8 @@ deviceDataRouter.get(
     const workspaceSlug = workspaceOf(req);
     await verifyDeviceIdentity(req, workspaceSlug);
     const platform = typeof req.query.platform === "string" ? req.query.platform : "";
-    if (platform !== "windows" && platform !== "macos") {
-      res.status(400).json({ detail: "platform query param must be 'windows' or 'macos'" });
+    if (!(CHECK_PLATFORMS as readonly string[]).includes(platform)) {
+      res.status(400).json({ detail: `platform query param must be one of: ${CHECK_PLATFORMS.join(", ")}` });
       return;
     }
     res.json({ items: await listEnabledChecksForAgent(workspaceSlug, platform) });

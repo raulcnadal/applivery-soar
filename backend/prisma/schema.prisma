@@ -839,11 +839,11 @@ model AgentBuild {
 model CustomCheckDefinition {
   id            String   @id @default(uuid())
   workspaceSlug String
-  platform      String   // "windows" | "macos"
+  platform      String   // "windows" | "macos" | "ios" | "android" — see customChecks.schemas.ts CHECK_PLATFORMS
   key           String   // stable slug, unique per (workspaceSlug, platform)
   name          String
   description   String?
-  checkerType   String   // "processRunning" | "serviceStatus" | "registryOrFileValue" | "appInstalled" | "command"
+  checkerType   String   // "processRunning" | "serviceStatus" | "registryOrFileValue" | "appInstalled" | "command" — ios/android: appInstalled only, see MOBILE_CHECK_PLATFORMS
   params        Json
   enabled       Boolean  @default(true)
   createdBy     String?

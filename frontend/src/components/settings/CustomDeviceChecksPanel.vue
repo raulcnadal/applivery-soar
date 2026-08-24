@@ -13,7 +13,7 @@ import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
-import { useComplianceStore, CHECKER_TYPES, type CheckerType, type CustomCheckDefinition } from "../../stores/compliance";
+import { useComplianceStore, CHECKER_TYPES, MOBILE_CHECK_PLATFORMS, type CheckerType, type CustomCheckDefinition } from "../../stores/compliance";
 
 const PRIMARY_BLUE = "#0241E3";
 
@@ -21,7 +21,25 @@ const store = useComplianceStore();
 const auth = useAuthStore();
 const canEdit = () => auth.hasFeatureAccess("compliance", "manage");
 
-const platform = ref<"windows" | "macos">("windows");
+type CheckPlatform = "windows" | "macos" | "ios" | "android";
+const PLATFORMS: CheckPlatform[] = ["windows", "macos", "ios", "android"];
+const PLATFORM_LABELS: Record<CheckPlatform, string> = { windows: "Windows", macos: "macOS", ios: "iOS", android: "Android" };
+const isMobilePlatform = (p: CheckPlatform) => (MOBILE_CHECK_PLATFORMS as readonly string[]).includes(p);
+
+const platform = ref<CheckPlatform>("windows");
+
+// iOS/Android are sandboxed — only "App installed" has a real implementation
+// there (backend's customChecks.schemas.ts MOBILE_CHECK_PLATFORMS/
+// validateCheckParams enforces the same restriction, so this filter is a UX
+// convenience, not the actual guardrail).
+const availableCheckerTypes = computed<readonly CheckerType[]>(() => (isMobilePlatform(platform.value) ? ["appInstalled"] : CHECKER_TYPES));
+
+function selectPlatform(p: CheckPlatform) {
+  platform.value = p;
+  if (!availableCheckerTypes.value.includes(form.checkerType)) {
+    form.checkerType = availableCheckerTypes.value[0];
+  }
+}
 
 const CHECKER_LABELS: Record<CheckerType, string> = {
   processRunning: "Process running",
@@ -48,7 +66,7 @@ const filteredChecks = computed(() => store.customChecks.filter((c) => c.platfor
 function resetForm() {
   form.name = "";
   form.description = "";
-  form.checkerType = "processRunning";
+  form.checkerType = availableCheckerTypes.value[0];
   form.enabled = true;
   form.params = {};
 }
@@ -160,15 +178,15 @@ onMounted(async () => {
 
       <div class="flex items-center gap-1.5">
         <button
-          v-for="p in ['windows', 'macos']"
+          v-for="p in PLATFORMS"
           :key="p"
           type="button"
           class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors"
           :class="platform === p ? 'text-white' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'"
           :style="platform === p ? { backgroundColor: PRIMARY_BLUE, borderColor: PRIMARY_BLUE } : {}"
-          @click="platform = p as 'windows' | 'macos'"
+          @click="selectPlatform(p)"
         >
-          {{ p === "windows" ? "Windows" : "macOS" }}
+          {{ PLATFORM_LABELS[p] }}
         </button>
         <div class="flex-1" />
         <Button v-if="canEdit() && isEditing === null" size="sm" @click="startCreate">+ New check</Button>
@@ -185,8 +203,12 @@ onMounted(async () => {
             :disabled="!canEdit()"
             class="w-full px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           >
-            <option v-for="t in CHECKER_TYPES" :key="t" :value="t">{{ CHECKER_LABELS[t] }}</option>
+            <option v-for="t in availableCheckerTypes" :key="t" :value="t">{{ CHECKER_LABELS[t] }}</option>
           </select>
+          <p v-if="isMobilePlatform(platform)" class="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+            {{ PLATFORM_LABELS[platform] }} is sandboxed — process/service/registry-or-file/command checks have no API
+            surface there, so "App installed" is the only checker type available.
+          </p>
         </div>
 
         <Input v-if="form.checkerType === 'processRunning'" v-model="form.params.processName" label="Process name" placeholder="CrowdStrike.exe / falcond" :disabled="!canEdit()" />
@@ -211,10 +233,21 @@ onMounted(async () => {
         <Input
           v-if="form.checkerType === 'appInstalled'"
           v-model="form.params.identifier"
-          :label="platform === 'windows' ? 'Winget package ID (or app display name)' : 'Bundle identifier'"
+          :label="
+            platform === 'windows'
+              ? 'Winget package ID (or app display name)'
+              : platform === 'android'
+                ? 'Android package name'
+                : 'Bundle identifier'
+          "
           :placeholder="platform === 'windows' ? 'CrowdStrike.Falcon' : 'com.crowdstrike.falcon'"
           :disabled="!canEdit()"
         />
+        <p v-if="platform === 'ios'" class="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">
+          iOS has no general "is this bundle ID installed" API — this only works if the target app registers a custom
+          URL scheme and the SOAR Agent is allow-listed for it (LSApplicationQueriesSchemes). Confirm with the app
+          vendor before relying on this check on iOS.
+        </p>
 
         <div v-if="form.checkerType === 'command'">
           <label class="block text-[10px] font-medium mb-1 text-gray-500 dark:text-gray-400">Command ({{ platform === "windows" ? "PowerShell" : "bash" }})</label>
@@ -238,7 +271,7 @@ onMounted(async () => {
       </div>
 
       <p v-if="filteredChecks.length === 0 && isEditing === null" class="text-xs text-gray-500 dark:text-gray-400">
-        No {{ platform === "windows" ? "Windows" : "macOS" }} checks yet.
+        No {{ PLATFORM_LABELS[platform] }} checks yet.
       </p>
 
       <div class="space-y-1.5">

@@ -100,10 +100,18 @@ export interface SmartAttributeDef {
 export const CHECKER_TYPES = ["processRunning", "serviceStatus", "registryOrFileValue", "appInstalled", "command"] as const;
 export type CheckerType = (typeof CHECKER_TYPES)[number];
 
+// iOS/Android are sandboxed — only "appInstalled" is a meaningful checker
+// type there (no process/service/registry-or-file/command surface exists
+// for a third-party app to check). See backend's customChecks.schemas.ts
+// MOBILE_CHECK_PLATFORMS/validateCheckParams, which is where this is
+// actually enforced; CustomDeviceChecksPanel.vue filters CHECKER_TYPES down
+// to match so an admin never sees an option the API would reject.
+export const MOBILE_CHECK_PLATFORMS = ["ios", "android"] as const;
+
 export interface CustomCheckDefinition {
   id: string;
   workspaceSlug: string;
-  platform: "windows" | "macos";
+  platform: "windows" | "macos" | "ios" | "android";
   key: string;
   name: string;
   description?: string | null;
