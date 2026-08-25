@@ -619,12 +619,30 @@ export async function evaluatePolicyForDevice(
     locationsByDeviceId: await loadDeviceLocations(workspaceSlug, [(device as any).id]),
   };
 
-  const conditions = ((policy.conditions as any[]) ?? []).map((c) => ({
-    field: c.field,
-    operator: c.operator,
-    value: c.value,
-    met: evaluateCondition(device as any, c, appLists, geo),
-  }));
+  const conditions = ((policy.conditions as any[]) ?? []).map((c) => {
+    // Geofencing conditions (field: "geofenceZoneId") carry the zone's raw
+    // GUID as `value` — meaningless to a human reading the policy detail
+    // view. `geo.zonesById` (loaded above via loadGeofenceZonesById) already
+    // has each zone's admin-assigned `name` alongside its shape/geometry
+    // (GeoContext's own type only declares shape/geometry since that's all
+    // evaluateCondition itself needs, but the underlying Map entries carry
+    // `id`/`name` too) — resolve it here once, server-side, so both the web
+    // Device modal (DeviceCompliancePolicyStatusModal.vue) and the mobile
+    // policy detail screen (policy_detail_screen.dart) can show the real
+    // zone name instead of the GUID, without either needing its own lookup.
+    let valueLabel: string | undefined;
+    if (c.field === "geofenceZoneId") {
+      const zone = geo.zonesById.get(String(c.value ?? "")) as ({ name?: string } | undefined);
+      valueLabel = zone?.name ?? undefined;
+    }
+    return {
+      field: c.field,
+      operator: c.operator,
+      value: c.value,
+      ...(valueLabel ? { valueLabel } : {}),
+      met: evaluateCondition(device as any, c, appLists, geo),
+    };
+  });
 
   const conditionLogic = policy.conditionLogic;
   const matchedCount = conditions.filter((c) => c.met).length;

@@ -72,10 +72,19 @@ const OPERATOR_LABEL: Record<string, string> = {
 // defaultValueForType). Falls back to a generic "field operator value"
 // rendering for anything else (device_audience/app_list/policy ids) rather
 // than trying to resolve every possible reference name here.
-function conditionLabel(c: { field: string; operator: string; value: any }): string {
+function conditionLabel(c: { field: string; operator: string; value: any; valueLabel?: string }): string {
   const def = complianceStore.fields.find((f) => f.key === c.field);
   const label = def?.label || c.field;
   const opLabel = OPERATOR_LABEL[c.operator] || c.operator;
+
+  // Geofencing conditions (field: "geofenceZoneId") carry the zone's raw
+  // GUID as `value` — the backend (evaluatePolicyForDevice, devices.service.ts)
+  // resolves that against the workspace's geofence zones and attaches the
+  // admin-assigned name as `valueLabel` when it can, so this shows "Office"
+  // instead of a UUID. Falls through to the generic renderer below (which
+  // would otherwise print the bare GUID) if resolution failed for any reason
+  // (e.g. the zone was since deleted).
+  if (c.valueLabel) return `${label} ${opLabel} "${c.valueLabel}"`;
 
   if (["exists", "missing"].includes(c.operator)) {
     const subName = c.value?.name || c.value?.key || c.value?.path;
