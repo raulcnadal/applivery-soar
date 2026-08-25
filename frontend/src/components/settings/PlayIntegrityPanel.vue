@@ -36,10 +36,8 @@ onMounted(async () => {
   enabled.value = store.status.configured ? store.status.enabled : true;
 });
 
-function looksLikeBase64(text: string): boolean {
-  if (!text) return false;
-  const stripped = text.replace(/\s+/g, "");
-  return stripped.length > 0 && stripped.length % 4 === 0 && /^[A-Za-z0-9+/]+=*$/.test(stripped);
+function stripBom(text: string): string {
+  return text.length > 0 && text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -49,28 +47,96 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Google hands out these keys two different ways depending on how the file
- * was generated/downloaded: sometimes the file's content IS already a
- * base64 string (saved to disk with a `.enc`/custom extension), sometimes
- * the file is the raw key bytes themselves. Handle both without asking the
- * admin to know or care which: if the file's text content decodes cleanly
- * as base64, use that text verbatim (it's already what the backend wants);
- * otherwise the file's raw bytes ARE the key material, so base64-encode
- * them ourselves.
+ * Decodes `text` as either standard base64 (`+`/`/`, optional `=` padding)
+ * or base64url (`-`/`_`, padding usually omitted — the encoding Google's
+ * own ecosystem, including the Play Integrity token itself, tends to use).
+ * Returns null rather than throwing when `text` isn't valid under this
+ * variant at all, so callers can try multiple variants and see which one
+ * (if any) actually decodes.
  */
-async function fileToBase64Key(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  const asText = new TextDecoder("utf-8", { fatal: false }).decode(bytes).trim();
-  if (looksLikeBase64(asText)) {
-    try {
-      atob(asText.replace(/\s+/g, ""));
-      return asText.replace(/\s+/g, "");
-    } catch {
-      // Not actually valid base64 despite looking like it — fall through.
-    }
+function decodeBase64Variant(text: string, urlSafe: boolean): Uint8Array | null {
+  let normalized = text.replace(/\s+/g, "");
+  if (!normalized) return null;
+  if (urlSafe) normalized = normalized.replace(/-/g, "+").replace(/_/g, "/");
+  while (normalized.length % 4 !== 0) normalized += "=";
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return null;
+  try {
+    const binary = atob(normalized);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
   }
-  return bytesToBase64(bytes);
+}
+
+/**
+ * Strips a PEM armor block ("-----BEGIN X-----\n...\n-----END X-----") down
+ * to just its base64 body, with internal line breaks removed — PEM's own
+ * dashes and header/footer text aren't valid base64 characters, so without
+ * this a PEM-formatted file would fail every base64 decode attempt and
+ * silently fall through to the raw-bytes path, which is wrong (the PEM
+ * armor text itself isn't the key material). Returns null when no PEM
+ * markers are present at all, so callers can tell "not PEM" apart from "PEM
+ * with an empty body".
+ */
+function extractPemBody(text: string): string | null {
+  const match = text.match(/-----BEGIN [^-]+-----([\s\S]*?)-----END [^-]+-----/);
+  if (!match) return null;
+  return match[1].replace(/\s+/g, "");
+}
+
+/**
+ * Google mixes standard base64, unpadded base64url, and (via gcloud/Cloud
+ * KMS-adjacent tooling) PEM-armored output fairly freely across its own
+ * products, and admins sometimes save a copy-pasted key into a file with an
+ * editor that prepends a UTF-8 BOM. An earlier version of this function
+ * guessed "does this look like base64" with a single fixed-charset check —
+ * that misdetected an unpadded base64url-encoded (or PEM-armored) key as
+ * raw binary and re-encoded it on top of itself, silently sending the
+ * backend something that decoded to a wrong, inflated byte count (reported
+ * as e.g. "got 256" instead of the correct 32).
+ *
+ * Instead of guessing, try every plausible decoding — PEM body (both base64
+ * variants), whole-file-text (both base64 variants), and the file's raw
+ * bytes as-is — and prefer whichever one actually produces the caller's
+ * known-correct byte length (`expectedByteLength` — 32 for an AES-256
+ * decryption key). When none of them match, fail loudly HERE with the
+ * actual candidate lengths rather than silently sending a guess for the
+ * backend to reject less specifically. When the caller has no single fixed
+ * length to check against (the verification key's DER encoding varies
+ * slightly by curve/encoding), falls back to "prefer a PEM body if present,
+ * then standard base64, then base64url, then raw bytes".
+ */
+async function fileToBase64Key(file: File, expectedByteLength?: number): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const rawBytes = new Uint8Array(buffer);
+  const asText = stripBom(new TextDecoder("utf-8", { fatal: false }).decode(rawBytes)).trim();
+
+  const pemBody = extractPemBody(asText);
+  const pemStandard = pemBody ? decodeBase64Variant(pemBody, false) : null;
+  const pemUrlSafe = pemBody ? decodeBase64Variant(pemBody, true) : null;
+  const standard = decodeBase64Variant(asText, false);
+  const urlSafe = decodeBase64Variant(asText, true);
+
+  // PEM-derived candidates take priority when present — if the file has PEM
+  // armor at all, the armor-wrapped body is virtually certainly the
+  // intended key material, not the raw file bytes (which would just be the
+  // armor text itself, ASCII-encoded).
+  const orderedCandidates = [pemStandard, pemUrlSafe, standard, urlSafe, rawBytes].filter(
+    (c): c is Uint8Array => c !== null,
+  );
+
+  if (expectedByteLength) {
+    const exact = orderedCandidates.find((c) => c.length === expectedByteLength);
+    if (exact) return bytesToBase64(exact);
+    const gotLengths = [...new Set(orderedCandidates.map((c) => c.length))].join(" or ");
+    throw new Error(
+      `This file doesn't decode to ${expectedByteLength} bytes under any recognized format (got ${gotLengths} byte(s) depending on interpretation) — re-download it from Play Console's App integrity > Response encryption section.`,
+    );
+  }
+
+  return bytesToBase64(orderedCandidates[0] ?? rawBytes);
 }
 
 async function onDecryptionKeyFileChosen(e: Event) {
@@ -78,10 +144,12 @@ async function onDecryptionKeyFileChosen(e: Event) {
   if (!file) return;
   fileError.value = null;
   try {
-    decryptionKeyBase64.value = await fileToBase64Key(file);
+    // AES-256 key wrap (A256KW) requires exactly a 256-bit (32-byte) key --
+    // a hard, documented constraint, unlike the verification key below.
+    decryptionKeyBase64.value = await fileToBase64Key(file, 32);
     decryptionKeyFileName.value = file.name;
-  } catch {
-    fileError.value = `Couldn't read "${file.name}" — try re-downloading it from Play Console.`;
+  } catch (error: any) {
+    fileError.value = error?.message || `Couldn't read "${file.name}" — try re-downloading it from Play Console.`;
   }
 }
 
@@ -92,8 +160,8 @@ async function onVerificationKeyFileChosen(e: Event) {
   try {
     verificationKeyBase64.value = await fileToBase64Key(file);
     verificationKeyFileName.value = file.name;
-  } catch {
-    fileError.value = `Couldn't read "${file.name}" — try re-downloading it from Play Console.`;
+  } catch (error: any) {
+    fileError.value = error?.message || `Couldn't read "${file.name}" — try re-downloading it from Play Console.`;
   }
 }
 
