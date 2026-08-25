@@ -10,7 +10,7 @@ Each policy is a card showing: name, description, a condition summary ("N condit
 
 The list is scoped by whatever [Segment](devices.md) is selected in the left panel.
 
-**Evaluate now** (top right) runs every enabled policy immediately, ignoring each policy's own schedule, and shows a summary: devices checked, new violations, auto-fired count, queued-for-review count, recovered count, and anything blocked by a safety limit.
+**Evaluate now** (top right) runs every enabled policy immediately, ignoring each policy's own schedule, and shows a summary: devices checked, new violations, auto-fired count, queued-for-review count, recovered count, and anything blocked by a safety limit. The native desktop agent's tray/menu and the SOAR Mobile Agent's Diagnostics screen each have their own **Force evaluate compliance** button that triggers this exact same fleet-wide pass (not just the device it was pressed from) — so don't be surprised to see an evaluation you didn't personally click; it shares a 60-second per-workspace cooldown with those.
 
 Turning a policy's **Enabled** toggle on triggers an immediate background check of just that policy.
 
@@ -56,9 +56,9 @@ Each condition is Field → Operator → Value. Choose **Match ANY condition** (
 | Device Audience membership | includes/excludes |
 | Smart Attribute | equals/not equals/contains/greater/less/exists/missing, by attribute name |
 | Custom device field (advanced) | free-text dot-path into the full device record, e.g. `nativeSecurity.isEncrypted` — used for things like Android disk-encryption/screen-lock checks where there's no dedicated field |
-| Self-Reported Attribute (agent) | from the optional self-report script — e.g. `diskEncryptionEnabled`, `screenLockEnabled`, `antivirusEnabled`. Needs [Settings → Device Data Webhook](settings.md#device-data-webhook) set up and the matching script deployed |
+| Self-Reported Attribute (agent) | from the optional self-report script, the native desktop agent, or the SOAR Mobile Agent — e.g. `diskEncryptionEnabled`/`screenLockEnabled`/`antivirusEnabled` (Windows/macOS), or `devicePasscodeSet`/`securityProviderUpToDate`/`keystoreAttestationSecurityLevel`/`playIntegrityVerdict`/`playIntegrityAppRecognized`/`deviceRootedOrJailbroken`/`deviceDebuggerAttached`/`deviceHookingFrameworkDetected`/`androidPlatformFamily` (iOS/Android). The 9 mobile attributes are pre-populated in the name picker with a friendly label and, where applicable, a Yes/No or fixed-options value editor — even for a workspace no mobile device has reported to yet — rather than requiring you to already know the exact attribute name. Needs [Settings → Device Data Webhook](settings.md#device-data-webhook) set up and the matching script/agent deployed |
 | Days since last self-report / Has ever self-reported | |
-| Custom Device Check result | pick one of the checks defined in [Settings → Custom Device Checks](settings.md#custom-device-checks) — any admin-defined process/service/registry-or-plist/app-version/command check the native agent runs locally on each device. Windows-authored checks only ever appear as options on a Windows-scoped policy, and macOS-authored checks only on a macOS-scoped one |
+| Custom Device Check result | pick one of the checks defined in [Settings → Custom Device Checks](settings.md#custom-device-checks) — any admin-defined process/service/registry-or-plist/app-version/command check the native desktop agent runs locally on each device. Windows-authored checks only ever appear as options on a Windows-scoped policy, and macOS-authored checks only on a macOS-scoped one. **Not available for iOS/Android** — the SOAR Mobile Agent doesn't implement custom checks; use App Lists (below) for mobile installed-app requirements instead |
 | **Missing a required app** (App List) | pick an existing App List — only matches devices on that list's platform |
 | **Has a disallowed app** (App List) | same, inverse |
 | Device Risk Score / Risk Tier | |
@@ -68,7 +68,7 @@ Each condition is Field → Operator → Value. Choose **Match ANY condition** (
 | Pending Apple app updates | |
 | Critical/high CVEs — Vulnerability Service / known-exploited CVE present / checked against Vulnerability Service | needs [Settings → Vulnerability Service](settings.md#vulnerability-service) enabled and configured |
 
-There is no dedicated "jailbreak/root" or "disk encryption" field type for every platform — those are built from **Custom device field** (Android) and **Self-Reported Attribute** (Windows/macOS agent) instead; iOS has no disk-encryption signal at all (Apple ties it to passcode enforcement).
+There is no separate dedicated field *type* for "jailbreak/root" or "disk encryption" — every platform's version is built from **Custom device field** (Android's live Android Management API posture) or **Self-Reported Attribute** instead. For iOS/Android specifically, the SOAR Mobile Agent self-reports `deviceRootedOrJailbroken` (root/jailbreak detection), `deviceDebuggerAttached` and `deviceHookingFrameworkDetected` (its in-house RASP layer — a live debugger or a Frida/Xposed-style hooking framework), and, on iOS, `devicePasscodeSet` doubles as the disk-encryption signal (Apple ties Data Protection encryption to passcode enforcement, so there's no separate toggle to query). Android additionally gets a Google Play Integrity verdict (`playIntegrityVerdict`/`playIntegrityAppRecognized`, once [configured in Settings](settings.md#google-play-integrity-api)) as a second, independent tamper signal alongside the agent's own root detection.
 
 **Then run** — pick the primary Workflow (required to save).
 
@@ -116,8 +116,9 @@ Each list shows its app count and which Compliance Policies currently reference 
 
 - **[OS Updates](settings.md#os-updates)** — powers the pending-update conditions; needs at least one catalog refresh to have happened.
 - **[Vulnerability Service](settings.md#vulnerability-service)** — opt-in, needs an API token configured before its conditions produce real data.
-- **[Device Data Webhook](settings.md#device-data-webhook)** — required for Self-Reported Attribute conditions (disk encryption, screen lock, antivirus on Windows/macOS).
-- **[Custom Device Checks](settings.md#custom-device-checks)** — required for Custom Device Check result conditions; a check must exist (and be enabled) before it shows up as a pickable condition.
+- **[Device Data Webhook](settings.md#device-data-webhook)** — required for Self-Reported Attribute conditions (disk encryption, screen lock, antivirus on Windows/macOS; passcode, security provider, KeyStore attestation, root/jailbreak, and RASP signals on iOS/Android via the [SOAR Mobile Agent](settings.md#applivery-soar-mobile-agent)).
+- **[Google Play Integrity API](settings.md#google-play-integrity-api)** — required for the two Play Integrity conditions on Android; without it, `playIntegrityVerdict`/`playIntegrityAppRecognized` are never reported and those conditions simply never match.
+- **[Custom Device Checks](settings.md#custom-device-checks)** — required for Custom Device Check result conditions (Windows/macOS only); a check must exist (and be enabled) before it shows up as a pickable condition.
 - **App List inventory** — populated either via the self-report script or the paced background Applivery-API refresher; a brand-new App List condition won't match anything until coverage catches up.
 - **[Roles](settings.md#roles)** — `canBulkTriage` gates bulk approve/dismiss on the violations queue; `canDeletePolicyOrWorkflow` gates policy deletion.
 

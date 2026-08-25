@@ -56,7 +56,7 @@ No permission gate — any signed-in admin can set the automation credential to 
 
 ## Device Data Webhook
 
-The receiving end of every piece of data a Windows or macOS device pushes to SOAR itself, rather than SOAR pulling it from Applivery's own MDM API. Devices are matched by serial number. Once reported, this data becomes usable as **Self-Reported Attribute** and **Custom Device Check result** conditions in [Compliance Policies](compliance.md#conditions--the-full-field-catalog), and as App List inventory.
+The receiving end of every piece of data a Windows, macOS, iOS, or Android device pushes to SOAR itself, rather than SOAR pulling it from Applivery's own MDM API. Devices are matched by serial number. Once reported, this data becomes usable as **Self-Reported Attribute** conditions (and, on Windows/macOS, **Custom Device Check result** conditions) in [Compliance Policies](compliance.md#conditions--the-full-field-catalog), and as App List inventory.
 
 - Shows the webhook URL (`POST {your-url}/api/device-data/report`) with the exact headers and an example JSON body, once a secret exists.
 - **Generate webhook secret** / **Rotate secret** (confirm-gated — rotating immediately breaks anything still using the old secret, including the native agent below) / **Remove** (confirm-gated).
@@ -69,6 +69,24 @@ The primary, recommended way to get data flowing: a small native background serv
 - **Publish to Applivery** (per variant, requires `canEditIntegrationSecrets`) — uploads that variant's binary into your Applivery organization as a real asset-backed application, using your own live Applivery session. Once published, assign it to a Policy in Applivery the same way you'd deploy any other managed app. Re-clicking for the exact same build (the agent repo's CI hasn't pushed a newer one) is a safe no-op — Settings shows an info notice instead of creating a duplicate asset; publishing a genuinely new version updates the existing Applivery application in place. Windows x64 and Windows ARM64 are independent — publishing one doesn't touch the other.
 - **Managed Configuration** — the agent takes no secret at build time; deploy it with a config snippet (ready-made `.reg` for Windows, `.json` for macOS, both pre-filled with your URL/workspace/webhook secret) pushed via your UEM's Custom Configuration mechanism, or installed by hand. See each agent repo's own README for the full field reference: [Windows agent](https://github.com/raulcnadal/applivery-soar-agent-windows), [macOS agent](https://github.com/raulcnadal/applivery-soar-agent-macos) (both private repos — request access from whoever administers this deployment).
 - **Advanced: download via GitHub token (optional)** — collapsed by default. An older path that proxies the two agent repos' own private GitHub Releases directly, for anyone who'd rather not rely on this app's own build mirror or already has a token configured. Requires a repo-read-scoped GitHub Personal Access Token, configured once here.
+
+### Applivery SOAR Mobile Agent
+
+The iOS/Android counterpart to the desktop agent above — reports device passcode/encryption status, Android's SSL/TLS security-provider currency and hardware-backed key-storage attestation, a Google Play Integrity verdict (once [configured below](#google-play-integrity-api)), and an in-house runtime self-protection layer (root/jailbreak, an attached debugger, or a Frida/Xposed-style hooking framework) — the same [Device Data Webhook](#device-data-webhook) every other agent reports through, no separate endpoint. Distributed and configured the same zero-friction way as the desktop agent (download here, no GitHub token needed, deploy via Applivery App Distribution + Managed App Configuration for the workspace URL/serial-interpolation/webhook values), authenticating via a per-device mTLS client certificate it silently self-enrolls for on first launch.
+
+The app's own Diagnostics screen (long-press the header logo) carries **Force evaluate compliance** and **Force report to SOAR** buttons — the same two on-demand actions the desktop agent's tray/menu already has. "Force evaluate" re-checks every enabled Compliance Policy against the whole workspace fleet right now, not just that one phone; "Force report" just runs that device's own normal telemetry push immediately instead of waiting for its scheduled interval.
+
+Custom Device Checks (below) are **not** available for iOS/Android — see that section's note. Installed-app inventory for mobile comes from Apple/Android MDM's own data via [App Lists](compliance.md#app-lists-sub-view) instead.
+
+### Google Play Integrity API
+
+Lets the Android build of the SOAR Mobile Agent request a Play Integrity Classic API token confirming the app hasn't been tampered with and the device isn't rooted or otherwise compromised — decrypted and verified entirely on this server (offline decryption), never trusting anything the device itself claims. Each workspace configures its own Play Console listing:
+
+1. Generate an RSA-2048 key pair locally: `openssl genrsa -aes128 -out private.pem 2048` then `openssl rsa -in private.pem -pubout > public.pem`.
+2. In Play Console (**App integrity → Response encryption → Manage and download my response encryption keys**), upload `public.pem` and download the encrypted response file it gives back (commonly named something like `api_keys.enc`).
+3. Here in Settings, enter your **Cloud Project Number** (the numeric GCP project number, not the alphanumeric Project ID) and upload both `private.pem` and that encrypted file — this server performs the same decryption Google's own documented `openssl pkeyutl -decrypt` command would, and extracts the real keys automatically.
+
+Your private key and its passphrase are used once for that one decryption and are **never stored** — only the resulting decryption/verification keys are saved (encrypted at rest, see the [security architecture guide](../EXECUTIVE_GUIDE.md#54-secrets-management)). Re-upload both files any time you save, even if you're only changing the Cloud Project Number or the Enabled toggle. An **Enabled** toggle and **Remove** (confirm-gated — Android devices stop reporting an integrity verdict and related Compliance Policy conditions go permanently unmatched until reconfigured) round out the panel.
 
 ### App Inventory Reporting / Security Attestation Reporting
 
@@ -96,6 +114,8 @@ Each check has:
 - **Enabled** toggle — disabled checks aren't sent to agents and aren't evaluated.
 
 Checks are polled fresh by every agent once per report cycle (`GET /api/device-data/custom-checks?platform=...`), so creating or editing one takes effect on a device's very next report — no agent restart or redeploy needed. A check that fails to *run* (service not found, registry key missing, command timeout) reports as an error, which Compliance Policies treat the same as "no data yet" — a legitimately negative result (e.g. a process simply not running) is a normal value, not an error.
+
+**iOS/Android aren't offered as a Platform here.** The SOAR Mobile Agent never implements or reports any custom check — there's no local probe and nothing is ever sent for it — so an "App installed" mobile check would have looked configured while never actually matching anything. Use [App Lists](compliance.md#app-lists-sub-view) instead for mobile installed-app requirements; it's backed by real Apple/Android MDM data.
 
 No permission gate beyond the general Settings `read`/`manage` levels.
 
@@ -249,8 +269,9 @@ Quick reference for which Settings section unblocks which feature elsewhere:
 | Feature | Depends on |
 |---|---|
 | [Compliance](compliance.md) Vulnerability Service conditions | Vulnerability Service |
-| [Compliance](compliance.md) Self-Reported Attribute conditions | Device Data Webhook + a deployed self-report script or the native agent |
-| [Compliance](compliance.md) Custom Device Check result conditions | Custom Device Checks + the native agent deployed |
+| [Compliance](compliance.md) Self-Reported Attribute conditions | Device Data Webhook + a deployed self-report script, native desktop agent, or SOAR Mobile Agent |
+| [Compliance](compliance.md) Custom Device Check result conditions | Custom Device Checks + the native desktop agent deployed (not available for iOS/Android) |
+| [Compliance](compliance.md) Play Integrity verdict/app-recognized conditions | Google Play Integrity API configured + the SOAR Mobile Agent deployed on Android |
 | [Compliance](compliance.md) App List conditions | App List inventory sync (Device Data Webhook script/agent, or the paced background refresher) |
 | [Devices](devices.md) Vulnerability Service badge/section | Vulnerability Service |
 | [Devices](devices.md) Firewall Rule Sets section | A [Firewall Policy Library](workflows.md#firewall-policy-library) rule set actually applied via a workflow |
