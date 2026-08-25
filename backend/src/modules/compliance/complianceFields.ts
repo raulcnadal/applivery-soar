@@ -386,6 +386,41 @@ function appleAppUpdatesCondition(): TemplateCondition[] {
   return [{ field: "appleAppUpdatesPending", operator: "greaterThan", value: 0 }];
 }
 
+// Self-reported by the SOAR Mobile Agent's Android device-security-telemetry
+// channel (DeviceSecurityTelemetryPlugin.kt) -- distinct from
+// androidConfigPostureCondition below, which reads Android Management API's
+// own nativeSecurity block (a customField, populated for every Android
+// device regardless of whether the SOAR Mobile Agent is even installed).
+// These two are only populated once the agent itself has reported at least
+// once, same caveat every other selfReportedAttribute-based Android/Windows/
+// macOS template already carries.
+
+function androidSecurityProviderCondition(): TemplateCondition[] {
+  // ProviderInstaller.installIfNeeded() -- Android's equivalent of "TLS
+  // library/cipher suite currency", the same class of concern
+  // antivirusUpToDate covers for Windows Defender's signature definitions,
+  // just for the platform's SSL/TLS provider itself rather than a malware
+  // scanner.
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "securityProviderUpToDate", compareValue: "false" } }];
+}
+
+function androidKeystoreAttestationCondition(): TemplateCondition[] {
+  // KeyInfo.getSecurityLevel() on a freshly-generated AndroidKeyStore key --
+  // "Software" is a confirmed absence of hardware-backed key protection
+  // (no StrongBox, no TEE); "Unavailable" means the probe itself couldn't
+  // run (old API level, broken keystore) -- both collapse into one
+  // violation the same way every other boolean/enum telemetry signal in
+  // this app treats "confirmed bad" and "couldn't confirm good" as
+  // equally worth surfacing (see IntegrityCheckResult's precedent, mobile
+  // repo). The Android analogue of Windows' TPM/Secure Boot hardware
+  // root-of-trust template, phrased as an observed level rather than a
+  // simple on/off toggle since AndroidKeyStore always exists in some form.
+  return [
+    { field: "selfReportedAttribute", operator: "equals", value: { name: "keystoreAttestationSecurityLevel", compareValue: "Software" } },
+    { field: "selfReportedAttribute", operator: "equals", value: { name: "keystoreAttestationSecurityLevel", compareValue: "Unavailable" } },
+  ];
+}
+
 function androidConfigPostureCondition(): TemplateCondition[] {
   // Android Management API's own device-posture + policy-compliance signal
   // plus the two classic mobile attack-surface toggles (USB debugging,
@@ -539,6 +574,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: androidConfigPostureCondition(),
   },
   {
+    id: "iso27001-security-provider-android", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "android",
+    title: "SSL/TLS security provider not up to date", severity: "medium", conditionLogic: "any",
+    description: "Flags Android devices the SOAR Mobile Agent reports as failing ProviderInstaller.installIfNeeded() -- the device's SSL/TLS implementation may be vulnerable to known exploits until Google Play services patches it.",
+    conditions: androidSecurityProviderCondition(),
+  },
+  {
+    id: "iso27001-keystore-attestation-android", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "android",
+    title: "No hardware-backed key storage confirmed", severity: "medium", conditionLogic: "any",
+    description: "Flags Android devices where the SOAR Mobile Agent's KeyStore attestation probe found no StrongBox/TEE-backed key protection (or couldn't determine one) -- the Android analogue of ISO27001's Windows TPM/Secure Boot check above.",
+    conditions: androidKeystoreAttestationCondition(),
+  },
+  {
     id: "iso27001-stale-inventory", framework: "iso27001", controlRef: "Annex A.5.9", targetPlatform: null,
     title: "Device hasn't checked in recently", severity: "low", conditionLogic: "any",
     description: "Flags devices that haven't checked in for over 30 days — a stale inventory undermines every other endpoint control, regardless of platform.",
@@ -690,6 +737,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     description: "mp.eq (protección de equipos, aplicada de forma genérica — no hay un sub-código ENS dedicado a la postura de dispositivos Android): flags devices AT_RISK/POTENTIALLY_COMPROMISED, not policy-compliant, with USB debugging on, or sideloading allowed.",
     conditions: androidConfigPostureCondition(),
   },
+  {
+    id: "ens-security-provider-android", framework: "ens", controlRef: "op.exp.4", targetPlatform: "android",
+    title: "Proveedor de seguridad SSL/TLS desactualizado / SSL/TLS security provider outdated", severity: "medium", conditionLogic: "any",
+    description: "op.exp.4 (mantenimiento): flags Android devices the SOAR Mobile Agent reports as failing the Google Play services security-provider update check.",
+    conditions: androidSecurityProviderCondition(),
+  },
+  {
+    id: "ens-keystore-attestation-android", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "android",
+    title: "Almacén de claves sin respaldo hardware / No hardware-backed key storage confirmed", severity: "medium", conditionLogic: "any",
+    description: "mp.eq.3: flags Android devices where the SOAR Mobile Agent found no StrongBox/TEE-backed AndroidKeyStore protection.",
+    conditions: androidKeystoreAttestationCondition(),
+  },
 
   // ── NIS2 Directive (EU 2022/2555), Article 21(2) ──
   {
@@ -721,6 +780,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     title: "Cryptography: TPM / Secure Boot not enabled", severity: "high", conditionLogic: "any",
     description: "Windows-specific hardware root of trust backing full-disk encryption — no macOS/Android/iOS equivalent exists in this app.",
     conditions: windowsHardwareRootOfTrustCondition(),
+  },
+  {
+    id: "nis2-security-provider-android", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "android",
+    title: "Cryptography: SSL/TLS security provider outdated", severity: "medium", conditionLogic: "any",
+    description: "Flags Android devices the SOAR Mobile Agent reports as failing the Google Play services SSL/TLS security-provider update check.",
+    conditions: androidSecurityProviderCondition(),
+  },
+  {
+    id: "nis2-keystore-attestation-android", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "android",
+    title: "Cryptography: no hardware-backed key storage confirmed", severity: "medium", conditionLogic: "any",
+    description: "Android's hardware root-of-trust analogue to the Windows TPM/Secure Boot check above — flags devices with no confirmed StrongBox/TEE-backed AndroidKeyStore protection.",
+    conditions: androidKeystoreAttestationCondition(),
   },
   {
     id: "nis2-hygiene-screenlock-windows", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "windows",
