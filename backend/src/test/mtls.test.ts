@@ -195,7 +195,7 @@ describe("assertMtlsIdentity — header/secret/revocation chain", () => {
 
   it("returns the verified serial number when everything checks out", async () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
-    vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => ({ id: "cert-1" })) }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => ({ id: "cert-1" })), touchCertificateLastSeen: vi.fn() }));
     const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
     const req = fakeReq({
       "X-Internal-Proxy-Secret": "the-real-secret",
@@ -210,6 +210,7 @@ describe("assertMtlsIdentity — header/secret/revocation chain", () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
     vi.doMock("../modules/mtls/certificates.service", () => ({
       findActiveCertificate: vi.fn(async (_workspaceSlug: string, cn: string) => (cn === "DEVICE-1" ? { id: "cert-1" } : null)),
+      touchCertificateLastSeen: vi.fn(),
     }));
     const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
     const req = fakeReq({
@@ -225,6 +226,7 @@ describe("assertMtlsIdentity — header/secret/revocation chain", () => {
     process.env.MTLS_INTERNAL_PROXY_SECRET = "the-real-secret";
     vi.doMock("../modules/mtls/certificates.service", () => ({
       findActiveCertificate: vi.fn(async (_workspaceSlug: string, cn: string) => (cn === "DEVICE-1" ? { id: "cert-1" } : null)),
+      touchCertificateLastSeen: vi.fn(),
     }));
     const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
     const req = fakeReq({
@@ -241,7 +243,7 @@ describe("assertMtlsIdentity — header/secret/revocation chain", () => {
     process.env.MTLS_HEADER_CERT_VERIFIED = "X-Custom-Verified";
     process.env.MTLS_HEADER_CERT_CN = "X-Custom-CN";
     process.env.MTLS_HEADER_PROXY_SECRET = "X-Custom-Proxy-Secret";
-    vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => ({ id: "cert-1" })) }));
+    vi.doMock("../modules/mtls/certificates.service", () => ({ findActiveCertificate: vi.fn(async () => ({ id: "cert-1" })), touchCertificateLastSeen: vi.fn() }));
     const { assertMtlsIdentity } = await import("../middleware/mtlsIdentity.middleware");
     const req = fakeReq({
       "X-Custom-Proxy-Secret": "the-real-secret",
