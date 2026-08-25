@@ -198,7 +198,7 @@ export async function reportDeviceData(workspaceSlug: string, payload: DeviceRep
   // credential-missing evaluation delay or fail this webhook's own
   // response to the reporting agent.
   const { triggerEventDrivenReEvaluation } = await import("../compliance/compliance.service");
-  triggerEventDrivenReEvaluation(workspaceSlug, `self-reported attribute update from "${deviceName}"`);
+  triggerEventDrivenReEvaluation(workspaceSlug, `self-reported attribute update from "${deviceName}"`, payload.serialNumber);
 
   return { status: "ok", serialNumber: payload.serialNumber, attributesStored: Object.keys(normalized).length };
 }

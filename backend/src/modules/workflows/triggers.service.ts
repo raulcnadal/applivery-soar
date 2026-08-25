@@ -233,7 +233,7 @@ export async function fireTrigger(triggerId: string, secret: string, body: Recor
   // why this is a dynamic import (breaks a compliance <-> workflows cycle).
   if (matchedDevice) {
     const { triggerEventDrivenReEvaluation } = await import("../compliance/compliance.service");
-    triggerEventDrivenReEvaluation(slugKey, `inbound trigger "${trigger.name}" fired`);
+    triggerEventDrivenReEvaluation(slugKey, `inbound trigger "${trigger.name}" fired`, matchedDevice.serialNumber);
   }
 
   return { status: "ok", workflowRunId: runRecord.id, caseId, matchedDevice: matchedDevice?.displayName ?? null };
@@ -315,7 +315,7 @@ export async function resolveTrigger(triggerId: string, secret: string, body: Re
   // standpoint: the device shouldn't sit falsely out of compliance any
   // longer than a fresh violation should sit undetected.
   const { triggerEventDrivenReEvaluation } = await import("../compliance/compliance.service");
-  triggerEventDrivenReEvaluation(slugKey, `inbound trigger "${trigger.name}" resolved`);
+  triggerEventDrivenReEvaluation(slugKey, `inbound trigger "${trigger.name}" resolved`, matchedDevice.serialNumber);
 
   return { status: "ok", matchedDevice: matchedDevice.displayName };
 }

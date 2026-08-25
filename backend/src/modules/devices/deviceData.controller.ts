@@ -81,21 +81,30 @@ deviceDataRouter.get(
  * erroring when compliance can't be computed yet.
  */
 /**
- * "Force evaluate compliance" — the SOAR Agent tray/menu action that lets an
- * end user (or the admin sitting at that machine) trigger a real compliance
- * pass right now instead of waiting for the 60s scheduler tick
- * (complianceJobs.ts) to notice a due policy. Same device-caller auth as
- * every other route in this file; the actual evaluation runs against the
- * workspace's Automation Credential, not anything device-supplied — see
- * forceEvaluateNow's own doc comment (compliance.service.ts) for the
- * cooldown/credential-missing behavior.
+ * "Force evaluate compliance" — the SOAR Agent tray/menu (Windows/macOS) and
+ * Diagnostics-screen (mobile) action that lets an end user (or the admin
+ * sitting at that machine) trigger a real compliance pass right now instead
+ * of waiting for the 60s scheduler tick (complianceJobs.ts) to notice a due
+ * policy. Same device-caller auth as every other route in this file; the
+ * actual evaluation runs against the workspace's Automation Credential, not
+ * anything device-supplied — see forceEvaluateNow's own doc comment
+ * (compliance.service.ts) for the cooldown/credential-missing behavior.
+ *
+ * `?serialNumber=` (optional) scopes the pass to just that one device — see
+ * runComplianceEvaluation's `onlyDeviceSerial` doc comment for exactly what
+ * that does and doesn't change. Trusted the same way `POST
+ * /api/device-data/report`'s own body `serialNumber` already is (no
+ * additional verification against the calling device's mTLS cert CN); an
+ * omitted value keeps the original fleet-wide behavior, so an older agent
+ * build that doesn't send this yet keeps working exactly as before.
  */
 deviceDataRouter.post(
   "/api/device-data/evaluate-now",
   asyncHandler(async (req, res) => {
     const workspaceSlug = workspaceOf(req);
     await verifyDeviceIdentity(req, workspaceSlug);
-    res.json(await forceEvaluateNow(workspaceSlug));
+    const serialNumber = typeof req.query.serialNumber === "string" && req.query.serialNumber.trim() ? req.query.serialNumber.trim() : null;
+    res.json(await forceEvaluateNow(workspaceSlug, serialNumber));
   }),
 );
 

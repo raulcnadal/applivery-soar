@@ -537,12 +537,31 @@ async function firePolicyViolationAlert(
  * Shared by the manual "Evaluate now" endpoint (policyIds=null -> every
  * enabled policy) and, once built, the scheduler loop. Port of
  * `_run_compliance_evaluation` (main.py:11025).
+ *
+ * `onlyDeviceSerial` — device-scoped evaluation, added alongside the
+ * Windows/macOS/mobile agents' own "Force evaluate compliance" action and
+ * the event-driven attribute-change trigger (forceEvaluateNow's own doc
+ * comment below). When set, every policy in this pass is still resolved and
+ * "evaluated" (autoRun-circuit-breaker checks, alert-cap bookkeeping) but
+ * `devices` is narrowed to just the one matching serial before the
+ * per-policy device loop runs — so a device forcing its own re-check can
+ * only ever create/clear a violation, fire a workflow, send an alert, or
+ * apply/remove a tag for ITSELF, never as a side effect for any other
+ * device in the workspace. This does NOT reduce the Applivery API cost of
+ * this pass — `getDevicesFull(refresh=true)` below still pulls the whole
+ * fleet either way, since there's no single-device fetch path against
+ * Applivery's own device-list API anywhere in this app; the narrowing here
+ * is purely about which devices this pass is allowed to ACT on, not what it
+ * fetches. `null`/omitted means the original fleet-wide behavior — the
+ * web UI's "Evaluate now" button and the 60s scheduler tick both still call
+ * this with no serial, evaluating (and potentially acting on) every device.
  */
 export async function runComplianceEvaluation(
   authorization: string,
   workspaceSlug: string,
   policyIds: string[] | null = null,
   actor: string | null = null,
+  onlyDeviceSerial: string | null = null,
 ): Promise<EvaluationSummary> {
   const allPolicies = await prisma.compliancePolicy.findMany({ where: { workspaceSlug } });
   const policies = allPolicies.filter((p) => p.enabled && (policyIds === null || policyIds.includes(p.id)));
@@ -554,7 +573,9 @@ export async function runComplianceEvaluation(
   // firings and Device Audience membership needs to be current, unlike most
   // other callers of getDevicesFull which tolerate the 15-min live cache.
   const devicesResp = await getDevicesFull(authorization, workspaceSlug, true);
-  const devices: NormalizedDevice[] = devicesResp.items;
+  const devices: NormalizedDevice[] = onlyDeviceSerial
+    ? devicesResp.items.filter((d) => d.serialNumber === onlyDeviceSerial)
+    : devicesResp.items;
 
   // Attach installed-app inventories, but only for devices actually scoped
   // by a policy with a requiredAppList/disallowedAppList condition — a pure
@@ -906,38 +927,79 @@ export async function runComplianceEvaluation(
     invalidateDevicesCache(workspaceSlug);
   }
 
-  // Stamp lastEvaluatedAt on every policy actually evaluated this pass.
-  await prisma.compliancePolicy.updateMany({ where: { id: { in: policies.map((p) => p.id) } }, data: { lastEvaluatedAt: new Date(nowIso) } });
+  // Stamp lastEvaluatedAt on every policy actually evaluated this pass —
+  // but only for a real fleet-wide pass. A device-scoped call (above) only
+  // ever checked one device's standing, not the policy's overall fleet
+  // compliance, so stamping this here would misrepresent "when was this
+  // policy last fully evaluated" to the scheduler and to the Policies list
+  // UI — the next scheduled tick still needs to run on its own normal
+  // cadence regardless of how many single-device spot-checks happened
+  // in between.
+  if (!onlyDeviceSerial) {
+    await prisma.compliancePolicy.updateMany({ where: { id: { in: policies.map((p) => p.id) } }, data: { lastEvaluatedAt: new Date(nowIso) } });
+  }
 
   return summary;
 }
 
-// Per-workspace cooldown for forceEvaluateNow below — in-memory only (a
-// restart just resets it, same tradeoff as liveCache.ts), purely to stop one
-// misbehaving/misconfigured device from hammering a full fleet evaluation on
-// every tray click or a tight retry loop. Admins triggering "Evaluate now"
-// from the web UI (POST /api/compliance/evaluate) are NOT subject to this —
-// that's a logged-in human action, this is specifically the unattended
-// device-agent path.
+// Cooldowns for forceEvaluateNow below — in-memory only (a restart just
+// resets them, same tradeoff as liveCache.ts). Two independent maps/windows:
+//
+// - `lastForcedEvaluationAt` (per WORKSPACE, unchanged) still gates any
+//   fleet-wide call — the event-driven "audience/scope change" trigger with
+//   no specific device in mind, and any future fleet-wide device-agent
+//   caller — purely to stop one misbehaving/misconfigured device from
+//   hammering a full fleet evaluation on every tray click or a tight retry
+//   loop.
+// - `lastForcedDeviceEvaluationAt` (per WORKSPACE+SERIAL) gates a
+//   device-scoped call instead — a much cheaper, narrower operation (it can
+//   only ever act on the one calling device, see runComplianceEvaluation's
+//   `onlyDeviceSerial` doc comment above), so it gets its own, shorter
+//   cooldown and — critically — doesn't collide with every OTHER device in
+//   the same workspace also tapping "Force evaluate" around the same time.
+// Admins triggering "Evaluate now" from the web UI (POST /api/compliance/evaluate)
+// are NOT subject to either — that's a logged-in human action, these are
+// specifically the unattended device-agent path.
 const lastForcedEvaluationAt = new Map<string, number>();
 const FORCED_EVALUATION_COOLDOWN_MS = 60_000;
+const lastForcedDeviceEvaluationAt = new Map<string, number>();
+const FORCED_DEVICE_EVALUATION_COOLDOWN_MS = 15_000;
 
 /**
  * The device-agent equivalent of the web UI's "Evaluate now" button
  * (POST /api/compliance/evaluate, which runs with the calling admin's own
  * live session) — called from a new device-secret-gated endpoint
  * (deviceData.controller.ts's POST /api/device-data/evaluate-now) so the
- * Windows/macOS SOAR Agent tray/menu can offer a "Force evaluate compliance"
- * action without needing an admin bearer of its own. Reuses the workspace's
+ * Windows/macOS/mobile SOAR Agents' "Force evaluate compliance" action can
+ * work without needing an admin bearer of its own. Reuses the workspace's
  * stored Automation Credential (automationCredential.service.ts) — the same
  * unattended-bearer source the 60s scheduler (complianceJobs.ts) already
  * relies on — rather than inventing a second credential concept.
+ *
+ * `onlyDeviceSerial` — see runComplianceEvaluation's own doc comment for the
+ * full rationale; passed straight through. Trusted the same way the device
+ * self-report endpoint already trusts a client-supplied `serialNumber` in
+ * its body (deviceData.schemas.ts) — this isn't a new, weaker trust
+ * boundary than what already exists for that call, under either the legacy
+ * shared-secret auth mode (which carries no other way to know which
+ * specific device is calling) or mTLS (where the caller must already hold
+ * some valid device certificate for this workspace either way).
  */
-export async function forceEvaluateNow(workspaceSlug: string): Promise<EvaluationSummary> {
-  const last = lastForcedEvaluationAt.get(workspaceSlug) ?? 0;
+export async function forceEvaluateNow(workspaceSlug: string, onlyDeviceSerial: string | null = null): Promise<EvaluationSummary> {
   const now = Date.now();
-  if (now - last < FORCED_EVALUATION_COOLDOWN_MS) {
-    throw new HttpError(429, "A compliance evaluation was already triggered for this workspace in the last minute — please wait a moment before trying again.");
+  if (onlyDeviceSerial) {
+    const cooldownKey = `${workspaceSlug}:${onlyDeviceSerial}`;
+    const last = lastForcedDeviceEvaluationAt.get(cooldownKey) ?? 0;
+    if (now - last < FORCED_DEVICE_EVALUATION_COOLDOWN_MS) {
+      throw new HttpError(429, "A compliance evaluation was already triggered for this device in the last 15 seconds — please wait a moment before trying again.");
+    }
+    lastForcedDeviceEvaluationAt.set(cooldownKey, now);
+  } else {
+    const last = lastForcedEvaluationAt.get(workspaceSlug) ?? 0;
+    if (now - last < FORCED_EVALUATION_COOLDOWN_MS) {
+      throw new HttpError(429, "A compliance evaluation was already triggered for this workspace in the last minute — please wait a moment before trying again.");
+    }
+    lastForcedEvaluationAt.set(workspaceSlug, now);
   }
   const bearer = await getAutomationBearer(workspaceSlug);
   if (!bearer) {
@@ -946,8 +1008,7 @@ export async function forceEvaluateNow(workspaceSlug: string): Promise<Evaluatio
       "No Automation Credential is configured for this workspace (Settings > Workspace Automation) — the SOAR Agent can't trigger an unattended compliance evaluation without one.",
     );
   }
-  lastForcedEvaluationAt.set(workspaceSlug, now);
-  return runComplianceEvaluation(bearer, workspaceSlug, null, "device-agent");
+  return runComplianceEvaluation(bearer, workspaceSlug, null, "device-agent", onlyDeviceSerial);
 }
 
 /**
@@ -966,9 +1027,21 @@ export async function forceEvaluateNow(workspaceSlug: string): Promise<Evaluatio
  * this instant, so a cooldown-active (429) or no-credential (503) result
  * here is expected and unremarkable, not a failure of the report itself —
  * only a genuinely unexpected error is worth a log line.
+ *
+ * `serialNumber` (optional) scopes this re-evaluation to just the one
+ * device whose attribute/trigger actually changed, when the caller knows
+ * it — see runComplianceEvaluation's `onlyDeviceSerial` doc comment. Before
+ * this, EVERY call here re-evaluated the entire fleet regardless of which
+ * single device's report or trigger caused it — a device merely reporting
+ * an unchanged-in-practice attribute value could still ripple into
+ * workflow/alert side effects on unrelated devices. A caller that doesn't
+ * have a specific device in mind (the audience/scope-change half of
+ * trigger-on-change, compliance.controller.ts's policy PUT handler — which
+ * calls runComplianceEvaluation directly with its own live admin bearer
+ * rather than through this function at all) is unaffected either way.
  */
-export function triggerEventDrivenReEvaluation(workspaceSlug: string, reason: string): void {
-  forceEvaluateNow(workspaceSlug)
+export function triggerEventDrivenReEvaluation(workspaceSlug: string, reason: string, serialNumber: string | null = null): void {
+  forceEvaluateNow(workspaceSlug, serialNumber)
     .then((summary) => {
       if (summary.violationsFound > 0 || summary.recovered > 0) {
         console.log(`[Compliance] Event-driven re-evaluation (${reason}) for ${workspaceSlug}: ${JSON.stringify(summary)}`);
