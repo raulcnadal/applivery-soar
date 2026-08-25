@@ -38,21 +38,23 @@ deviceDataRouter.post(
 );
 
 /**
- * Agent poll endpoint — GET /api/device-data/custom-checks?platform=windows|macos|ios|android
+ * Agent poll endpoint — GET /api/device-data/custom-checks?platform=windows|macos
  * (customChecks.service.ts's module doc has the full design). Same auth as
  * the two report endpoints above: this is an unattended device caller, not
  * a logged-in admin. The agent calls this once per report cycle, runs every
  * check it gets back locally, and includes the results in its next
  * POST /api/device-data/report call (customCheckResults field).
  *
- * ios/android are accepted here the same as windows/macos, but
- * validateCheckParams (customChecks.schemas.ts) refuses to let an admin
- * create anything but an `appInstalled` check for those two platforms in
- * the first place — a sandboxed mobile OS has no API surface for the other
- * checker types (process/service/registry-or-file/command). So this route
- * never needs its own platform-specific filtering: whatever
- * listEnabledChecksForAgent returns for ios/android is already
- * appInstalled-only by construction.
+ * Windows/macOS only — CHECK_PLATFORMS (customChecks.schemas.ts) used to
+ * also accept ios/android with only an "appInstalled" checkerType offered
+ * for them, but the SOAR Mobile Agent never actually implements or reports
+ * any custom check (no method channel, no customCheckResults field ever
+ * sent) — that option could be created in the UI and would simply never
+ * produce a result. Real installed-app data for iOS/Android already exists
+ * via the separate, working App Lists feature (requiredAppList/
+ * disallowedAppList conditions, sourced from Apple/Android MDM's own
+ * installed-apps API), so mobile was removed here rather than left as a
+ * dead, silently-never-matching option.
  */
 deviceDataRouter.get(
   "/api/device-data/custom-checks",

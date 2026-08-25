@@ -95,12 +95,19 @@ export const COMPLIANCE_FIELDS: ComplianceFieldDef[] = [
   // Disclosed new feature (customChecks.service.ts) — an admin-defined check
   // (process running, service status, registry/plist/file value, app
   // installed, or a raw command) the matching agent runs locally and
-  // reports back. `platforms` is intentionally omitted here (the field
-  // itself is universal in the catalog) — the Policy Builder narrows which
-  // individual CHECK KEYS are offered to the policy's own targetPlatform
-  // via GET /api/compliance/custom-check-names?platform=, same reasoning as
+  // reports back. `platforms` is windows/macos only (CHECK_PLATFORMS,
+  // customChecks.schemas.ts) -- iOS/Android were removed from that list:
+  // the SOAR Mobile Agent never actually implements or reports any custom
+  // check (no local probe, no customCheckResults field ever sent), so an
+  // ios/android "App installed" check was a dead, silently-never-matching
+  // option there. Real installed-app data for iOS/Android already exists
+  // via the separate, working App Lists feature (requiredAppList/
+  // disallowedAppList conditions below). Within the two supported
+  // platforms the Policy Builder still narrows which individual CHECK KEYS
+  // are offered to the policy's own targetPlatform via
+  // GET /api/compliance/custom-check-names?platform=, same reasoning as
   // selfReportedAttribute's `name` being free-text rather than an enum.
-  { key: "customCheckResult", label: "Custom Check Result (agent)", type: "custom_check_result", operators: ["equals", "notEquals", "contains", "greaterThan", "lessThan", "exists", "missing"] },
+  { key: "customCheckResult", label: "Custom Check Result (agent)", type: "custom_check_result", operators: ["equals", "notEquals", "contains", "greaterThan", "lessThan", "exists", "missing"], platforms: ["windows", "macos"] },
   // Disclosed new feature (TriggerFireState, schema.prisma) — closes the
   // visibility gap where an Inbound Webhook (Settings > Inbound Webhooks,
   // triggers.service.ts) fired by an external EDR/MTD/DEX tool had no way

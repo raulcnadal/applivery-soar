@@ -12,19 +12,25 @@ import { HttpError } from "../../utils/httpError";
 export const CHECKER_TYPES = ["processRunning", "serviceStatus", "registryOrFileValue", "appInstalled", "command"] as const;
 export type CheckerType = (typeof CHECKER_TYPES)[number];
 
-export const CHECK_PLATFORMS = ["windows", "macos", "ios", "android"] as const;
+// iOS/Android were originally included here with only "appInstalled" ever
+// offered as a valid checkerType for them (see the removed
+// MOBILE_CHECK_PLATFORMS/validateCheckParams branch this replaced) — but the
+// SOAR Mobile Agent (separate repo) never actually implements ANY custom
+// check: it has no method channel, no local probe, and never sends a
+// customCheckResults field in its report payload (device_report_client.dart
+// only ever sends platform/serialNumber/attributes/playIntegrityToken/
+// reportedAt). So an iOS/Android "App installed" check could be created in
+// the UI, looked completely valid, and would simply never produce a result
+// — a dead, silently-never-matching option, not a working-but-limited one.
+// Real installed-app data for iOS/Android already exists via the separate,
+// actually-working App Lists feature (requiredAppList/disallowedAppList
+// conditions, appLists/installedApps.service.ts), sourced from Apple/Android
+// MDM's own installed-apps API — so removing mobile here isn't a capability
+// loss, it's removing a redundant, non-functional path in favor of the one
+// that already works. Only Windows/macOS agents (separate repos) actually
+// poll this endpoint and execute checks locally.
+export const CHECK_PLATFORMS = ["windows", "macos"] as const;
 export type CheckPlatform = (typeof CHECK_PLATFORMS)[number];
-
-// iOS/Android are sandboxed OSes — a third-party app has no API to enumerate
-// other processes, query services/daemons, or read an arbitrary
-// registry/file/plist path the way the Windows/macOS agents can, and "run an
-// arbitrary command" has no meaningful target at all (no shell access on
-// iOS; a normal, unrooted Android app has none either). "App installed"
-// survives in a reduced form — see MOBILE_APP_INSTALLED_NOTE below — so it's
-// the only checkerType actually offered for these two platforms; see
-// validateCheckParams and the frontend's CustomDeviceChecksPanel.vue, which
-// filters the checker-type picker to match this same restriction.
-export const MOBILE_CHECK_PLATFORMS = ["ios", "android"] as const;
 
 export const customCheckPayloadSchema = z.object({
   platform: z.enum(CHECK_PLATFORMS),
@@ -66,15 +72,6 @@ export function validateCheckParams(platform: CheckPlatform, checkerType: Checke
     if (typeof v !== "string" || !v.trim()) throw new HttpError(400, `${label} is required for this check type.`);
   };
 
-  // See MOBILE_CHECK_PLATFORMS's doc comment above — enforced here (not
-  // just hidden in the frontend picker) so the API itself refuses a
-  // processRunning/serviceStatus/registryOrFileValue/command check for
-  // ios/android rather than silently accepting a definition no mobile agent
-  // could ever satisfy.
-  if ((MOBILE_CHECK_PLATFORMS as readonly string[]).includes(platform) && checkerType !== "appInstalled") {
-    throw new HttpError(400, `"${checkerType}" isn't supported on ${platform} — only "App installed" checks work on a sandboxed mobile OS.`);
-  }
-
   switch (checkerType) {
     case "processRunning":
       requireString("processName", "Process name");
@@ -94,10 +91,7 @@ export function validateCheckParams(platform: CheckPlatform, checkerType: Checke
       }
       return;
     case "appInstalled":
-      requireString(
-        "identifier",
-        platform === "windows" ? "Winget package ID (or app display name)" : platform === "android" ? "Android package name" : "Bundle identifier",
-      );
+      requireString("identifier", platform === "windows" ? "Winget package ID (or app display name)" : "Bundle identifier");
       return;
     case "command":
       requireString("command", "Command");

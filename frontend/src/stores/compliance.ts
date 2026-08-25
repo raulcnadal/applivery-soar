@@ -117,18 +117,17 @@ export interface SelfReportedAttributeCatalogEntry {
 export const CHECKER_TYPES = ["processRunning", "serviceStatus", "registryOrFileValue", "appInstalled", "command"] as const;
 export type CheckerType = (typeof CHECKER_TYPES)[number];
 
-// iOS/Android are sandboxed — only "appInstalled" is a meaningful checker
-// type there (no process/service/registry-or-file/command surface exists
-// for a third-party app to check). See backend's customChecks.schemas.ts
-// MOBILE_CHECK_PLATFORMS/validateCheckParams, which is where this is
-// actually enforced; CustomDeviceChecksPanel.vue filters CHECKER_TYPES down
-// to match so an admin never sees an option the API would reject.
-export const MOBILE_CHECK_PLATFORMS = ["ios", "android"] as const;
-
+// iOS/Android used to be offered here (with only "appInstalled" as a valid
+// checkerType), but the SOAR Mobile Agent never actually implements or
+// reports ANY custom check — no local probe, no customCheckResults ever
+// sent — so that option was a dead, silently-never-matching path. Removed
+// from backend's CHECK_PLATFORMS (customChecks.schemas.ts) and from here;
+// real installed-app data for iOS/Android already exists via the separate,
+// working App Lists feature (requiredAppList/disallowedAppList conditions).
 export interface CustomCheckDefinition {
   id: string;
   workspaceSlug: string;
-  platform: "windows" | "macos" | "ios" | "android";
+  platform: "windows" | "macos";
   key: string;
   name: string;
   description?: string | null;
