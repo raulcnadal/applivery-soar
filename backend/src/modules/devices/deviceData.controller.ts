@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { deviceAppReportPayloadSchema, deviceReportPayloadSchema, eventNotifyPayloadSchema } from "./deviceData.schemas";
-import { getAgentStatus, handleEventNotify, reportDeviceApps, reportDeviceData, verifyDeviceIdentity } from "./deviceData.service";
+import { getAgentCompliancePolicyStatus, getAgentStatus, handleEventNotify, reportDeviceApps, reportDeviceData, verifyDeviceIdentity } from "./deviceData.service";
 import { listEnabledChecksForAgent } from "../compliance/customChecks.service";
 import { CHECK_PLATFORMS } from "../compliance/customChecks.schemas";
 import { getEventDrivenSettings, listEnabledWatchesForAgent } from "../compliance/eventWatches.service";
@@ -108,6 +108,31 @@ deviceDataRouter.get(
       return;
     }
     res.json(await getAgentStatus(workspaceSlug, serialNumber, platform));
+  }),
+);
+
+/**
+ * Agent poll endpoint — GET /api/device-data/compliance-policy?serialNumber=...&policyId=...
+ * Device-facing per-condition detail for a single policy — the mobile app's
+ * policy detail screen calls this when the user taps a policy in
+ * ComplianceScreen, to render each condition with a red/green dot the same
+ * way the dashboard's Device Modal does. Same device-caller auth as every
+ * other route in this file. See getAgentCompliancePolicyStatus's own doc
+ * comment (deviceData.service.ts) for why this reuses the dashboard's own
+ * evaluatePolicyForDevice rather than a second implementation.
+ */
+deviceDataRouter.get(
+  "/api/device-data/compliance-policy",
+  asyncHandler(async (req, res) => {
+    const workspaceSlug = workspaceOf(req);
+    await verifyDeviceIdentity(req, workspaceSlug);
+    const serialNumber = typeof req.query.serialNumber === "string" ? req.query.serialNumber.trim() : "";
+    const policyId = typeof req.query.policyId === "string" ? req.query.policyId.trim() : "";
+    if (!serialNumber || !policyId) {
+      res.status(400).json({ detail: "serialNumber and policyId query params are required" });
+      return;
+    }
+    res.json(await getAgentCompliancePolicyStatus(workspaceSlug, serialNumber, policyId));
   }),
 );
 

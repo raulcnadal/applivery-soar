@@ -225,6 +225,51 @@ export async function findActiveCertificate(workspaceSlug: string, serialNumber:
   return row ? { id: row.id } : null;
 }
 
+/**
+ * Fire-and-forget "this cert was just used to authenticate a real request" —
+ * called by mtlsIdentity.middleware.ts's assertMtlsIdentity right after
+ * findActiveCertificate succeeds. Deliberately not awaited by the caller
+ * (assertMtlsIdentity kicks this off and moves on) and never throws: this is
+ * a nice-to-have freshness signal for the Devices list's "SOAR Agent"
+ * column, not part of the actual auth decision — a slow/failed write here
+ * must never turn into a failed or delayed mTLS-gated request. See
+ * loadCertificateLastSeenBySerial (devices.service.ts) for the batched read
+ * side this feeds.
+ */
+export function touchCertificateLastSeen(certificateId: string): void {
+  prisma.deviceCertificate
+    .update({ where: { id: certificateId }, data: { lastSeenAt: new Date() } })
+    .catch((e: unknown) => {
+      console.warn(`[mTLS] touchCertificateLastSeen failed for certificate '${certificateId}': ${e}`);
+    });
+}
+
+/**
+ * Batched, fleet-wide read side of touchCertificateLastSeen above — one
+ * query for the whole workspace (matching this file's "load once per
+ * fleet-wide call" philosophy, same as loadDevicePushDataCache), keyed by
+ * serialNumber so devices.service.ts's per-device loop can look it up
+ * alongside the existing DevicePushData-based soarAgentLastReportedAt
+ * signal. Only ever the MOST RECENT active-or-superseded cert per serial
+ * matters here — a device's older, superseded cert's stale lastSeenAt
+ * should never shadow its current cert's fresher one, so this takes the max
+ * per serialNumber rather than an arbitrary row.
+ */
+export async function loadCertificateLastSeenBySerial(workspaceSlug: string): Promise<Record<string, string>> {
+  const rows = await prisma.deviceCertificate.findMany({
+    where: { workspaceSlug, lastSeenAt: { not: null } },
+    select: { serialNumber: true, lastSeenAt: true },
+  });
+  const bySerial: Record<string, string> = {};
+  for (const row of rows) {
+    if (!row.lastSeenAt) continue;
+    const iso = row.lastSeenAt.toISOString();
+    const existing = bySerial[row.serialNumber];
+    if (!existing || iso > existing) bySerial[row.serialNumber] = iso;
+  }
+  return bySerial;
+}
+
 export async function revokeCertificate(workspaceSlug: string, id: string, actor: string, reason: string): Promise<void> {
   const row = await prisma.deviceCertificate.findUnique({ where: { id } });
   if (!row || row.workspaceSlug !== workspaceSlug) {

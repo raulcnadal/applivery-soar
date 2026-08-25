@@ -3,7 +3,7 @@ import type { Request } from "express";
 import { env } from "../config/env";
 import { HttpError } from "../utils/httpError";
 import { asyncHandler } from "../utils/asyncHandler";
-import { findActiveCertificate } from "../modules/mtls/certificates.service";
+import { findActiveCertificate, touchCertificateLastSeen } from "../modules/mtls/certificates.service";
 
 /**
  * Trusts a verified client-certificate identity forwarded by the edge
@@ -118,6 +118,9 @@ export async function assertMtlsIdentity(req: Request): Promise<string> {
     logRejection(req, "no active DeviceCertificate row for this CN/workspace (revoked, superseded, expired, or never registered)", { workspaceSlug, cn });
     throw new HttpError(401, "The presented client certificate is not a currently active certificate for this workspace (it may be revoked, superseded, or expired).");
   }
+  // Fire-and-forget — see touchCertificateLastSeen's own doc comment for why
+  // this is never awaited and never allowed to affect the auth decision.
+  touchCertificateLastSeen(activeCert.id);
 
   return cn;
 }

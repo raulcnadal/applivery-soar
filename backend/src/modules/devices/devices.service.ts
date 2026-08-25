@@ -303,6 +303,21 @@ async function fetchDevicesFullUncached(
     console.warn(`[Devices] locationCache lookup failed: ${e}`);
   }
   const pushdataCache = await loadDevicePushDataCache(slugKey);
+  // Second, independent "the SOAR Agent is genuinely alive on this device"
+  // signal — see soarAgentReporting's computation below and
+  // loadCertificateLastSeenBySerial's own doc comment (certificates.service.ts)
+  // for why this exists: an mTLS-only caller (the mobile app) never POSTs a
+  // DevicePushData report, so pushdataCache above is permanently empty for
+  // it even while it's actively calling agent-status. Best-effort — a
+  // lookup failure just means this signal is unavailable this pass, not a
+  // failure of the whole device list.
+  let certLastSeenBySerial: Record<string, string> = {};
+  try {
+    const { loadCertificateLastSeenBySerial } = await import("../mtls/certificates.service");
+    certLastSeenBySerial = await loadCertificateLastSeenBySerial(slugKey);
+  } catch (e) {
+    console.warn(`[Devices] certLastSeenBySerial lookup failed: ${e}`);
+  }
 
   // OS Patch Level Smart Attribute mapping (Settings > Workspace Automation
   // — osPatchLevelMapping.service.ts), loaded once per fleet-wide call, not
@@ -432,12 +447,23 @@ async function fetchDevicesFullUncached(
 
     // "SOAR Agent reporting" — see the NormalizedDevice field's own doc
     // comment (deviceNormalize.ts) for why this is kept explicitly distinct
-    // from Applivery's own agent/enrollment concepts. selfReported comes
-    // from pushdataCache (loadDevicePushDataCache), which stamps
-    // lastReportedAt from DevicePushData.reportedAt on every row.
+    // from Applivery's own agent/enrollment concepts. Two independent
+    // signals, either one is sufficient: selfReported comes from
+    // pushdataCache (loadDevicePushDataCache), which stamps lastReportedAt
+    // from DevicePushData.reportedAt on every POST /api/device-data/report —
+    // the Windows/macOS agents' own signal. certLastSeenBySerial (loaded
+    // above) is the mTLS-only equivalent — see its own comment for why an
+    // mTLS-authenticated caller (the mobile app, which never POSTs a report)
+    // needs a separate signal entirely, or it would show "Not installed"
+    // forever despite genuinely being installed and actively polling. The
+    // MORE RECENT of the two timestamps wins, so a device that does both
+    // (e.g. a Windows Agent that's switched to mTLS auth) shows its true
+    // freshest activity either way.
     {
       const selfReportedRecord = d.selfReported as { lastReportedAt?: string } | null;
-      const lastReportedAt = selfReportedRecord?.lastReportedAt ?? null;
+      const reportedAt = selfReportedRecord?.lastReportedAt ?? null;
+      const certSeenAt = certLastSeenBySerial[d.serialNumber] ?? null;
+      const lastReportedAt = !reportedAt ? certSeenAt : !certSeenAt ? reportedAt : reportedAt > certSeenAt ? reportedAt : certSeenAt;
       d.soarAgentLastReportedAt = lastReportedAt;
       d.soarAgentReporting = lastReportedAt !== null && Date.now() - new Date(lastReportedAt).getTime() < SOAR_AGENT_STALE_THRESHOLD_MS;
     }
@@ -570,18 +596,27 @@ export async function getDeviceCompliance(authorization: string, workspaceSlug: 
  * report; every device scoped by this policy was checked at that same
  * moment.
  */
-export async function getDeviceCompliancePolicyStatus(authorization: string, workspaceSlug: string, deviceId: string, policyId: string) {
-  const full = await getDevicesFull(authorization, workspaceSlug, false);
-  const device = full.items.find((d) => String(d.id) === String(deviceId));
-  if (!device) throw new HttpError(404, "Device not found in the current fleet snapshot");
-
-  const policy = await prisma.compliancePolicy.findFirst({ where: { workspaceSlug, id: policyId } });
-  if (!policy) throw new HttpError(404, "Compliance policy not found");
-
+/**
+ * The actual per-condition evaluation, factored out of
+ * getDeviceCompliancePolicyStatus below so a second caller — the mTLS-gated,
+ * device-facing equivalent added for the mobile app's policy detail screen
+ * (deviceData.service.ts's getAgentCompliancePolicyStatus) — runs the exact
+ * same logic against the exact same evaluateCondition function, rather than
+ * a second implementation that could silently drift from this one. Takes an
+ * already-resolved NormalizedDevice and CompliancePolicy row so callers can
+ * resolve "which device" however fits their own auth model (dashboard
+ * session vs. device-presented mTLS identity/legacy secret) before handing
+ * off here.
+ */
+export async function evaluatePolicyForDevice(
+  workspaceSlug: string,
+  device: NormalizedDevice,
+  policy: { id: string; name: string; conditionLogic: string; conditions: unknown; lastEvaluatedAt: Date | null },
+) {
   const appLists: AppListsContext = await loadAppListsContext(workspaceSlug);
   const geo: GeoContext = {
     zonesById: await loadGeofenceZonesById(workspaceSlug),
-    locationsByDeviceId: await loadDeviceLocations(workspaceSlug, [device.id]),
+    locationsByDeviceId: await loadDeviceLocations(workspaceSlug, [(device as any).id]),
   };
 
   const conditions = ((policy.conditions as any[]) ?? []).map((c) => ({
@@ -603,6 +638,17 @@ export async function getDeviceCompliancePolicyStatus(authorization: string, wor
     violated,
     conditions,
   };
+}
+
+export async function getDeviceCompliancePolicyStatus(authorization: string, workspaceSlug: string, deviceId: string, policyId: string) {
+  const full = await getDevicesFull(authorization, workspaceSlug, false);
+  const device = full.items.find((d) => String(d.id) === String(deviceId));
+  if (!device) throw new HttpError(404, "Device not found in the current fleet snapshot");
+
+  const policy = await prisma.compliancePolicy.findFirst({ where: { workspaceSlug, id: policyId } });
+  if (!policy) throw new HttpError(404, "Compliance policy not found");
+
+  return evaluatePolicyForDevice(workspaceSlug, device, policy);
 }
 
 /**

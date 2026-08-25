@@ -1433,6 +1433,19 @@ model DeviceCertificate {
   revokedAt     DateTime?
   revokedReason String?
   issuedAt      DateTime  @default(now())
+  // Stamped (fire-and-forget, best-effort) on every successful mTLS-gated
+  // request this certificate authenticates — see
+  // certificates.service.ts's touchCertificateLastSeen and
+  // mtlsIdentity.middleware.ts's assertMtlsIdentity, which calls it right
+  // after a cert passes verification. Exists so the Devices list's "SOAR
+  // Agent" column has a real signal for mTLS-only callers (the mobile app,
+  // which never POSTs a DevicePushData report — see
+  // devices.service.ts's soarAgentReporting computation, which now treats
+  // "presented a valid client cert recently" as equivalent evidence of a
+  // live agent to "posted a report recently"). Nullable: null until the
+  // very first authenticated request after this column existed / after a
+  // fresh enrollment.
+  lastSeenAt    DateTime?
 
   @@unique([workspaceSlug, serialHex])
   @@index([workspaceSlug, serialNumber])

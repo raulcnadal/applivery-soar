@@ -629,3 +629,44 @@ export async function getAgentStatus(workspaceSlug: string, serialNumber: string
     };
   }
 }
+
+/**
+ * Device-facing per-condition policy detail — the data source for the
+ * mobile app's policy detail screen (tap a policy in ComplianceScreen, see
+ * each condition with a red/green dot, mirroring the dashboard's
+ * DeviceCompliancePolicyStatusModal.vue). Same auth model as getAgentStatus
+ * above (verifyDeviceIdentity, called by the route handler in
+ * deviceData.controller.ts before this runs) and the same "resolve this
+ * device via the workspace's own Automation Credential, not anything the
+ * device supplies" pattern, since there's no admin session/bearer available
+ * on a device-caller request.
+ *
+ * Deliberately reuses devices.service.ts's evaluatePolicyForDevice — the
+ * exact function the dashboard's own admin-facing
+ * getDeviceCompliancePolicyStatus calls — so a condition never evaluates
+ * differently depending on which caller asked. No caching here (unlike
+ * getAgentStatus's lastKnownAgentStatus fast-path): this is a low-frequency,
+ * on-demand call triggered by a user tapping into one specific policy, not a
+ * poll-loop endpoint under the same timeout pressure.
+ */
+export async function getAgentCompliancePolicyStatus(workspaceSlug: string, serialNumber: string, policyId: string) {
+  const { getAutomationBearer } = await import("../settings/automationCredential.service");
+  const bearer = await getAutomationBearer(workspaceSlug);
+  if (!bearer) {
+    throw new HttpError(503, "No Automation Credential configured for this workspace yet — ask an admin to set one up under Settings.");
+  }
+
+  const { getDevicesFull, evaluatePolicyForDevice } = await import("../devices/devices.service");
+  const devicesResp = await getDevicesFull(bearer, workspaceSlug, false);
+  const device = devicesResp.items.find((d: any) => d.serialNumber === serialNumber);
+  if (!device) {
+    throw new HttpError(404, "This device hasn't been matched in the Applivery fleet yet.");
+  }
+
+  const policy = await prisma.compliancePolicy.findFirst({ where: { workspaceSlug, id: policyId } });
+  if (!policy) {
+    throw new HttpError(404, "Compliance policy not found.");
+  }
+
+  return evaluatePolicyForDevice(workspaceSlug, device, policy as any);
+}
