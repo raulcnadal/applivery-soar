@@ -38,6 +38,7 @@ import { dashboardStateRouter } from "./modules/analytics/dashboardState.control
 import { reportsRouter } from "./modules/reports/reports.controller";
 import { helpRouter } from "./modules/help/help.controller";
 import { geofenceRouter } from "./modules/geofencing/geofence.controller";
+import { playIntegrityRouter } from "./modules/playIntegrity/playIntegrity.controller";
 
 export function createApp() {
   const app = express();
@@ -63,6 +64,7 @@ export function createApp() {
   app.use(complianceRouter);
   app.use(workflowsRouter);
   app.use(settingsRouter);
+  app.use(playIntegrityRouter);
   app.use(agentBuildsRouter);
   app.use(actionLibraryRouter);
   app.use(scriptAssetsRouter);

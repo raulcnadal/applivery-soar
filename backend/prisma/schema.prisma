@@ -1480,3 +1480,54 @@ model GlobalBootstrapToken {
   rotatedBy     String?
   updatedAt     DateTime @updatedAt
 }
+
+/**
+ * Per-workspace Google Play Integrity API configuration — Settings > Google
+ * Play Integrity API. Admin-provided rather than hardcoded (mobile telemetry
+ * roadmap Phase 3, playIntegrity.service.ts) since each workspace's Android
+ * app is its own distinct GCP-linked Play Console listing, with its own
+ * Cloud Project number and its own downloaded offline-decryption key pair.
+ *
+ * `decryptionKey` is the AES symmetric key (JWE key-wrapping, A256KW) —
+ * encrypted at rest (secretCipher), same treatment as
+ * AutomationCredential.serviceAccountToken/GlobalBootstrapToken.secret above.
+ * `verificationKey` is the DER-encoded EC public key (JWS signature
+ * verification, ES256) — NOT secret (it's a public key), stored as provided,
+ * base64-encoded exactly as downloaded from Play Console, but versioned
+ * alongside `decryptionKey` since Google issues both as one pair and they
+ * must always be used together. `cloudProjectNumber` also isn't secret (the
+ * user's own GCP Project Number, sent to the Android client so it can
+ * request a Classic API integrity token — see IntegrityTokenRequest's own
+ * setCloudProjectNumber requirement for apps distributed outside Google
+ * Play's own linked-project flow).
+ */
+model PlayIntegrityConfig {
+  workspaceSlug      String    @id
+  cloudProjectNumber String
+  decryptionKey      String // encrypted at rest — base64 AES key from Play Console
+  verificationKey    String // base64 DER-encoded EC public key from Play Console, not secret
+  enabled            Boolean   @default(true)
+  configuredBy       String?
+  configuredAt       DateTime?
+  updatedAt          DateTime  @updatedAt
+}
+
+/**
+ * One issued, single-use Play Integrity `nonce` — see playIntegrity.service.ts's
+ * issueNonce/verifyAndDecodeToken doc comments for the full replay-protection
+ * design Google's own docs mandate (developer.android.com/google/play/integrity/classic#nonce):
+ * a nonce must be unpredictable, checked for a first-time use, and expired
+ * after a short window. Deliberately its own table rather than reusing
+ * DevicePushData — this is short-lived security-protocol state, not device
+ * telemetry, and needs its own uniqueness/expiry semantics.
+ */
+model PlayIntegrityNonce {
+  id            String    @id @default(cuid())
+  workspaceSlug String
+  serialNumber  String
+  nonce         String    @unique
+  issuedAt      DateTime  @default(now())
+  consumedAt    DateTime?
+
+  @@index([workspaceSlug, serialNumber])
+}

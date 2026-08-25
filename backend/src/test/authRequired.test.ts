@@ -25,6 +25,7 @@ const PUBLIC_ROUTES = new Set([
   "GET /api/device-data/custom-checks",
   "GET /api/device-data/agent-status",
   "GET /api/device-data/compliance-policy",
+  "GET /api/device-data/play-integrity/nonce",
   "POST /api/device-data/evaluate-now",
   "GET /api/device-data/event-watches",
   "POST /api/device-data/event-notify",

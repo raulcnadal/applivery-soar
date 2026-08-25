@@ -91,6 +91,17 @@ export const deviceReportPayloadSchema = z.object({
   // predates this feature simply omits it, and reportDeviceData() carries
   // the previously-stored results forward rather than wiping them.
   customCheckResults: z.record(customCheckResultSchema).nullish(),
+  // Mobile telemetry roadmap Phase 3 — the raw, still-encrypted/signed
+  // Google Play Integrity Classic API token (a compact JWE-of-JWS string),
+  // when the Android agent has one to report. Deliberately NOT decoded
+  // here or anywhere client-facing — reportDeviceData (deviceData.service.ts)
+  // hands this off to playIntegrity.service.ts's verifyAndDecodeToken,
+  // which decrypts/verifies it entirely server-side (Google's own guidance:
+  // never decode on the device itself) and merges the derived, already-
+  // verified verdict into `attributes` alongside everything else. Optional
+  // and iOS/older-agent-safe: Play Integrity is Android-only, and an agent
+  // that predates this feature simply never sends it.
+  playIntegrityToken: z.string().nullish(),
   agentVersion: z.string().nullish(),
   reportedAt: z.string().nullish(),
 });

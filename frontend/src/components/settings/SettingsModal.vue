@@ -22,6 +22,7 @@ import AccountPanel from "./AccountPanel.vue";
 import BackupRestorePanel from "./BackupRestorePanel.vue";
 import AuditLogRetentionPanel from "./AuditLogRetentionPanel.vue";
 import WorkspaceAutomationPanel from "./WorkspaceAutomationPanel.vue";
+import PlayIntegrityPanel from "./PlayIntegrityPanel.vue";
 import DeviceDataWebhookPanel from "./DeviceDataWebhookPanel.vue";
 import CustomDeviceChecksPanel from "./CustomDeviceChecksPanel.vue";
 import EventWatchesPanel from "./EventWatchesPanel.vue";
@@ -64,6 +65,7 @@ const SETTINGS_TABS: SettingsTab[] = [
   { id: "backup", label: "Backup & Restore", icon: ICONS.Download },
   { id: "auditlog", label: "Audit Log", icon: ICONS.DocumentText },
   { id: "workspace-automation", label: "Workspace Automation", icon: ICONS.Refresh },
+  { id: "play-integrity", label: "Google Play Integrity API", icon: ICONS.ShieldCheck },
   { id: "device-webhook", label: "Applivery SOAR Agent", icon: ICONS.PlugCircle },
   { id: "custom-checks", label: "Custom Device Checks", icon: ICONS.Checklist },
   { id: "event-watches", label: "Event-Driven Detection", icon: ICONS.Radar },
@@ -214,6 +216,7 @@ const activeTabMeta = computed(() => visibleTabs.value.find((t) => t.id === acti
           <BackupRestorePanel v-else-if="activeTab === 'backup'" />
           <AuditLogRetentionPanel v-else-if="activeTab === 'auditlog'" />
           <WorkspaceAutomationPanel v-else-if="activeTab === 'workspace-automation'" />
+          <PlayIntegrityPanel v-else-if="activeTab === 'play-integrity'" />
           <DeviceDataWebhookPanel v-else-if="activeTab === 'device-webhook'" @go-to-tab="selectTab" />
           <CustomDeviceChecksPanel v-else-if="activeTab === 'custom-checks'" />
           <EventWatchesPanel v-else-if="activeTab === 'event-watches'" />

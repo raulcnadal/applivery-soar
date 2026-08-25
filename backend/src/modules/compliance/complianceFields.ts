@@ -421,6 +421,37 @@ function androidKeystoreAttestationCondition(): TemplateCondition[] {
   ];
 }
 
+function androidPlayIntegrityAppCondition(): TemplateCondition[] {
+  // appIntegrity.appRecognitionVerdict !== "PLAY_RECOGNIZED" -- Play
+  // Integrity's "app integrity" signal: confirms this exact, unmodified APK,
+  // signed with the developer's real signing key, was obtained through Play
+  // (not sideloaded, not repackaged/tampered). Derived server-side by
+  // verifyAndDecodeToken (playIntegrity.service.ts) from a Classic API token
+  // the Android agent reports on POST /api/device-data/report, entirely
+  // independent of anything the device itself claims. Requires an admin to
+  // configure Settings > Google Play Integrity API for this workspace --
+  // until then no playIntegrityAppRecognized attribute is ever reported, so
+  // this condition simply never matches, same "absent = not yet known"
+  // behavior every other selfReportedAttribute-based template already has.
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "playIntegrityAppRecognized", compareValue: "false" } }];
+}
+
+function androidPlayIntegrityDeviceCondition(): TemplateCondition[] {
+  // deviceIntegrity.deviceRecognitionVerdict collapsed to its single highest
+  // tier (bestDeviceVerdict, playIntegrity.service.ts) -- "NONE" is Google's
+  // own documented high-probability-rooted/Magisk-KernelSU/Xposed/spoofed-
+  // system-properties signal; "UNKNOWN" means the verified token simply
+  // didn't carry a recognizable verdict array. Both are treated as a
+  // violation, the same "confirmed bad or couldn't confirm good" precedent
+  // as the KeyStore attestation condition above -- this is Play Integrity's
+  // own root/tamper detection, complementary to (not a replacement for) the
+  // RootDetectorPlugin foundation planned for Phase 4.
+  return [
+    { field: "selfReportedAttribute", operator: "equals", value: { name: "playIntegrityVerdict", compareValue: "NONE" } },
+    { field: "selfReportedAttribute", operator: "equals", value: { name: "playIntegrityVerdict", compareValue: "UNKNOWN" } },
+  ];
+}
+
 function androidConfigPostureCondition(): TemplateCondition[] {
   // Android Management API's own device-posture + policy-compliance signal
   // plus the two classic mobile attack-surface toggles (USB debugging,
@@ -586,6 +617,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: androidKeystoreAttestationCondition(),
   },
   {
+    id: "iso27001-play-integrity-app-android", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "android",
+    title: "App integrity not confirmed by Google Play Integrity", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices where a verified Play Integrity Classic API token reports the running app isn't the genuine, Play-distributed, unmodified APK -- possible tampering or a repackaged/sideloaded build.",
+    conditions: androidPlayIntegrityAppCondition(),
+  },
+  {
+    id: "iso27001-play-integrity-device-android", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "android",
+    title: "Device integrity not confirmed by Google Play Integrity", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices where a verified Play Integrity Classic API token reports no recognized device-integrity tier -- Google's own high-probability signal for a rooted, Magisk/KernelSU-modified, Xposed-hooked, or property-spoofing device.",
+    conditions: androidPlayIntegrityDeviceCondition(),
+  },
+  {
     id: "iso27001-stale-inventory", framework: "iso27001", controlRef: "Annex A.5.9", targetPlatform: null,
     title: "Device hasn't checked in recently", severity: "low", conditionLogic: "any",
     description: "Flags devices that haven't checked in for over 30 days — a stale inventory undermines every other endpoint control, regardless of platform.",
@@ -749,6 +792,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     description: "mp.eq.3: flags Android devices where the SOAR Mobile Agent found no StrongBox/TEE-backed AndroidKeyStore protection.",
     conditions: androidKeystoreAttestationCondition(),
   },
+  {
+    id: "ens-play-integrity-app-android", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "android",
+    title: "Integridad de la app no confirmada / App integrity not confirmed by Google Play Integrity", severity: "high", conditionLogic: "any",
+    description: "mp.eq.3: flags Android devices where a verified Play Integrity token reports the running app isn't the genuine, Play-distributed, unmodified APK.",
+    conditions: androidPlayIntegrityAppCondition(),
+  },
+  {
+    id: "ens-play-integrity-device-android", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "android",
+    title: "Integridad del dispositivo no confirmada / Device integrity not confirmed by Google Play Integrity", severity: "high", conditionLogic: "any",
+    description: "mp.eq.3: flags Android devices where a verified Play Integrity token reports no recognized device-integrity tier -- Google's own signal for a likely rooted or tampered device.",
+    conditions: androidPlayIntegrityDeviceCondition(),
+  },
 
   // ── NIS2 Directive (EU 2022/2555), Article 21(2) ──
   {
@@ -792,6 +847,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     title: "Cryptography: no hardware-backed key storage confirmed", severity: "medium", conditionLogic: "any",
     description: "Android's hardware root-of-trust analogue to the Windows TPM/Secure Boot check above — flags devices with no confirmed StrongBox/TEE-backed AndroidKeyStore protection.",
     conditions: androidKeystoreAttestationCondition(),
+  },
+  {
+    id: "nis2-play-integrity-app-android", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "android",
+    title: "Cryptography/integrity: app integrity not confirmed by Google Play Integrity", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices where a verified Play Integrity Classic API token reports the running app isn't the genuine, Play-distributed, unmodified APK.",
+    conditions: androidPlayIntegrityAppCondition(),
+  },
+  {
+    id: "nis2-play-integrity-device-android", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "android",
+    title: "Cryptography/integrity: device integrity not confirmed by Google Play Integrity", severity: "high", conditionLogic: "any",
+    description: "Flags Android devices where a verified Play Integrity Classic API token reports no recognized device-integrity tier -- Google's own high-probability signal for a rooted or tampered device.",
+    conditions: androidPlayIntegrityDeviceCondition(),
   },
   {
     id: "nis2-hygiene-screenlock-windows", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "windows",

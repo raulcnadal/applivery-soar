@@ -7,6 +7,7 @@ import { CHECK_PLATFORMS } from "../compliance/customChecks.schemas";
 import { getEventDrivenSettings, listEnabledWatchesForAgent } from "../compliance/eventWatches.service";
 import { WATCH_PLATFORMS } from "../compliance/eventWatches.schemas";
 import { forceEvaluateNow } from "../compliance/compliance.service";
+import { issueNonce } from "../playIntegrity/playIntegrity.service";
 
 /** Port of main.py:7758-7804 / 9714-9804 — POST /api/device-data/report, POST /api/device-data/report-apps. */
 
@@ -184,5 +185,30 @@ deviceDataRouter.post(
     await verifyDeviceIdentity(req, workspaceSlug);
     const payload = eventNotifyPayloadSchema.parse(req.body);
     res.json(await handleEventNotify(workspaceSlug, payload));
+  }),
+);
+
+/**
+ * Agent poll endpoint — GET /api/device-data/play-integrity/nonce?serialNumber=...
+ * Android-only, called by the agent immediately before it makes its
+ * on-device Play Integrity Classic API requestIntegrityToken call
+ * (playIntegrity.service.ts's module doc has the full end-to-end flow).
+ * Same device-caller auth as every other route in this file. Returns 503 —
+ * via issueNonce's own HttpError, surfaced by the shared asyncHandler/
+ * errorHandler pipeline — when this workspace hasn't configured Settings >
+ * Google Play Integrity API yet, which the agent treats as "skip Play
+ * Integrity this cycle" rather than a hard failure.
+ */
+deviceDataRouter.get(
+  "/api/device-data/play-integrity/nonce",
+  asyncHandler(async (req, res) => {
+    const workspaceSlug = workspaceOf(req);
+    await verifyDeviceIdentity(req, workspaceSlug);
+    const serialNumber = typeof req.query.serialNumber === "string" ? req.query.serialNumber.trim() : "";
+    if (!serialNumber) {
+      res.status(400).json({ detail: "serialNumber query param is required" });
+      return;
+    }
+    res.json(await issueNonce(workspaceSlug, serialNumber));
   }),
 );

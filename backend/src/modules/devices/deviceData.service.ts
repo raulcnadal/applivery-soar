@@ -22,6 +22,7 @@ import { platformPathSegment } from "./deviceNormalize";
 import type { NormalizedDevice } from "./deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
 import { normalizePushedAttributes, type DeviceAppReportPayload, type DeviceReportPayload, type EventNotifyPayload } from "./deviceData.schemas";
+import { verifyAndDecodeToken as verifyAndDecodePlayIntegrityToken } from "../playIntegrity/playIntegrity.service";
 
 /**
  * The two device self-report webhooks a device's scheduled script POSTs to
@@ -127,6 +128,31 @@ export async function reportDeviceData(workspaceSlug: string, payload: DeviceRep
     throw new HttpError(400, "serialNumber is required");
   }
   const normalized = normalizePushedAttributes(payload.platform, payload.attributes ?? {});
+
+  // Mobile telemetry roadmap Phase 3 — when the Android agent included a raw
+  // Play Integrity Classic API token this cycle, decrypt/verify it entirely
+  // server-side (never trust a device-reported verdict) and fold the
+  // derived, already-verified fields into `attributes` under
+  // "playIntegrityVerdict"/"playIntegrityAppRecognized" so they're usable in
+  // Compliance Policy conditions the exact same way as any other
+  // selfReportedAttribute — no schema change needed on that side. A missing
+  // config (admin hasn't set up Settings > Google Play Integrity API yet), an
+  // expired/reused nonce, or a token that fails JWE/JWS verification all
+  // resolve to `null` here rather than throwing — a report with a bad/absent
+  // Play Integrity token still succeeds and stores every other attribute the
+  // agent sent; it simply doesn't get an integrity verdict this cycle.
+  if (payload.playIntegrityToken) {
+    try {
+      const derived = await verifyAndDecodePlayIntegrityToken(workspaceSlug, payload.serialNumber, payload.playIntegrityToken);
+      if (derived) {
+        normalized.playIntegrityVerdict = derived.playIntegrityVerdict;
+        normalized.playIntegrityAppRecognized = derived.playIntegrityAppRecognized;
+      }
+    } catch (error) {
+      console.warn(`[Devices] Play Integrity token verification failed for '${payload.serialNumber}' (workspace '${workspaceSlug}'): ${error}`);
+    }
+  }
+
   const nowIso = new Date().toISOString();
 
   const existing = await prisma.devicePushData.findUnique({
