@@ -1,4 +1,4 @@
-import { createPublicKey, randomBytes } from "crypto";
+import { constants as cryptoConstants, createPrivateKey, createPublicKey, privateDecrypt, randomBytes } from "crypto";
 import { compactDecrypt, compactVerify } from "jose";
 import { prisma } from "../../services/prisma";
 import { recordAuditEvent } from "../../services/auditLog";
@@ -33,6 +33,21 @@ import type { PlayIntegrityConfigPayload } from "./playIntegrity.schemas";
  *    self-reported attributes bag every other telemetry signal uses — no
  *    new condition type needed in the Policy Builder, just two more
  *    selfReportedAttribute names (complianceFields.ts).
+ *
+ * Getting the decryption/verification key pair INTO this workspace's config
+ * in the first place is its own multi-step dance, entirely Play Console's
+ * design, not something this app can simplify away: the admin generates an
+ * RSA-2048 key pair locally (`openssl genrsa` + `openssl rsa -pubout`),
+ * uploads the PUBLIC half to Play Console's "Manage and download my
+ * response encryption keys" flow, and Play Console hands back an
+ * RSA-OAEP-encrypted blob (always exactly 256 bytes — the RSA-2048 block
+ * size — regardless of key content) rather than the keys themselves. This
+ * app's Settings UI has the admin upload BOTH the RSA private key and that
+ * encrypted blob; setPlayIntegrityConfig below does the RSA-OAEP decryption
+ * server-side (replicating Google's own documented `openssl pkeyutl
+ * -decrypt` command exactly) and stores only the two resulting key values —
+ * never the RSA private key or its passphrase, which exist only for the
+ * duration of that one decrypt call.
  */
 
 const NONCE_BYTES = 32;
@@ -67,26 +82,87 @@ function decodeBase64KeyOrThrow(base64: string, label: string): Buffer {
   return buf;
 }
 
+interface DecryptedResponseKeys {
+  decryptionKey: string;
+  verificationKey: string;
+}
+
 /**
- * Confirms the pasted key pair at least DECODES/PARSES correctly right at
- * save time — same "fail loudly here, not on the next real device report"
- * reasoning as automationCredential.service.ts's
+ * Replicates Play Console's own documented recovery command —
+ *
+ *   openssl pkeyutl -decrypt -inkey private.pem \
+ *       -pkeyopt rsa_padding_mode:oaep -in api_keys.enc > api_keys.txt
+ *
+ * — entirely server-side: loads the admin's RSA private key (optionally
+ * passphrase-protected, since `openssl genrsa -aes128` produces one that
+ * is), RSA-OAEP-decrypts the uploaded ciphertext, and parses the resulting
+ * `DECRYPTION_KEY=...`/`VERIFICATION_KEY=...` plaintext lines. `oaepHash:
+ * "sha1"` matches OpenSSL's own default OAEP/MGF1 digest for
+ * `rsa_padding_mode:oaep` with no explicit `rsa_oaep_md` — the exact
+ * invocation Google's own instructions use, so this must match it exactly
+ * or decryption fails outright (RSA-OAEP has no partial/garbled-output
+ * failure mode — a digest mismatch just throws).
+ *
+ * The private key and passphrase are used ONLY for this one call and are
+ * never persisted anywhere — PlayIntegrityConfig only ever stores the two
+ * VALUES extracted below, exactly as the previous (removed) direct-paste
+ * design did.
+ */
+function decryptResponseEncryptionKeys(privateKeyPem: string, passphrase: string | undefined, encryptedResponseFileBase64: string): DecryptedResponseKeys {
+  let privateKeyObject;
+  try {
+    privateKeyObject = createPrivateKey({
+      key: privateKeyPem,
+      format: "pem",
+      passphrase: passphrase ? Buffer.from(passphrase, "utf-8") : undefined,
+    });
+  } catch {
+    throw new HttpError(400, "Couldn't read the RSA private key — check the .pem file and passphrase are correct, and that this is the private key (not the public key) you generated with `openssl genrsa`.");
+  }
+
+  const encryptedBytes = decodeBase64KeyOrThrow(encryptedResponseFileBase64, "Encrypted response file");
+
+  let plaintext: Buffer;
+  try {
+    plaintext = privateDecrypt(
+      { key: privateKeyObject, padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha1" },
+      encryptedBytes,
+    );
+  } catch {
+    throw new HttpError(400, "Couldn't decrypt the response file with this private key — make sure the .pem and .enc came from the same 'Manage and download my response encryption keys' setup in Play Console (the .enc must have been encrypted with the matching public key).");
+  }
+
+  const text = plaintext.toString("utf-8");
+  const decryptionMatch = text.match(/DECRYPTION_KEY=(\S+)/);
+  const verificationMatch = text.match(/VERIFICATION_KEY=(\S+)/);
+  if (!decryptionMatch || !verificationMatch) {
+    throw new HttpError(400, "Decrypted the file successfully, but couldn't find DECRYPTION_KEY/VERIFICATION_KEY lines in the result — this doesn't look like a Play Console response-encryption-keys export.");
+  }
+  return { decryptionKey: decryptionMatch[1], verificationKey: verificationMatch[1] };
+}
+
+/**
+ * Confirms the DECRYPTED key pair at least DECODES/PARSES correctly right
+ * at save time — same "fail loudly here, not on the next real device
+ * report" reasoning as automationCredential.service.ts's
  * assertServiceAccountTokenWorks. This can't confirm the pair is actually
  * the RIGHT one for this workspace's Play Console listing (there's no way
  * to test that without a real device-issued token to decrypt), only that
- * what was pasted is structurally a 32-byte AES key and a valid DER-encoded
- * EC public key.
+ * what came out of decryption is structurally a 32-byte AES key and a
+ * valid DER-encoded EC public key.
  */
 export async function setPlayIntegrityConfig(workspaceSlug: string, payload: PlayIntegrityConfigPayload, actorEmail: string): Promise<void> {
-  const decryptionKeyBytes = decodeBase64KeyOrThrow(payload.decryptionKey, "Decryption key");
+  const { decryptionKey, verificationKey } = decryptResponseEncryptionKeys(payload.privateKeyPem, payload.privateKeyPassphrase, payload.encryptedResponseFile);
+
+  const decryptionKeyBytes = decodeBase64KeyOrThrow(decryptionKey, "Decrypted decryption key");
   if (decryptionKeyBytes.length !== 32) {
-    throw new HttpError(400, `Decryption key must decode to 32 bytes (AES-256) — got ${decryptionKeyBytes.length}. Re-copy it from Play Console's App integrity > Response encryption section.`);
+    throw new HttpError(400, `Decrypted decryption key must be 32 bytes (AES-256) — got ${decryptionKeyBytes.length}. This shouldn't happen with a genuine Play Console export; try re-downloading the .enc file.`);
   }
-  const verificationKeyBytes = decodeBase64KeyOrThrow(payload.verificationKey, "Verification key");
+  const verificationKeyBytes = decodeBase64KeyOrThrow(verificationKey, "Decrypted verification key");
   try {
     createPublicKey({ key: verificationKeyBytes, format: "der", type: "spki" });
   } catch {
-    throw new HttpError(400, "Verification key isn't a valid DER-encoded EC public key — re-copy it from Play Console's App integrity > Response encryption section.");
+    throw new HttpError(400, "Decrypted verification key isn't a valid DER-encoded EC public key. This shouldn't happen with a genuine Play Console export; try re-downloading the .enc file.");
   }
 
   const now = new Date();
@@ -95,16 +171,16 @@ export async function setPlayIntegrityConfig(workspaceSlug: string, payload: Pla
     create: {
       workspaceSlug,
       cloudProjectNumber: payload.cloudProjectNumber,
-      decryptionKey: encryptSecret(payload.decryptionKey),
-      verificationKey: payload.verificationKey,
+      decryptionKey: encryptSecret(decryptionKey),
+      verificationKey,
       enabled: payload.enabled,
       configuredBy: actorEmail,
       configuredAt: now,
     },
     update: {
       cloudProjectNumber: payload.cloudProjectNumber,
-      decryptionKey: encryptSecret(payload.decryptionKey),
-      verificationKey: payload.verificationKey,
+      decryptionKey: encryptSecret(decryptionKey),
+      verificationKey,
       enabled: payload.enabled,
       configuredBy: actorEmail,
       configuredAt: now,

@@ -6,16 +6,20 @@ import { ref } from "vue";
  * Phase 3) — GET/POST/DELETE /api/settings/play-integrity
  * (playIntegrity.controller.ts). Each workspace has its own distinct
  * GCP-linked Play Console listing, so an admin provides their own Cloud
- * Project Number plus the offline-decryption key pair downloaded from
- * Play Console (App integrity > Response encryption) — same "admin pastes
- * their own credential, we encrypt it at rest" shape as
- * workspaceAutomation.ts's Service Account token, not a single
+ * Project Number plus the RSA private key + encrypted response file that
+ * Play Console's own "Manage and download my response encryption keys"
+ * flow requires (see playIntegrity.service.ts's module doc for why this
+ * isn't as simple as pasting two base64 strings) — same "admin supplies
+ * their own credential material, we derive-then-encrypt it at rest" shape
+ * as workspaceAutomation.ts's Service Account token, not a single
  * server-wide/env-var value.
  *
- * The decryption key and verification key are write-only from the
- * frontend's perspective: GET only ever returns whether a config exists
- * (`configured`), never the key material itself, so this store never holds
- * secret values beyond the moment the admin submits the form.
+ * Every field submitted in `setConfig` is write-only from the frontend's
+ * perspective: GET only ever returns whether a config exists (`configured`),
+ * never the key material itself, so this store never holds secret values
+ * beyond the moment the admin submits the form. The RSA private key and
+ * passphrase aren't even stored server-side — see setPlayIntegrityConfig's
+ * own doc comment.
  */
 export interface PlayIntegrityStatus {
   configured: boolean;
@@ -45,7 +49,7 @@ export const usePlayIntegrityStore = defineStore("playIntegrity", () => {
     }
   }
 
-  async function setConfig(payload: { cloudProjectNumber: string; decryptionKey: string; verificationKey: string; enabled: boolean }) {
+  async function setConfig(payload: { cloudProjectNumber: string; privateKeyPem: string; privateKeyPassphrase?: string; encryptedResponseFile: string; enabled: boolean }) {
     isSaving.value = true;
     error.value = null;
     try {
