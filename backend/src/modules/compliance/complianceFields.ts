@@ -445,11 +445,32 @@ function androidPlayIntegrityDeviceCondition(): TemplateCondition[] {
   // violation, the same "confirmed bad or couldn't confirm good" precedent
   // as the KeyStore attestation condition above -- this is Play Integrity's
   // own root/tamper detection, complementary to (not a replacement for) the
-  // RootDetectorPlugin foundation planned for Phase 4.
+  // RootDetectorPlugin foundation delivered in Phase 4
+  // (deviceRootedOrJailbrokenCondition below).
   return [
     { field: "selfReportedAttribute", operator: "equals", value: { name: "playIntegrityVerdict", compareValue: "NONE" } },
     { field: "selfReportedAttribute", operator: "equals", value: { name: "playIntegrityVerdict", compareValue: "UNKNOWN" } },
   ];
+}
+
+/**
+ * Mobile telemetry roadmap Phase 4 -- the root/jailbreak detection
+ * foundation's single collapsed verdict, self-reported by BOTH platforms
+ * under the exact same attribute name: RootDetectorPlugin.kt (Android) and
+ * JailbreakDetector.swift (iOS) share one method channel
+ * (`es.applivery.soar/root_detector`) and the same `{isCompromised,
+ * signals}` contract, and device_report_client.dart folds `isCompromised`
+ * into `deviceRootedOrJailbroken` on every report regardless of platform --
+ * so one shared condition function covers both `android` and `apple`
+ * template entries below, unlike the Play Integrity conditions above
+ * (Android-only, no iOS equivalent exists for that specific API). This is
+ * the ONLY signal at all on an Android device DeviceSecurityTelemetryPlugin
+ * identifies as AOSP (androidPlatformFamily != "GMS"), where Play Integrity
+ * can't run; on a GMS device it's complementary to (not a replacement for)
+ * the two Play Integrity conditions.
+ */
+function deviceRootedOrJailbrokenCondition(): TemplateCondition[] {
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "deviceRootedOrJailbroken", compareValue: "true" } }];
 }
 
 function androidConfigPostureCondition(): TemplateCondition[] {
@@ -561,6 +582,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     title: "Play Protect app verification disabled", severity: "high", conditionLogic: "any",
     description: "Android has no 3rd-party AV agent path here — Play Protect's app-verification toggle is the realistic mobile equivalent of anti-malware scanning.",
     conditions: malwareProtectionCondition("android"),
+  },
+  {
+    id: "iso27001-root-jailbreak-android", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "android",
+    title: "Device rooted or otherwise compromised", severity: "critical", conditionLogic: "any",
+    description: "Flags Android devices where the SOAR Mobile Agent's root-detection foundation (su binaries, root-management apps, debugger/timing/Frida/Xposed indicators, a writable /system partition, or an emulator fingerprint) found any sign of compromise.",
+    conditions: deviceRootedOrJailbrokenCondition(),
+  },
+  {
+    id: "iso27001-jailbreak-apple", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "apple",
+    title: "Device jailbroken", severity: "critical", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices where the SOAR Mobile Agent's jailbreak-detection foundation (suspicious app/system paths, a sandbox-escape write, an openable jailbreak-tool URL scheme, or an injected substrate dylib) found any sign of compromise.",
+    conditions: deviceRootedOrJailbrokenCondition(),
   },
   {
     id: "iso27001-firewall-windows", framework: "iso27001", controlRef: "Annex A.8.20", targetPlatform: "windows",
@@ -739,6 +772,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: malwareProtectionCondition("android"),
   },
   {
+    id: "ens-root-jailbreak-android", framework: "ens", controlRef: "op.exp.6", targetPlatform: "android",
+    title: "Dispositivo rooteado o comprometido / Device rooted or otherwise compromised", severity: "critical", conditionLogic: "any",
+    description: "op.exp.6: flags Android devices where the SOAR Mobile Agent's root-detection foundation found any sign of compromise.",
+    conditions: deviceRootedOrJailbrokenCondition(),
+  },
+  {
+    id: "ens-jailbreak-apple", framework: "ens", controlRef: "op.exp.6", targetPlatform: "apple",
+    title: "Dispositivo con jailbreak / Device jailbroken", severity: "critical", conditionLogic: "any",
+    description: "op.exp.6: flags iOS/iPadOS devices where the SOAR Mobile Agent's jailbreak-detection foundation found any sign of compromise.",
+    conditions: deviceRootedOrJailbrokenCondition(),
+  },
+  {
     id: "ens-maintenance-vuln-windows", framework: "ens", controlRef: "op.exp.4", targetPlatform: "windows",
     title: "Mantenimiento pendiente / Pending maintenance (unpatched or EOL)", severity: "high", conditionLogic: "any",
     description: "op.exp.4 (mantenimiento): flags Windows devices with an exploited-CVE fix pending, any pending security update, or an end-of-life OS build.",
@@ -901,6 +946,18 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     title: "Basic cyber hygiene: Play Protect disabled", severity: "high", conditionLogic: "any",
     description: "Android's realistic malware-hygiene equivalent is Play Protect's app-verification toggle.",
     conditions: malwareProtectionCondition("android"),
+  },
+  {
+    id: "nis2-hygiene-root-jailbreak-android", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "android",
+    title: "Basic cyber hygiene: device rooted or otherwise compromised", severity: "critical", conditionLogic: "any",
+    description: "Flags Android devices where the SOAR Mobile Agent's root-detection foundation found any sign of compromise.",
+    conditions: deviceRootedOrJailbrokenCondition(),
+  },
+  {
+    id: "nis2-hygiene-jailbreak-apple", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "apple",
+    title: "Basic cyber hygiene: device jailbroken", severity: "critical", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices where the SOAR Mobile Agent's jailbreak-detection foundation found any sign of compromise.",
+    conditions: deviceRootedOrJailbrokenCondition(),
   },
   {
     id: "nis2-hygiene-firewall-windows", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "windows",
