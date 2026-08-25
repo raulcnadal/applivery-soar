@@ -26,7 +26,7 @@ import {
   bulkDismissViolations,
   getTriggerNames,
 } from "./compliance.service";
-import { COMPLIANCE_FIELDS, suggestMitreTechniquesForConditions, getComplianceTemplates } from "./complianceFields";
+import { COMPLIANCE_FIELDS, suggestMitreTechniquesForConditions, getComplianceTemplates, getSelfReportedAttributeCatalog } from "./complianceFields";
 import { getMitreTechniques, refreshMitreCatalog } from "../catalogs/mitreCatalog";
 import { getSelfReportedAttributeNames } from "../devices/deviceData.service";
 import { createCustomCheck, deleteCustomCheck, getCustomCheckNames, listCustomChecks, updateCustomCheck } from "./customChecks.service";
@@ -97,12 +97,26 @@ complianceRouter.get("/api/compliance/smart-attribute-names", ...readCompliance,
  * Port of `get_self_reported_attribute_names` (main.py:10184) — distinct
  * attribute names ever pushed to the device-data webhook for this
  * workspace, read straight from the local DevicePushData store (Phase 8).
- * ?platform=windows|macos narrows to attribute names seen from that
- * platform; omitted returns the union across both.
+ * ?platform=windows|macos|android|apple narrows to attribute names seen
+ * from that platform; omitted returns the union across all.
+ *
+ * `items` stays the plain, backward-compatible string array every existing
+ * caller (ConditionRow.vue's <datalist>) already reads — merged with
+ * SELF_REPORTED_ATTRIBUTE_CATALOG's known mobile-telemetry-roadmap names so
+ * they're suggested even for a freshly onboarded workspace with no device
+ * having self-reported yet (getSelfReportedAttributeCatalog,
+ * complianceFields.ts). `catalog` is new: the same names' full presentation
+ * metadata (friendly label, boolean/enum/string value type, enum options,
+ * which platforms it applies to) so the Policy Builder can render a proper
+ * Yes/No or enum dropdown instead of a generic free-text "Expected value…"
+ * input — see ConditionRow.vue's self_reported_attribute branch.
  */
 complianceRouter.get("/api/compliance/self-reported-attribute-names", ...readCompliance, asyncHandler(async (req, res) => {
   const platform = typeof req.query.platform === "string" ? req.query.platform : undefined;
-  res.json({ items: await getSelfReportedAttributeNames(workspaceOf(req), platform) });
+  const observed = await getSelfReportedAttributeNames(workspaceOf(req), platform);
+  const catalog = getSelfReportedAttributeCatalog(observed, platform);
+  const items = Array.from(new Set([...catalog.map((e) => e.name), ...observed])).sort();
+  res.json({ items, catalog });
 }));
 
 // ── Custom Device Checks (Settings > Device Data Webhook) — disclosed new

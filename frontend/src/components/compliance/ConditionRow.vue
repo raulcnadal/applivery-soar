@@ -8,7 +8,7 @@
 // builder.
 import { computed, ref } from "vue";
 import { ICONS } from "../../lib/solarIcons";
-import type { AppList, ComplianceFieldDef, ConditionRule, CustomCheckName, TriggerName } from "../../stores/compliance";
+import type { AppList, ComplianceFieldDef, ConditionRule, CustomCheckName, SelfReportedAttributeCatalogEntry, TriggerName } from "../../stores/compliance";
 import type { GeofenceZone } from "../../stores/geofencing";
 import PolicyPickerModal from "../devices/PolicyPickerModal.vue";
 import AudiencePickerField from "./AudiencePickerField.vue";
@@ -28,6 +28,15 @@ const props = defineProps<{
   fieldsCatalog: ComplianceFieldDef[];
   smartAttributeNames: string[];
   selfReportedAttributeNames: string[];
+  // Mobile telemetry roadmap Phase 5 discoverability fix — friendly label/
+  // value-type/options metadata for the known selfReportedAttribute names
+  // (SELF_REPORTED_ATTRIBUTE_CATALOG, backend complianceFields.ts), so this
+  // component can render a proper Yes/No or enum <select> for e.g.
+  // deviceRootedOrJailbroken instead of a generic free-text "Expected
+  // value…" input. Optional/defaults to [] — an older caller that hasn't
+  // been updated to pass this prop still gets the previous free-text
+  // behavior, it just doesn't get the friendlier editor.
+  selfReportedAttributeCatalog?: SelfReportedAttributeCatalogEntry[];
   // Disclosed new feature — customChecks.service.ts's module doc. Already
   // pre-filtered by the caller (PolicyBuilderDrawer.vue) to the policy's
   // own targetPlatform, since these ARE a finite, admin-defined vocabulary
@@ -57,6 +66,18 @@ const isPickingPolicy = ref(false);
 
 const fieldDef = computed(() => props.fieldsCatalog.find((f) => f.key === props.condition.field) ?? props.fieldsCatalog[0]);
 const needsCompareValue = computed(() => !["exists", "missing"].includes(props.condition.operator));
+
+// The catalog entry (if any) for the currently-selected self-reported
+// attribute name — drives whether the value editor below renders a Yes/No
+// select, an enum select, or falls back to the original free-text input.
+// An unrecognized/custom attribute name simply has no match here, same as
+// before this catalog existed.
+const selfReportedEntry = computed(() =>
+  (props.selfReportedAttributeCatalog || []).find((e) => e.name === props.condition.value?.name),
+);
+function selfReportedAttributeLabel(name: string): string {
+  return (props.selfReportedAttributeCatalog || []).find((e) => e.name === name)?.label ?? name;
+}
 
 function defaultValueForType(type: string | undefined, options: string[] | undefined): any {
   if (type === "boolean") return true;
@@ -208,16 +229,45 @@ function setPolicyPlatform(platform: string) {
           @input="setValuePatch({ name: ($event.target as HTMLInputElement).value })"
         />
         <datalist id="self-reported-attribute-names">
-          <option v-for="n in selfReportedAttributeNames" :key="n" :value="n" />
+          <option v-for="n in selfReportedAttributeNames" :key="n" :value="n" :label="selfReportedAttributeLabel(n)" />
         </datalist>
+        <span v-if="selfReportedEntry && selfReportedEntry.label !== selfReportedEntry.name" class="text-[11px] text-gray-400">{{ selfReportedEntry.label }}</span>
+
+        <!-- Phase 5 discoverability fix: a known boolean attribute (e.g.
+             deviceRootedOrJailbroken, deviceDebuggerAttached) gets a Yes/No
+             select instead of free text — same condition shape underneath
+             (value.compareValue is still the string "true"/"false"). -->
+        <select
+          v-if="needsCompareValue && selfReportedEntry?.valueType === 'boolean'"
+          :value="condition.value?.compareValue ?? 'true'"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+          @change="setValuePatch({ compareValue: ($event.target as HTMLSelectElement).value })"
+        >
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
+
+        <!-- A known enum attribute (e.g. keystoreAttestationSecurityLevel,
+             playIntegrityVerdict, androidPlatformFamily) gets its declared
+             options as a dropdown instead of free text. -->
+        <select
+          v-else-if="needsCompareValue && selfReportedEntry?.valueType === 'enum'"
+          :value="condition.value?.compareValue ?? (selfReportedEntry.options?.[0] || '')"
+          class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
+          @change="setValuePatch({ compareValue: ($event.target as HTMLSelectElement).value })"
+        >
+          <option v-for="o in selfReportedEntry.options || []" :key="o" :value="o">{{ o }}</option>
+        </select>
+
         <input
-          v-if="needsCompareValue"
+          v-else-if="needsCompareValue"
           :value="condition.value?.compareValue ?? ''"
           placeholder="Expected value…"
           class="px-2 py-1.5 rounded-lg text-xs outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-500"
           @input="setValuePatch({ compareValue: ($event.target as HTMLInputElement).value })"
         />
         <p v-if="selfReportedAttributeNames.length === 0" class="text-[10px] w-full text-gray-400">No devices have reported yet — once one does, its field names appear here automatically.</p>
+        <p v-if="selfReportedEntry?.description" class="text-[10px] w-full text-gray-400">{{ selfReportedEntry.description }}</p>
       </div>
 
       <div v-else-if="fieldDef?.type === 'custom_check_result'" class="flex items-center gap-2 flex-wrap">

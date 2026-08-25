@@ -164,6 +164,12 @@ const COMPLIANCE_FIELD_MITRE_HINTS: Record<string, string[]> = {
   disallowedAppList: ["T1204", "T1105"],
 };
 
+// selfReportedAttribute-based fields are keyed by literal field string
+// ("selfReportedAttribute"), not by attribute name, so MITRE hints for
+// deviceRootedOrJailbroken/deviceDebuggerAttached/deviceHookingFrameworkDetected
+// can't be added here the same way -- see SELF_REPORTED_ATTRIBUTE_CATALOG
+// below, whose entries carry their own mitreTechniques instead.
+
 export const MITRE_TACTICS = [
   { key: "initial-access", name: "Initial Access", order: 1 },
   { key: "execution", name: "Execution", order: 2 },
@@ -473,6 +479,38 @@ function deviceRootedOrJailbrokenCondition(): TemplateCondition[] {
   return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "deviceRootedOrJailbroken", compareValue: "true" } }];
 }
 
+/**
+ * Mobile telemetry roadmap Phase 5 -- the in-house RASP (Runtime
+ * Application Self-Protection) module built to replace freeRASP (whose
+ * data-residency controls require its highest paid tier, a non-starter for
+ * a self-hosted SOAR). RootDetectorPlugin.kt/JailbreakDetector.swift were
+ * restructured this phase to bucket their signals into THREE independent
+ * booleans instead of one collapsed `isCompromised` verdict --
+ * `deviceRootedOrJailbroken` (unchanged, above), plus these two new ones --
+ * so "this device is rooted" and "someone has a debugger/hooking framework
+ * attached to it right now" can each be their own policy condition rather
+ * than being conflated into a single signal. Same shared-condition-function
+ * pattern as deviceRootedOrJailbrokenCondition above: one native `{isCompromised,
+ * signals, isRootedOrJailbroken, isDebuggerAttached,
+ * isHookingFrameworkDetected}` contract on both platforms
+ * (`es.applivery.soar/root_detector`), so one function covers both `android`
+ * and `apple` template entries.
+ */
+function deviceDebuggerAttachedCondition(): TemplateCondition[] {
+  // Android: TracerPid (a kernel-level ptrace attach — gdb/lldb-server/
+  // Frida's own attach path, not just a JDWP debugger) or Debug.isDebuggerConnected().
+  // iOS: sysctl's P_TRACED flag (Apple's own documented QA1361 technique).
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "deviceDebuggerAttached", compareValue: "true" } }];
+}
+
+function deviceHookingFrameworkDetectedCondition(): TemplateCondition[] {
+  // Android: a Frida server file/port, Xposed/LSPosed present, or a
+  // frida/gadget/xposed/substrate marker found in /proc/self/maps.
+  // iOS: a substrate/hooking dylib resolvable via dlopen, or a
+  // frida/substrate/cycript marker found among dyld's own loaded images.
+  return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "deviceHookingFrameworkDetected", compareValue: "true" } }];
+}
+
 function androidConfigPostureCondition(): TemplateCondition[] {
   // Android Management API's own device-posture + policy-compliance signal
   // plus the two classic mobile attack-surface toggles (USB debugging,
@@ -594,6 +632,30 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     title: "Device jailbroken", severity: "critical", conditionLogic: "any",
     description: "Flags iOS/iPadOS devices where the SOAR Mobile Agent's jailbreak-detection foundation (suspicious app/system paths, a sandbox-escape write, an openable jailbreak-tool URL scheme, or an injected substrate dylib) found any sign of compromise.",
     conditions: deviceRootedOrJailbrokenCondition(),
+  },
+  {
+    id: "iso27001-debugger-attached-android", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "android",
+    title: "Debugger attached to the app process", severity: "critical", conditionLogic: "any",
+    description: "Phase 5 in-house RASP: flags Android devices where the SOAR Mobile Agent detects a live debugger/tracer attached to its own process (TracerPid or Debug.isDebuggerConnected()) — a strong reverse-engineering/tampering-in-progress signal, distinct from root status.",
+    conditions: deviceDebuggerAttachedCondition(),
+  },
+  {
+    id: "iso27001-debugger-attached-apple", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "apple",
+    title: "Debugger attached to the app process", severity: "critical", conditionLogic: "any",
+    description: "Phase 5 in-house RASP: flags iOS/iPadOS devices where the SOAR Mobile Agent detects a debugger attached via Apple's documented sysctl P_TRACED technique — distinct from jailbreak status.",
+    conditions: deviceDebuggerAttachedCondition(),
+  },
+  {
+    id: "iso27001-hooking-framework-android", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "android",
+    title: "Hooking/instrumentation framework detected", severity: "critical", conditionLogic: "any",
+    description: "Phase 5 in-house RASP: flags Android devices where Frida, Xposed/LSPosed, or another hooking framework was detected (server file/port, or a marker found in /proc/self/maps) — indicates active runtime tampering/instrumentation.",
+    conditions: deviceHookingFrameworkDetectedCondition(),
+  },
+  {
+    id: "iso27001-hooking-framework-apple", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "apple",
+    title: "Hooking/instrumentation framework detected", severity: "critical", conditionLogic: "any",
+    description: "Phase 5 in-house RASP: flags iOS/iPadOS devices where a substrate/Frida/Cycript-style hooking library was found loaded (dlopen probe or a dyld loaded-image scan) — indicates active runtime tampering/instrumentation.",
+    conditions: deviceHookingFrameworkDetectedCondition(),
   },
   {
     id: "iso27001-firewall-windows", framework: "iso27001", controlRef: "Annex A.8.20", targetPlatform: "windows",
@@ -784,6 +846,30 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: deviceRootedOrJailbrokenCondition(),
   },
   {
+    id: "ens-debugger-attached-android", framework: "ens", controlRef: "op.exp.6", targetPlatform: "android",
+    title: "Depurador conectado al proceso / Debugger attached to app process", severity: "critical", conditionLogic: "any",
+    description: "op.exp.6 (Phase 5 in-house RASP): flags Android devices with a live debugger/tracer attached to the SOAR Mobile Agent's own process.",
+    conditions: deviceDebuggerAttachedCondition(),
+  },
+  {
+    id: "ens-debugger-attached-apple", framework: "ens", controlRef: "op.exp.6", targetPlatform: "apple",
+    title: "Depurador conectado al proceso / Debugger attached to app process", severity: "critical", conditionLogic: "any",
+    description: "op.exp.6 (Phase 5 in-house RASP): flags iOS/iPadOS devices with a debugger attached via Apple's documented sysctl P_TRACED technique.",
+    conditions: deviceDebuggerAttachedCondition(),
+  },
+  {
+    id: "ens-hooking-framework-android", framework: "ens", controlRef: "op.exp.6", targetPlatform: "android",
+    title: "Framework de instrumentación detectado / Hooking framework detected", severity: "critical", conditionLogic: "any",
+    description: "op.exp.6 (Phase 5 in-house RASP): flags Android devices where Frida, Xposed/LSPosed, or another hooking framework was detected.",
+    conditions: deviceHookingFrameworkDetectedCondition(),
+  },
+  {
+    id: "ens-hooking-framework-apple", framework: "ens", controlRef: "op.exp.6", targetPlatform: "apple",
+    title: "Framework de instrumentación detectado / Hooking framework detected", severity: "critical", conditionLogic: "any",
+    description: "op.exp.6 (Phase 5 in-house RASP): flags iOS/iPadOS devices where a substrate/Frida/Cycript-style hooking library was found loaded.",
+    conditions: deviceHookingFrameworkDetectedCondition(),
+  },
+  {
     id: "ens-maintenance-vuln-windows", framework: "ens", controlRef: "op.exp.4", targetPlatform: "windows",
     title: "Mantenimiento pendiente / Pending maintenance (unpatched or EOL)", severity: "high", conditionLogic: "any",
     description: "op.exp.4 (mantenimiento): flags Windows devices with an exploited-CVE fix pending, any pending security update, or an end-of-life OS build.",
@@ -960,6 +1046,30 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: deviceRootedOrJailbrokenCondition(),
   },
   {
+    id: "nis2-hygiene-debugger-attached-android", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "android",
+    title: "Basic cyber hygiene: debugger attached to app process", severity: "critical", conditionLogic: "any",
+    description: "Phase 5 in-house RASP: flags Android devices with a live debugger/tracer attached to the SOAR Mobile Agent's own process.",
+    conditions: deviceDebuggerAttachedCondition(),
+  },
+  {
+    id: "nis2-hygiene-debugger-attached-apple", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "apple",
+    title: "Basic cyber hygiene: debugger attached to app process", severity: "critical", conditionLogic: "any",
+    description: "Phase 5 in-house RASP: flags iOS/iPadOS devices with a debugger attached via Apple's documented sysctl P_TRACED technique.",
+    conditions: deviceDebuggerAttachedCondition(),
+  },
+  {
+    id: "nis2-hygiene-hooking-framework-android", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "android",
+    title: "Basic cyber hygiene: hooking framework detected", severity: "critical", conditionLogic: "any",
+    description: "Phase 5 in-house RASP: flags Android devices where Frida, Xposed/LSPosed, or another hooking framework was detected.",
+    conditions: deviceHookingFrameworkDetectedCondition(),
+  },
+  {
+    id: "nis2-hygiene-hooking-framework-apple", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "apple",
+    title: "Basic cyber hygiene: hooking framework detected", severity: "critical", conditionLogic: "any",
+    description: "Phase 5 in-house RASP: flags iOS/iPadOS devices where a substrate/Frida/Cycript-style hooking library was found loaded.",
+    conditions: deviceHookingFrameworkDetectedCondition(),
+  },
+  {
     id: "nis2-hygiene-firewall-windows", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "windows",
     title: "Basic cyber hygiene: host firewall disabled", severity: "medium", conditionLogic: "any",
     description: "Flags Windows devices self-reporting their local firewall disabled.",
@@ -1026,6 +1136,109 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: highRiskTierCondition(),
   },
 ];
+
+// ── Self-Reported Attribute catalog (Policy Builder discoverability) ──
+//
+// getSelfReportedAttributeNames (deviceData.service.ts) is purely
+// OBSERVATIONAL -- it returns whatever attribute names have actually been
+// pushed by a real device's self-report so far, so a freshly onboarded
+// workspace (no mobile device has reported yet) sees an empty suggestion
+// list, and even once populated, ConditionRow.vue's datalist shows only raw
+// unlabeled strings with a generic free-text "Expected value…" input --
+// none of the mobile telemetry roadmap's 9 attributes (Phases 1-4 plus this
+// phase's 2 new RASP signals) were discoverable or friendly to configure as
+// a Compliance Policy condition until now.
+//
+// This catalog is a STATIC, always-available supplement -- merged with the
+// observed names (compliance.controller.ts's self-reported-attribute-names
+// endpoint), not a replacement for them, so a custom/unknown attribute name
+// an admin's own tooling might push is still discoverable the old way. Each
+// entry only describes how the Policy Builder should PRESENT and VALIDATE a
+// value for that attribute name (friendly label, boolean Yes/No vs. enum
+// dropdown vs. free string, which options an enum has, which platforms it's
+// relevant for) -- it does NOT change the underlying condition JSON shape
+// at all: every condition built from one of these is still exactly
+// `{ field: "selfReportedAttribute", operator, value: { name, compareValue } }`,
+// so complianceEvaluate.ts's evaluateCondition needs zero changes to
+// support this -- see this file's own header comment on why that dispatch
+// is keyed on the literal field string, not a per-attribute key.
+export interface SelfReportedAttributeCatalogEntry {
+  name: string;
+  label: string;
+  valueType: "boolean" | "enum" | "string";
+  options?: string[];
+  platforms?: string[]; // omitted = universal (matches ComplianceFieldDef.platforms' own convention)
+  description?: string;
+}
+
+export const SELF_REPORTED_ATTRIBUTE_CATALOG: SelfReportedAttributeCatalogEntry[] = [
+  {
+    name: "devicePasscodeSet", label: "Device passcode set", valueType: "boolean", platforms: ["apple"],
+    description: "iOS Keychain-accessibility probe (Phase 1) -- also gates Data Protection full-disk encryption, since iOS has no standalone encryption toggle.",
+  },
+  {
+    name: "securityProviderUpToDate", label: "Android security provider up to date", valueType: "boolean", platforms: ["android"],
+    description: "ProviderInstaller.installIfNeeded() (Phase 2) -- Android's SSL/TLS implementation currency, Google Play services-patched.",
+  },
+  {
+    name: "keystoreAttestationSecurityLevel", label: "Android KeyStore attestation level", valueType: "enum",
+    options: ["TrustedEnvironment", "StrongBox", "Software", "Unavailable"], platforms: ["android"],
+    description: "KeyInfo.getSecurityLevel() on a freshly-generated AndroidKeyStore key (Phase 2) -- \"Software\"/\"Unavailable\" mean no hardware-backed (TEE/StrongBox) key protection confirmed.",
+  },
+  {
+    name: "playIntegrityVerdict", label: "Play Integrity device verdict", valueType: "enum",
+    options: ["MEETS_STRONG_INTEGRITY", "MEETS_DEVICE_INTEGRITY", "MEETS_BASIC_INTEGRITY", "UNKNOWN", "NONE"], platforms: ["android"],
+    description: "Best (highest) deviceRecognitionVerdict tier from a verified Play Integrity Classic API token (Phase 3) -- \"NONE\"/\"UNKNOWN\" are Google's own high-probability rooted/tampered signal.",
+  },
+  {
+    name: "playIntegrityAppRecognized", label: "Play Integrity app recognized", valueType: "boolean", platforms: ["android"],
+    description: "appIntegrity.appRecognitionVerdict === \"PLAY_RECOGNIZED\" from a verified Play Integrity token (Phase 3) -- confirms the exact, unmodified, Play-signed APK.",
+  },
+  {
+    name: "deviceRootedOrJailbroken", label: "Device rooted or jailbroken", valueType: "boolean", platforms: ["android", "apple"],
+    description: "RootDetectorPlugin.kt / JailbreakDetector.swift's rooted/jailbroken signal bucket (Phase 4, restructured Phase 5) -- su binaries, root-management apps, a writable /system, suspicious jailbreak app/system paths, a sandbox-escape write, or an openable jailbreak URL scheme.",
+  },
+  {
+    name: "deviceDebuggerAttached", label: "Debugger attached (RASP)", valueType: "boolean", platforms: ["android", "apple"],
+    description: "Phase 5 in-house RASP -- a live debugger/tracer attached to the agent's own process right now: Android's TracerPid (/proc/self/status) or Debug.isDebuggerConnected(); iOS's sysctl P_TRACED flag (Apple QA1361).",
+  },
+  {
+    name: "deviceHookingFrameworkDetected", label: "Hooking framework detected (RASP)", valueType: "boolean", platforms: ["android", "apple"],
+    description: "Phase 5 in-house RASP -- Frida/Xposed/Substrate/Cycript-style runtime instrumentation: Android's Frida server file/port, Xposed class resolution, or a /proc/self/maps marker; iOS's suspicious dylib dlopen probe or a dyld loaded-image scan.",
+  },
+  {
+    name: "androidPlatformFamily", label: "Android platform family", valueType: "enum", options: ["GMS", "AOSP"], platforms: ["android"],
+    description: "Whether the device has Google Mobile Services or is AOSP-only (Phase 4) -- an AOSP device can never report Play Integrity signals, so root-detection is its only compromise signal.",
+  },
+];
+const SELF_REPORTED_ATTRIBUTE_CATALOG_BY_NAME = new Map(SELF_REPORTED_ATTRIBUTE_CATALOG.map((e) => [e.name, e]));
+
+/**
+ * Merges the static catalog above with whatever attribute names have
+ * actually been observed in DevicePushData (getSelfReportedAttributeNames,
+ * deviceData.service.ts) -- the catalog entries always appear (filtered by
+ * platform, same convention as ComplianceFieldDef.platforms), so the
+ * mobile roadmap's attributes are discoverable in the Policy Builder even
+ * for a freshly onboarded workspace with no device having reported yet.
+ * Observed-but-uncataloged names (a custom attribute an admin's own
+ * tooling pushes) are appended after, alphabetically, exactly as before.
+ */
+export function getSelfReportedAttributeCatalog(observedNames: string[], platform?: string): SelfReportedAttributeCatalogEntry[] {
+  const catalogEntries = SELF_REPORTED_ATTRIBUTE_CATALOG.filter(
+    (e) => !e.platforms || e.platforms.length === 0 || !platform || e.platforms.includes(platform),
+  );
+  const catalogNames = new Set(catalogEntries.map((e) => e.name));
+  const extra = observedNames
+    .filter((name) => !catalogNames.has(name))
+    .sort()
+    .map((name): SelfReportedAttributeCatalogEntry => ({ name, label: name, valueType: "string" }));
+  return [...catalogEntries, ...extra];
+}
+
+/** Catalog lookup for a single attribute name -- used wherever only one entry's presentation metadata is needed. */
+export function getSelfReportedAttributeCatalogEntry(name: string): SelfReportedAttributeCatalogEntry | undefined {
+  return SELF_REPORTED_ATTRIBUTE_CATALOG_BY_NAME.get(name);
+}
 
 export function getComplianceTemplates(framework?: string) {
   let templates = COMPLIANCE_POLICY_TEMPLATES;

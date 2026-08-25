@@ -764,6 +764,7 @@ const unsuggested = computed(() => suggestedTechniques.value.filter((t) => !form
         :fields-catalog="availableFields"
         :smart-attribute-names="store.smartAttributeNames"
         :self-reported-attribute-names="store.selfReportedAttributeNames"
+        :self-reported-attribute-catalog="store.selfReportedAttributeCatalog"
         :custom-check-names="filteredCustomCheckNames"
         :trigger-names="store.triggerNames"
         :app-lists="store.appLists"

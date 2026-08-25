@@ -96,6 +96,23 @@ export interface SmartAttributeDef {
   name: string;
 }
 
+/**
+ * Mirrors backend's SelfReportedAttributeCatalogEntry (complianceFields.ts)
+ * — presentation metadata (friendly label, value type, enum options, which
+ * platforms it applies to) for a known selfReportedAttribute name, so
+ * ConditionRow.vue can render a proper Yes/No or enum <select> instead of a
+ * generic free-text "Expected value…" input. Purely a UI/value-editor
+ * concern — the underlying condition JSON shape never changes.
+ */
+export interface SelfReportedAttributeCatalogEntry {
+  name: string;
+  label: string;
+  valueType: "boolean" | "enum" | "string";
+  options?: string[];
+  platforms?: string[];
+  description?: string;
+}
+
 // Disclosed new feature — see backend's customChecks.service.ts module doc.
 export const CHECKER_TYPES = ["processRunning", "serviceStatus", "registryOrFileValue", "appInstalled", "command"] as const;
 export type CheckerType = (typeof CHECKER_TYPES)[number];
@@ -370,6 +387,7 @@ export const useComplianceStore = defineStore("compliance", () => {
 
   const smartAttributeNames = ref<string[]>([]);
   const selfReportedAttributeNames = ref<string[]>([]);
+  const selfReportedAttributeCatalog = ref<SelfReportedAttributeCatalogEntry[]>([]);
   const smartAttributes = ref<SmartAttributeDef[]>([]);
   // policyId -> live violator device count, for the policy grid cards.
   const violatorCounts = ref<Record<string, number | null>>({});
@@ -523,6 +541,13 @@ export const useComplianceStore = defineStore("compliance", () => {
     const { api } = await import("../api/http");
     const res = await api.get("/compliance/self-reported-attribute-names", { params: platform ? { platform } : {} });
     selfReportedAttributeNames.value = res.data.items ?? [];
+    // `catalog` is new alongside `items` (compliance.controller.ts) — the
+    // known mobile-telemetry-roadmap attributes' friendly label/value-type/
+    // options metadata, so ConditionRow.vue can render a proper value editor
+    // instead of generic free text. Backward compatible: an older backend
+    // build without this field simply leaves the catalog empty, and the
+    // value editor falls back to its previous free-text behavior.
+    selfReportedAttributeCatalog.value = res.data.catalog ?? [];
   }
 
   async function fetchSmartAttributes() {
@@ -843,6 +868,7 @@ export const useComplianceStore = defineStore("compliance", () => {
     reportedAppsError,
     smartAttributeNames,
     selfReportedAttributeNames,
+    selfReportedAttributeCatalog,
     smartAttributes,
     violatorCounts,
     fetchSmartAttributeNames,
