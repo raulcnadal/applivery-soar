@@ -11,7 +11,7 @@
 // checker type.
 import { Alert, Button, Input } from "@applivery/bluesky-vue";
 import { ICONS } from "../../lib/solarIcons";
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
 import { useComplianceStore, CHECKER_TYPES, type CheckerType, type CustomCheckDefinition } from "../../stores/compliance";
 
