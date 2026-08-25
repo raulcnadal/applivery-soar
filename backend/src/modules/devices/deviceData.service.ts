@@ -531,8 +531,21 @@ const AGENT_STATUS_FAST_PATH_MS = 6000;
  * Applivery yet.
  */
 export async function getAgentStatus(workspaceSlug: string, serialNumber: string, platform: string): Promise<AgentStatusResponse> {
+  // The mobile agent (agent_status_client.dart) sends the OS-level string
+  // Platform.isIOS/.isAndroid gives it -- "ios"/"android" -- matching the
+  // same convention customChecks.schemas.ts's CHECK_PLATFORMS already uses
+  // for device-facing endpoints. CompliancePolicy.targetPlatform, however,
+  // follows the MDM/dashboard-side convention (deviceNormalize.ts's
+  // normalizeDeviceFull, COMPLIANCE_FIELDS' `platform` options, and every
+  // "-apple" Compliance Policy Template in complianceFields.ts) where an
+  // enrolled iPhone/iPad's platform is "apple", never "ios". Without this
+  // mapping, a policy an admin scoped to "apple" (which does apply to and
+  // evaluate against the device) would silently never appear in this same
+  // device's own agent-status/policy list when the request came from the
+  // mobile app itself -- the exact device it's meant for.
+  const scopePlatform = platform === "ios" ? "apple" : platform;
   const enabledPolicies = await prisma.compliancePolicy.findMany({ where: { workspaceSlug, enabled: true } });
-  const scopedPolicies = enabledPolicies.filter((p: any) => !p.targetPlatform || p.targetPlatform === platform);
+  const scopedPolicies = enabledPolicies.filter((p: any) => !p.targetPlatform || p.targetPlatform === scopePlatform);
   const policiesSummary = scopedPolicies.map((p: any) => ({ id: p.id as string, name: p.name as string, severity: p.severity as string }));
 
   const { getAutomationBearer } = await import("../settings/automationCredential.service");

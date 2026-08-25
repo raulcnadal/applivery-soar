@@ -16,11 +16,26 @@
  * selfReportedAttribute checks (the agent-reported vocabulary in
  * WINDOWS_ATTR_ALIASES/MACOS_ATTR_ALIASES), Android gets customField checks
  * against its live Android Management API nativeSecurity block
- * (deviceNormalize.ts), and iOS -- which has neither a self-report agent nor
- * a nativeSecurity block anywhere in this app -- only gets templates built
- * from what's actually observable for it (OS/vulnerability currency, App
- * Store app currency, check-in recency), never a fabricated encryption or
- * screen-lock signal.
+ * (deviceNormalize.ts).
+ *
+ * iOS ("apple" as a CompliancePolicy targetPlatform / device.platform, but
+ * "ios" as the literal string the mobile agent itself sends -- see
+ * deviceData.service.ts's getAgentStatus doc comment on that mapping) used
+ * to have neither a self-report agent nor a nativeSecurity block anywhere in
+ * this app, and templates were written on that assumption (no fabricated
+ * encryption/screen-lock signal). That's no longer true as of the SOAR
+ * Mobile Agent's device-telemetry roadmap: the agent now calls the exact
+ * same POST /api/device-data/report every self-reporting Windows/macOS
+ * agent already calls (reportDeviceData, deviceData.service.ts -- fully
+ * platform-agnostic, no schema change was needed), reporting
+ * `devicePasscodeSet` from a native Keychain-accessibility probe (see the
+ * mobile repo's ios/Runner/DeviceSecurityTelemetryPlugin.swift). A passcode
+ * is what actually gates iOS's Data Protection full-disk encryption (there's
+ * no separate "encryption enabled" toggle to query the way BitLocker/
+ * FileVault have one) and is also literally the screen lock, so
+ * `devicePasscodeSet` backs both the encryption and screen-lock template
+ * slots below for "apple", same as one Android nativeSecurity signal
+ * sometimes backs more than one Windows/macOS-only template concept.
  */
 
 export interface ComplianceFieldDef {
@@ -271,11 +286,21 @@ type TemplateCondition = { field: string; operator: string; value: unknown };
 // screen-lock/malware (no agent, no nativeSecurity block ever populated for
 // platform "apple").
 
-function encryptionCondition(platform: "windows" | "macos" | "android"): TemplateCondition[] {
+function encryptionCondition(platform: "windows" | "macos" | "android" | "apple"): TemplateCondition[] {
   if (platform === "android") {
     // Android Management API's own encryption signal, live on the device
     // record (deviceNormalize.ts) -- not self-reported by an agent.
     return [{ field: "customField", operator: "equals", value: { path: "nativeSecurity.isEncrypted", compareValue: "false" } }];
+  }
+  if (platform === "apple") {
+    // iOS has no separate "encryption enabled" toggle to query -- Data
+    // Protection full-disk encryption is automatically active once (and
+    // only once) a device passcode is set. `devicePasscodeSet` is
+    // self-reported by the SOAR Mobile Agent via a Keychain-accessibility
+    // probe (see this file's header comment) -- "false" here is the
+    // agent-reported string form every selfReportedAttribute comparison
+    // uses, matching diskEncryptionEnabled's own convention below.
+    return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "devicePasscodeSet", compareValue: "false" } }];
   }
   // Windows (BitLocker) and macOS (FileVault) are both normalized to the
   // same "diskEncryptionEnabled" self-reported attribute name by
@@ -285,11 +310,18 @@ function encryptionCondition(platform: "windows" | "macos" | "android"): Templat
   return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "diskEncryptionEnabled", compareValue: "false" } }];
 }
 
-function screenLockCondition(platform: "windows" | "macos" | "android"): TemplateCondition[] {
+function screenLockCondition(platform: "windows" | "macos" | "android" | "apple"): TemplateCondition[] {
   if (platform === "android") {
     // isDeviceSecure is Android Management API's own "is a lock screen
     // configured" flag -- a more direct signal than any alias could give.
     return [{ field: "customField", operator: "equals", value: { path: "nativeSecurity.isDeviceSecure", compareValue: "false" } }];
+  }
+  if (platform === "apple") {
+    // Same underlying signal as encryptionCondition("apple") above -- on
+    // iOS, "a passcode is set" and "the screen locks" are the same fact,
+    // not two independently-configurable settings the way they are on
+    // Windows/macOS/Android.
+    return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "devicePasscodeSet", compareValue: "false" } }];
   }
   return [{ field: "selfReportedAttribute", operator: "equals", value: { name: "screenLockEnabled", compareValue: "false" } }];
 }
@@ -411,6 +443,12 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: encryptionCondition("android"),
   },
   {
+    id: "iso27001-encryption-apple", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "apple",
+    title: "Device passcode not set (no Data Protection encryption)", severity: "high", conditionLogic: "any",
+    description: "iOS has no standalone encryption toggle -- Data Protection full-disk encryption is only active once a device passcode is set. Flags iOS/iPadOS devices self-reporting no passcode configured, via the SOAR Mobile Agent's Keychain-accessibility probe.",
+    conditions: encryptionCondition("apple"),
+  },
+  {
     id: "iso27001-crypto-hardware-windows", framework: "iso27001", controlRef: "Annex A.8.24", targetPlatform: "windows",
     title: "TPM / Secure Boot not enabled", severity: "high", conditionLogic: "any",
     description: "Supplements BitLocker: TPM anchors the encryption key in hardware and Secure Boot blocks unsigned boot-chain tampering. Either disabled weakens the cryptographic root of trust — a Windows-specific control with no macOS/Android/iOS equivalent.",
@@ -433,6 +471,12 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     title: "Screen lock not enforced", severity: "medium", conditionLogic: "any",
     description: "Flags Android devices the Android Management API reports as not secured with a lock screen.",
     conditions: screenLockCondition("android"),
+  },
+  {
+    id: "iso27001-screen-lock-apple", framework: "iso27001", controlRef: "Annex A.8.5", targetPlatform: "apple",
+    title: "Device passcode / screen lock not set", severity: "medium", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices self-reporting no passcode configured -- on iOS this is the screen lock, self-reported by the SOAR Mobile Agent.",
+    conditions: screenLockCondition("apple"),
   },
   {
     id: "iso27001-malware-windows", framework: "iso27001", controlRef: "Annex A.8.7", targetPlatform: "windows",
@@ -533,6 +577,12 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: encryptionCondition("android"),
   },
   {
+    id: "ens-encryption-apple", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "apple",
+    title: "Cifrado no confirmado en dispositivo iOS / iOS device encryption not confirmed", severity: "high", conditionLogic: "any",
+    description: "mp.eq.3: iOS ties Data Protection encryption to the device passcode -- flags iOS/iPadOS devices the SOAR Mobile Agent reports as having no passcode set. Mandatory at categoría alta for equipment that leaves controlled premises.",
+    conditions: encryptionCondition("apple"),
+  },
+  {
     id: "ens-checkin-windows", framework: "ens", controlRef: "mp.eq.3", targetPlatform: "windows",
     title: "Equipo sin contacto reciente / Device unreachable beyond reporting window", severity: "medium", conditionLogic: "any",
     description: "mp.eq.3 (riesgo de pérdida/robo): flags Windows laptops offline for over 14 days.",
@@ -573,6 +623,12 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     title: "Bloqueo de pantalla no activo / Screen lock not active", severity: "medium", conditionLogic: "any",
     description: "mp.eq.2: flags Android devices without a configured lock screen.",
     conditions: screenLockCondition("android"),
+  },
+  {
+    id: "ens-screen-lock-apple", framework: "ens", controlRef: "mp.eq.2", targetPlatform: "apple",
+    title: "Bloqueo de pantalla no activo / Screen lock not active", severity: "medium", conditionLogic: "any",
+    description: "mp.eq.2: flags iOS/iPadOS devices the SOAR Mobile Agent reports as having no passcode (screen lock) set.",
+    conditions: screenLockCondition("apple"),
   },
   {
     id: "ens-malware-windows", framework: "ens", controlRef: "op.exp.6", targetPlatform: "windows",
@@ -655,6 +711,12 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     conditions: encryptionCondition("android"),
   },
   {
+    id: "nis2-crypto-apple", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "apple",
+    title: "Cryptography: device passcode not set (no Data Protection encryption)", severity: "high", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices the SOAR Mobile Agent reports as having no passcode configured -- NIS2's cryptography/encryption measure, iOS-realistic form (no standalone encryption toggle exists to query).",
+    conditions: encryptionCondition("apple"),
+  },
+  {
     id: "nis2-crypto-hardware-windows", framework: "nis2", controlRef: "Article 21(2)(h)", targetPlatform: "windows",
     title: "Cryptography: TPM / Secure Boot not enabled", severity: "high", conditionLogic: "any",
     description: "Windows-specific hardware root of trust backing full-disk encryption — no macOS/Android/iOS equivalent exists in this app.",
@@ -677,6 +739,12 @@ export const COMPLIANCE_POLICY_TEMPLATES: Array<{
     title: "Basic cyber hygiene: screen lock not enforced", severity: "medium", conditionLogic: "any",
     description: "Flags Android devices without a configured lock screen.",
     conditions: screenLockCondition("android"),
+  },
+  {
+    id: "nis2-hygiene-screenlock-apple", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "apple",
+    title: "Basic cyber hygiene: device passcode / screen lock not set", severity: "medium", conditionLogic: "any",
+    description: "Flags iOS/iPadOS devices the SOAR Mobile Agent reports as having no passcode set.",
+    conditions: screenLockCondition("apple"),
   },
   {
     id: "nis2-hygiene-malware-windows", framework: "nis2", controlRef: "Article 21(2)(g)", targetPlatform: "windows",
