@@ -29,6 +29,7 @@ import { loadDevicePushDataCache } from "./deviceData.service";
 import { LOCATION_CACHE_KEY } from "../analytics/locationsSync.service";
 import { executeMdmAction } from "../workflows/mdmActionExecutor";
 import { evaluateCondition, type AppListsContext, type GeoContext } from "../compliance/complianceEvaluate";
+import type { EvaluationSummary } from "../compliance/compliance.service";
 import { loadAppListsContext } from "../appLists/appCatalog.service";
 import { loadGeofenceZonesById } from "../geofencing/geofence.service";
 import { loadDeviceLocations } from "../geofencing/locationsRefresh.service";
@@ -988,15 +989,34 @@ export async function updateDevicePolicies(authorization: string, workspaceSlug:
 }
 
 /**
- * Port of `bulk_reattest_devices` (main.py:7942-7988). Pushes the
- * security-attestation reporter script to every selected Windows/macOS
- * device right now, instead of waiting for its next scheduled run —
- * `ensureReattestLibraryEntry` above handles the one-time Asset
- * registration, `executeMdmAction('runScript', ...)` (mdmActionExecutor.ts,
- * the same dispatch point every workflow 'mdm_action' step calls through)
- * does the actual push. Devices on a platform with no reporter script
- * (Android/iOS) are skipped with an explicit reason rather than silently
- * ignored, same as the original.
+ * Port of `bulk_reattest_devices` (main.py:7942-7988), extended so "Re-attest
+ * now" means a REAL re-attestation of every selected device, not just
+ * "push the Windows/macOS reporter script or skip" — a device is never fully
+ * skipped anymore, only which signals it can contribute differs by platform:
+ *
+ * 1. Windows/macOS also get the original script push — `ensureReattestLibraryEntry`
+ *    above handles the one-time Asset registration, `executeMdmAction('runScript', ...)`
+ *    (mdmActionExecutor.ts, the same dispatch point every workflow 'mdm_action'
+ *    step calls through) does the actual push, exactly as before.
+ * 2. EVERY selected device (including Android/iOS, which have no reporter
+ *    script — Applivery's MDM API has no run-script/push capability for
+ *    mobile, and this app has no FCM/APNs wake mechanism to force a phone to
+ *    gather fresh data on demand) gets folded into one shared
+ *    `runComplianceEvaluation` pass, scoped to exactly the selected devices'
+ *    serials — a real re-check of every Compliance Policy assigned to each
+ *    of them, against whatever telemetry is already on file (the mobile
+ *    agent's own last report/its own in-app Force Evaluate button is still
+ *    what refreshes that telemetry — this can't force a phone to do that
+ *    remotely, only re-run the evaluation logic against what's already
+ *    known). One shared pass covering the whole selection, not one call per
+ *    device, since each call would otherwise repeat this function's own
+ *    full-fleet Applivery fetch (getDevicesFull(refresh=true) has no
+ *    single-device fetch path to fall back to).
+ *
+ * Uses the calling admin's own live `authorization` for the evaluation pass
+ * too (not an Automation Credential/forceEvaluateNow's cooldown) — this is
+ * an explicit, already-RBAC-gated (`manageDevices`) admin action, not a
+ * device-caller endpoint that needs throttling against abuse.
  */
 export async function bulkReattestDevices(authorization: string, workspaceSlug: string, payload: BulkReattestPayload, actorEmail: string) {
   const devicesRes = await getDevicesFull(authorization, workspaceSlug, false);
@@ -1005,37 +1025,85 @@ export async function bulkReattestDevices(authorization: string, workspaceSlug: 
   const orgBase = await resolveOrgBase(headers, workspaceSlug);
   const libraryEntryCache = new Map<string, { id: string } | null>();
 
-  const results: Array<{ deviceId: string; displayName?: string; ok: boolean; detail: string }> = [];
+  const foundDevices: NormalizedDevice[] = [];
+  const scriptResults = new Map<string, { ok: boolean; detail: string } | null>();
+  const notFound: string[] = [];
+
   for (const deviceId of payload.deviceIds) {
     const device = byId.get(deviceId);
     if (!device) {
-      results.push({ deviceId, ok: false, detail: "Device not found in current fleet" });
+      notFound.push(deviceId);
       continue;
     }
-    if (!["windows", "macos"].includes(device.platform)) {
-      results.push({ deviceId, displayName: device.displayName, ok: false, detail: `No self-report script for platform '${device.platform}'` });
-      continue;
+    foundDevices.push(device);
+
+    if (["windows", "macos"].includes(device.platform)) {
+      if (!libraryEntryCache.has(device.platform)) {
+        libraryEntryCache.set(device.platform, await ensureReattestLibraryEntry(authorization, orgBase, workspaceSlug, device.platform));
+      }
+      const entry = libraryEntryCache.get(device.platform);
+      if (!entry) {
+        scriptResults.set(deviceId, { ok: false, detail: "Could not register the attestation script as a runnable Asset" });
+        continue;
+      }
+      const { ok, detail } = await executeMdmAction(
+        headers,
+        orgBase,
+        workspaceSlug,
+        device.platform,
+        device.platformDeviceId,
+        "runScript",
+        null,
+        { libraryId: entry.id },
+        deviceId,
+      );
+      scriptResults.set(deviceId, { ok, detail });
+    } else {
+      // No reporter script exists for this platform — not a failure, just
+      // nothing to push. The shared evaluation pass below still covers it.
+      scriptResults.set(deviceId, null);
     }
-    if (!libraryEntryCache.has(device.platform)) {
-      libraryEntryCache.set(device.platform, await ensureReattestLibraryEntry(authorization, orgBase, workspaceSlug, device.platform));
+  }
+
+  // One shared, selection-scoped compliance evaluation covering every found
+  // device — see this function's own doc comment for why this isn't one
+  // call per device. A device with no serial number yet (never reported)
+  // can't be matched by runComplianceEvaluation's serial filter, so it's
+  // excluded from the pass itself but still gets an honest detail message
+  // below rather than silently no-oping.
+  const serialsToEvaluate = foundDevices.map((d) => d.serialNumber).filter((s): s is string => Boolean(s));
+  let evalSummary: EvaluationSummary | null = null;
+  let evalError: string | null = null;
+  if (serialsToEvaluate.length) {
+    try {
+      const { runComplianceEvaluation } = await import("../compliance/compliance.service");
+      evalSummary = await runComplianceEvaluation(authorization, workspaceSlug, null, actorEmail, serialsToEvaluate);
+    } catch (e) {
+      evalError = e instanceof HttpError ? e.message : String(e);
     }
-    const entry = libraryEntryCache.get(device.platform);
-    if (!entry) {
-      results.push({ deviceId, displayName: device.displayName, ok: false, detail: "Could not register the attestation script as a runnable Asset" });
-      continue;
-    }
-    const { ok, detail } = await executeMdmAction(
-      headers,
-      orgBase,
-      workspaceSlug,
-      device.platform,
-      device.platformDeviceId,
-      "runScript",
-      null,
-      { libraryId: entry.id },
-      deviceId,
-    );
-    results.push({ deviceId, displayName: device.displayName, ok, detail });
+  }
+  const evalDetail = evalSummary
+    ? `${evalSummary.evaluatedPolicies} ${evalSummary.evaluatedPolicies === 1 ? "policy" : "policies"} re-evaluated across the selection, ${evalSummary.violationsFound} violation(s) found`
+    : evalError
+      ? `Compliance re-evaluation failed: ${evalError}`
+      : "No serial number on file yet — compliance re-evaluation skipped for this device";
+
+  const results: Array<{ deviceId: string; displayName?: string; ok: boolean; detail: string }> = [];
+  for (const deviceId of notFound) {
+    results.push({ deviceId, ok: false, detail: "Device not found in current fleet" });
+  }
+  for (const device of foundDevices) {
+    const script = scriptResults.get(device.id) ?? null;
+    const scriptPart = script === null ? "No reporter script for this platform" : script.ok ? "Reporter script pushed" : `Reporter script failed: ${script.detail}`;
+    // ok reflects whether THIS device actually got re-attested by at least
+    // one means — the script push if it has one, or the shared evaluation
+    // pass otherwise (or in addition). A device is only "not ok" if every
+    // signal available to its platform failed, never merely because it
+    // lacks a reporter script.
+    const hasSerial = Boolean(device.serialNumber);
+    const evalOkForThisDevice = hasSerial && Boolean(evalSummary);
+    const ok = script?.ok ?? evalOkForThisDevice;
+    results.push({ deviceId: device.id, displayName: device.displayName, ok, detail: `${scriptPart} — ${evalDetail}` });
   }
 
   const succeeded = results.filter((r) => r.ok).length;
@@ -1043,7 +1111,7 @@ export async function bulkReattestDevices(authorization: string, workspaceSlug: 
     category: "device",
     action: "bulk_reattest",
     actor: actorEmail,
-    message: `Re-attestation pushed to ${succeeded}/${results.length} selected device(s) by ${actorEmail}`,
+    message: `Re-attestation pushed to ${succeeded}/${results.length} selected device(s) by ${actorEmail}${evalSummary ? ` (shared re-evaluation: ${evalSummary.evaluatedPolicies} policies, ${evalSummary.violationsFound} violations)` : ""}`,
   });
   return { results, succeeded, total: results.length };
 }

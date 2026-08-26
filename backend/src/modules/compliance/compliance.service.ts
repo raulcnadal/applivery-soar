@@ -541,12 +541,17 @@ async function firePolicyViolationAlert(
  * `onlyDeviceSerial` — device-scoped evaluation, added alongside the
  * Windows/macOS/mobile agents' own "Force evaluate compliance" action and
  * the event-driven attribute-change trigger (forceEvaluateNow's own doc
- * comment below). When set, every policy in this pass is still resolved and
- * "evaluated" (autoRun-circuit-breaker checks, alert-cap bookkeeping) but
- * `devices` is narrowed to just the one matching serial before the
- * per-policy device loop runs — so a device forcing its own re-check can
- * only ever create/clear a violation, fire a workflow, send an alert, or
- * apply/remove a tag for ITSELF, never as a side effect for any other
+ * comment below). Accepts either one serial (a single device forcing its own
+ * re-check) or an array (the Devices view's "Re-attest now" bulk action,
+ * scoped to exactly the set of devices an admin selected — one shared
+ * evaluation pass instead of one call per device, which would otherwise
+ * multiply this function's own full-fleet Applivery fetch below by however
+ * many devices were selected). When set, every policy in this pass is still
+ * resolved and "evaluated" (autoRun-circuit-breaker checks, alert-cap
+ * bookkeeping) but `devices` is narrowed to just the matching serial(s)
+ * before the per-policy device loop runs — so a scoped pass can only ever
+ * create/clear a violation, fire a workflow, send an alert, or apply/remove
+ * a tag for the device(s) named here, never as a side effect for any other
  * device in the workspace. This does NOT reduce the Applivery API cost of
  * this pass — `getDevicesFull(refresh=true)` below still pulls the whole
  * fleet either way, since there's no single-device fetch path against
@@ -561,7 +566,7 @@ export async function runComplianceEvaluation(
   workspaceSlug: string,
   policyIds: string[] | null = null,
   actor: string | null = null,
-  onlyDeviceSerial: string | null = null,
+  onlyDeviceSerial: string | string[] | null = null,
 ): Promise<EvaluationSummary> {
   const allPolicies = await prisma.compliancePolicy.findMany({ where: { workspaceSlug } });
   const policies = allPolicies.filter((p) => p.enabled && (policyIds === null || policyIds.includes(p.id)));
@@ -573,9 +578,8 @@ export async function runComplianceEvaluation(
   // firings and Device Audience membership needs to be current, unlike most
   // other callers of getDevicesFull which tolerate the 15-min live cache.
   const devicesResp = await getDevicesFull(authorization, workspaceSlug, true);
-  const devices: NormalizedDevice[] = onlyDeviceSerial
-    ? devicesResp.items.filter((d) => d.serialNumber === onlyDeviceSerial)
-    : devicesResp.items;
+  const serialFilter = onlyDeviceSerial == null ? null : new Set(Array.isArray(onlyDeviceSerial) ? onlyDeviceSerial : [onlyDeviceSerial]);
+  const devices: NormalizedDevice[] = serialFilter ? devicesResp.items.filter((d) => serialFilter.has(d.serialNumber)) : devicesResp.items;
 
   // Attach installed-app inventories, but only for devices actually scoped
   // by a policy with a requiredAppList/disallowedAppList condition — a pure

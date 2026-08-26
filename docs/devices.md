@@ -37,7 +37,7 @@ Click a device's **Risk** badge to open a "What's driving this score" popover li
 Select one or more rows via their checkboxes to reveal a bulk action bar:
 
 - **Run workflow…** — opens the [workflow device picker](workflows.md#running-a-workflow) and runs the chosen workflow against every selected device.
-- **Re-attest now** — pushes the Windows/macOS security-attestation self-report script immediately instead of waiting for its scheduled run (confirms first; reports "skipped" for platforms with no reporter, i.e. Android/iOS). See [Settings → Device Data Webhook](settings.md#device-data-webhook) for the underlying script.
+- **Re-attest now** — confirms first, then re-attests every selected device: Windows/macOS also get the security-attestation self-report script pushed immediately instead of waiting for its scheduled run, and every selected device (including Android/iOS, which have no reporter script) gets its assigned Compliance Policies re-evaluated right away against its latest known data — no device is skipped outright, only which signal it can contribute differs by platform. Mobile devices can't be remotely forced to gather fresh telemetry (Applivery's MDM API has no push/run-script capability for iOS/Android, and this app has no push-notification wake mechanism); their own in-app Force Evaluate/Force Report buttons or next scheduled report are what refresh that data. The result banner lists a real per-device reason for anything that didn't succeed. See [Settings → Device Data Webhook](settings.md#device-data-webhook) for the underlying script.
 - **Add tag…** — applies one tag to every selected device.
 - **Move segment…** — moves all selected devices to a chosen segment.
 - **Clear** — deselects everything.

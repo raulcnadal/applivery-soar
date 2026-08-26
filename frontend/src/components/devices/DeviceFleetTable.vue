@@ -172,7 +172,7 @@ async function handleRunWorkflow(workflow: Workflow) {
 async function handleBulkReattest() {
   const targetIds = [...selectedIds.value];
   if (targetIds.length === 0) return;
-  if (!window.confirm(`Push the security-attestation reporter to ${targetIds.length} selected device(s) now? Devices without a reporter script (Android/iOS) will be skipped.`)) return;
+  if (!window.confirm(`Re-attest ${targetIds.length} selected device(s) now? Windows/macOS devices also get the reporter script pushed immediately; every device gets its assigned Compliance Policies re-evaluated against its latest known data right away.`)) return;
   isReattesting.value = true;
   try {
     const res = await store.bulkReattest(targetIds);
@@ -531,7 +531,7 @@ onMounted(() => {
       </button>
       <button
         :disabled="isReattesting"
-        title="Push the Windows/macOS security-attestation reporter script now instead of waiting for its next scheduled run"
+        title="Windows/macOS: pushes the security-attestation reporter script now. Every selected device also gets its assigned Compliance Policies re-evaluated immediately against its latest known data — mobile devices can't be remotely forced to gather fresh data, but their existing telemetry is still re-checked."
         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
         @click="handleBulkReattest"
       >
@@ -561,16 +561,17 @@ onMounted(() => {
 
     <div v-if="reattestResult" class="flex flex-col gap-1.5 px-4 py-2.5 text-xs border-b border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white" :style="{ backgroundColor: `${SUCCESS}08` }">
       <div class="flex items-center justify-between gap-3">
-        <span>Re-attestation pushed to {{ reattestResult.succeeded }}/{{ reattestResult.total }} device(s){{ reattestResult.failures.length ? " — some were skipped:" : "" }}</span>
+        <span>Re-attested {{ reattestResult.succeeded }}/{{ reattestResult.total }} device(s){{ reattestResult.failures.length ? " — some had no successful signal at all:" : "" }}</span>
         <button class="font-semibold shrink-0 text-gray-400" @click="reattestResult = null">Dismiss</button>
       </div>
-      <!-- Surfaces the REAL per-device skip/failure reason from the backend
-           (bulkReattestDevices's own `detail`, e.g. "No self-report script
-           for platform 'apple'") instead of a generic guess — this is what a
-           device actually got classified as server-side, which is the only
-           way to tell a genuine unsupported-platform skip apart from a
-           platform-detection bug (a Mac wrongly landing on "apple" instead
-           of "macos") from the UI alone. -->
+      <!-- Surfaces the REAL per-device failure reason from the backend
+           (bulkReattestDevices's own `detail`, e.g. a reporter-script push
+           error, "No serial number on file yet", or a compliance
+           re-evaluation error) instead of a generic guess — since the
+           redesign no device is skipped just for lacking a reporter script
+           (iOS/Android still get their assigned policies re-evaluated), so
+           anything listed here is a genuine failure worth investigating, not
+           an expected platform limitation. -->
       <ul v-if="reattestResult.failures.length" class="pl-4 list-disc space-y-0.5">
         <li v-for="f in reattestResult.failures" :key="f.deviceId">{{ f.displayName || f.deviceId }}: {{ f.detail }}</li>
       </ul>
