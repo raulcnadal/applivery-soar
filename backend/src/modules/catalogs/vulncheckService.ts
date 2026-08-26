@@ -3,7 +3,7 @@ import { prisma } from "../../services/prisma";
 import { decryptSecret, encryptSecret } from "../../utils/secretCipher";
 import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
-import { appKeywordsFor, guessCpe, osKeywordsFor } from "./cpeTranslate";
+import { appKeywordsFor, guessCpe, isPlausibleOsCpeGuess, osKeywordsFor } from "./cpeTranslate";
 import { PLATFORM_MAP } from "./platformMap";
 import type { VulnSourcePlugin } from "./vulnSources";
 
@@ -257,7 +257,11 @@ export async function refreshVulncheckForWorkspace(workspaceSlug: string, bearer
     const isOs = osCombos.has(key);
     try {
       const keywords = isOs ? osKeywordsFor((combo as { platform: string }).platform) : appKeywordsFor((combo as any).name, (combo as any).identifier);
-      const guessed = await guessCpe(cfgRow.cpeGuesserBaseUrl, keywords, isOs ? "o" : "a");
+      let guessed = await guessCpe(cfgRow.cpeGuesserBaseUrl, keywords, isOs ? "o" : "a");
+      // See cpeTranslate.ts's isPlausibleOsCpeGuess doc comment — a wrong
+      // top-ranked guess for an OS lookup (e.g. iOS resolving to an
+      // unrelated desktop product) must never reach a real CVE search.
+      if (guessed && isOs && !isPlausibleOsCpeGuess((combo as { platform: string }).platform, guessed)) guessed = null;
       if (!guessed) {
         idsByComboKey.set(key, []);
       } else {

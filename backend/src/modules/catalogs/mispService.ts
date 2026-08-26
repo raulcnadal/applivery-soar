@@ -4,7 +4,7 @@ import { prisma } from "../../services/prisma";
 import { decryptSecret, encryptSecret } from "../../utils/secretCipher";
 import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
-import { appKeywordsFor, guessCpe, osKeywordsFor } from "./cpeTranslate";
+import { appKeywordsFor, guessCpe, isPlausibleOsCpeGuess, osKeywordsFor } from "./cpeTranslate";
 import { PLATFORM_MAP } from "./platformMap";
 
 /**
@@ -245,9 +245,15 @@ function versionPrefixes(version: string): string[] {
  */
 async function lookupMispForCombo(
   base: string, apiKey: string, verifySsl: boolean, cpeGuesserBase: string, keywords: string[], part: "a" | "o", version: string,
+  // Non-null only for OS lookups — see cpeTranslate.ts's isPlausibleOsCpeGuess
+  // doc comment for why OS guesses get this extra check and app guesses
+  // don't (we deterministically know Apple/Google/Microsoft own these
+  // platforms; there's no equivalent known-good answer for arbitrary apps).
+  osPlatform: string | null = null,
 ): Promise<{ mapped: boolean; cve_list: Array<Record<string, any>> }> {
   const guessed = await guessCpe(cpeGuesserBase, keywords, part);
   if (!guessed) return { mapped: false, cve_list: [] };
+  if (osPlatform && !isPlausibleOsCpeGuess(osPlatform, guessed)) return { mapped: false, cve_list: [] };
 
   let hits: MispCpeHit[] = [];
   for (const prefix of versionPrefixes(version)) {
@@ -356,7 +362,7 @@ export async function refreshMispForWorkspace(workspaceSlug: string, bearer: str
       // entries, so pull it back out of the key itself rather than
       // threading a third shape through this Map.
       const version = isOs ? key.split("|")[1] ?? "" : (combo as any).version;
-      const result = await lookupMispForCombo(base, apiKey, cfgRow.verifySsl, cfgRow.cpeGuesserBaseUrl, keywords, isOs ? "o" : "a", version);
+      const result = await lookupMispForCombo(base, apiKey, cfgRow.verifySsl, cfgRow.cpeGuesserBaseUrl, keywords, isOs ? "o" : "a", version, isOs ? (combo as { platform: string }).platform : null);
       await prisma.mispVulnCache.upsert({
         where: { workspaceSlug_key: { workspaceSlug, key } },
         create: { workspaceSlug, key, result },

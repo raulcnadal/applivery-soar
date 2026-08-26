@@ -64,6 +64,32 @@ export function osKeywordsFor(platform: string): string[] {
   return OS_KEYWORDS[platform] ?? [platform];
 }
 
+// The vendor half of an OS CPE guess is never actually ambiguous — we know
+// Apple/Google/Microsoft own these platforms outright, it's only the
+// PRODUCT string (mac_os_x vs iphone_os, windows_10 vs windows_11, ...)
+// that legitimately needs cpe-guesser's index. Found via a real report:
+// an iPhone on a recent iOS build showed a pile of decade-old Adobe Flash
+// Player CVEs under its OS-level Vulnerability Service section — a device
+// with zero Flash Player exposure by any measure. cpe-guesser's `/search`
+// ranks a free-text keyword query against its whole CPE index; short,
+// extremely common OS keywords like "os" or "iphone" apparently rank some
+// unrelated product's CPE above the real one for at least one CPE-guesser
+// deployment, and callers (mispService.ts/vulncheckService.ts) were trusting
+// the top-ranked hit unconditionally for OS lookups. Since we already know
+// the correct vendor deterministically for the 4 platforms we ever look up
+// an OS CPE for, this catches exactly that failure mode: reject a guess
+// whose vendor doesn't match, treating the combo as unmapped (same as
+// cpe-guesser returning nothing) rather than feeding a wrong vendor:product
+// pair into a real CVE search. Never applied to app lookups — those
+// legitimately span thousands of unpredictable vendors cpe-guesser has to
+// resolve from scratch, there's no known-good answer to check against.
+const EXPECTED_OS_VENDOR: Record<string, string> = { macos: "apple", ios: "apple", android: "google", windows: "microsoft" };
+
+export function isPlausibleOsCpeGuess(platform: string, guessed: CpeGuessResult): boolean {
+  const expected = EXPECTED_OS_VENDOR[platform];
+  return !expected || guessed.vendor.toLowerCase() === expected;
+}
+
 export function appKeywordsFor(name: string | null | undefined, identifier: string): string[] {
   const fromName = splitKeywords(name ?? "");
   if (fromName.length) return fromName;

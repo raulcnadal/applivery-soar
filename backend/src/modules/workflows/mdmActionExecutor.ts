@@ -86,8 +86,27 @@ export async function executeMdmAction(
   const platformPath = platformPathSegment(platform);
   if (!platformPath) return { ok: false, detail: `Unsupported platform '${platform}'` };
 
-  if (action.platforms && !action.platforms.includes(platformPath)) {
-    return { ok: false, detail: `'${action.label}' is not supported on ${platformPath}` };
+  // Gate against the RAW NormalizedPlatform value ("apple" | "macos" | ...),
+  // never platformPath — platformPathSegment collapses BOTH "apple" (iOS/
+  // iPadOS) and "macos" into the single Applivery API URL segment "apple"
+  // (mdmActions.ts's own comment/action.platforms entries assume this: every
+  // action meant for both explicitly lists "apple" AND "macos", e.g. "Sync
+  // device", while Mac-only actions like "runScript"/"Set Recovery Lock"
+  // list "macos" alone and iOS-only ones like "Set Personal Hotspot" list
+  // "apple" alone). Using platformPath here meant `action.platforms.includes(
+  // platformPath)` was really always testing for the literal string "apple"
+  // regardless of which sub-type the device actually was — so any
+  // Mac-only action (runScript, most critically: it's what "Re-attest now"
+  // and the Firewall Policy Library push through) was unconditionally
+  // rejected for every real macOS device with "'Run script...' is not
+  // supported on apple", while any iOS-only action would have incorrectly
+  // been allowed to attempt against a Mac. Found via a real report: "Run
+  // script (direct, on-device execution)' is not supported on apple" for a
+  // macOS device whose platform was already correctly normalized to
+  // "macos" — the re-attest push wasn't skipping due to misdetection at
+  // all, it was this comparison.
+  if (action.platforms && !action.platforms.includes(platform)) {
+    return { ok: false, detail: `'${action.label}' is not supported on ${platform}` };
   }
 
   const allowedModels = action.deploymentModels?.[platform];
