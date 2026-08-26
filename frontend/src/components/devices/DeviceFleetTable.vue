@@ -129,7 +129,7 @@ function deleteSavedFilter(name: string) {
 const isPickingWorkflow = ref(false);
 const runResult = ref<any>(null);
 const isReattesting = ref(false);
-const reattestResult = ref<{ succeeded: number; total: number } | null>(null);
+const reattestResult = ref<{ succeeded: number; total: number; failures: Array<{ deviceId: string; displayName?: string; detail: string }> } | null>(null);
 const isBulkTagging = ref(false);
 const bulkTagDraft = ref("");
 const isBulkMovingSegment = ref(false);
@@ -176,7 +176,7 @@ async function handleBulkReattest() {
   isReattesting.value = true;
   try {
     const res = await store.bulkReattest(targetIds);
-    reattestResult.value = { succeeded: res.succeeded, total: res.total };
+    reattestResult.value = { succeeded: res.succeeded, total: res.total, failures: res.results.filter((r) => !r.ok).map((r) => ({ deviceId: r.deviceId, displayName: r.displayName, detail: r.detail })) };
     selectedIds.value = new Set();
   } catch (err: any) {
     window.alert(err?.response?.data?.detail || "Failed to push re-attestation.");
@@ -559,9 +559,21 @@ onMounted(() => {
       <button class="text-xs text-gray-400" @click="isBulkTagging = false">Cancel</button>
     </div>
 
-    <div v-if="reattestResult" class="flex items-center justify-between gap-3 px-4 py-2.5 text-xs border-b border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white" :style="{ backgroundColor: `${SUCCESS}08` }">
-      <span>Re-attestation pushed to {{ reattestResult.succeeded }}/{{ reattestResult.total }} device(s){{ reattestResult.succeeded < reattestResult.total ? " — some were skipped (unsupported platform or push failure)" : "" }}.</span>
-      <button class="font-semibold shrink-0 text-gray-400" @click="reattestResult = null">Dismiss</button>
+    <div v-if="reattestResult" class="flex flex-col gap-1.5 px-4 py-2.5 text-xs border-b border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white" :style="{ backgroundColor: `${SUCCESS}08` }">
+      <div class="flex items-center justify-between gap-3">
+        <span>Re-attestation pushed to {{ reattestResult.succeeded }}/{{ reattestResult.total }} device(s){{ reattestResult.failures.length ? " — some were skipped:" : "" }}</span>
+        <button class="font-semibold shrink-0 text-gray-400" @click="reattestResult = null">Dismiss</button>
+      </div>
+      <!-- Surfaces the REAL per-device skip/failure reason from the backend
+           (bulkReattestDevices's own `detail`, e.g. "No self-report script
+           for platform 'apple'") instead of a generic guess — this is what a
+           device actually got classified as server-side, which is the only
+           way to tell a genuine unsupported-platform skip apart from a
+           platform-detection bug (a Mac wrongly landing on "apple" instead
+           of "macos") from the UI alone. -->
+      <ul v-if="reattestResult.failures.length" class="pl-4 list-disc space-y-0.5">
+        <li v-for="f in reattestResult.failures" :key="f.deviceId">{{ f.displayName || f.deviceId }}: {{ f.detail }}</li>
+      </ul>
     </div>
 
     <div v-if="bulkActionResult" class="flex items-center justify-between gap-3 px-4 py-2.5 text-xs border-b border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white" :style="{ backgroundColor: `${SUCCESS}08` }">
