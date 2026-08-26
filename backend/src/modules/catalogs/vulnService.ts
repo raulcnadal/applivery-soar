@@ -19,6 +19,37 @@ const APPS_CHUNK_SIZE = 25;
 const MAX_APPS_PER_TICK = 500;
 export const VULN_SERVICE_TICK_MS = 3_600_000; // hourly check; actual refresh only fires once refreshIntervalHours elapsed
 
+/**
+ * An installed-apps slot (selfReported or serverFetch — installedApps.service.ts's
+ * InstalledAppsRecord) older than this is excluded from vulnerability-exposure
+ * matching, even though it's still shown as-is everywhere else (the Apps view,
+ * the Device modal's own plain inventory list). Found via a real report: a
+ * macOS device confirmed up to date, with no Adobe product installed, showed
+ * 5531 "known" CVEs dominated by decade-old Adobe Flash/Reader entries with
+ * very high EPSS scores. Root cause traced to fetchAndStoreInstalledApps
+ * (installedApps.service.ts): on a persistent Applivery API error for a
+ * device's app-inventory endpoint, that function deliberately preserves the
+ * LAST successful serverFetch entry rather than clobbering it with an empty
+ * one (a documented, correct fix for a different bug — a temporarily
+ * unreachable endpoint shouldn't erase real data). But neither
+ * computeVulnServiceStatus nor computeDeviceAppsDetail ever checked how OLD
+ * that preserved entry actually was before treating every app in it as
+ * "currently installed and exposed" — so a slot stuck on a months-old
+ * snapshot (Adobe Flash Player included, back when it still shipped) kept
+ * contributing its entire historical CVE backlog indefinitely, with no
+ * expiry, long after the real device moved on. 30 days is deliberately
+ * generous relative to any real report/refresh cadence in this app (agents
+ * default to an hourly report; Applivery's own app-inventory refresher runs
+ * continuously) — this is a dead-slot safety net, not something normal
+ * operation should ever bump into.
+ */
+const APPS_STALE_AFTER_MS = 30 * 24 * 3600 * 1000;
+
+function isAppsEntryFresh(entry: InstalledAppsEntry, now = Date.now()): boolean {
+  const fetchedAt = entry.fetchedAt ? new Date(entry.fetchedAt).getTime() : NaN;
+  return Number.isFinite(fetchedAt) && now - fetchedAt < APPS_STALE_AFTER_MS;
+}
+
 // Re-exported for callers that already import PLATFORM_MAP from here
 // (devices.service.ts et al.) — canonical definition now lives in
 // platformMap.ts so mispService.ts doesn't have to import this file (see
@@ -395,9 +426,12 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
   const appTimestamps: string[] = [];
   // Both slots (self-reported and Applivery-UEM-fetched) — deduped by cache
   // key so an app reported identically by both sources doesn't get counted
-  // (and its CVEs double-counted into totalCounts below) twice.
+  // (and its CVEs double-counted into totalCounts below) twice. Stale slots
+  // (see APPS_STALE_AFTER_MS above) are excluded entirely here — a dead
+  // snapshot shouldn't keep contributing its apps' CVEs to this device's
+  // exposure count indefinitely.
   const seenAppKeys = new Set<string>();
-  for (const entry of appsEntries) {
+  for (const entry of appsEntries.filter((e) => isAppsEntryFresh(e))) {
     for (const a of entry.apps ?? []) {
       const key = `${(a.identifier ?? "").toLowerCase()}|${a.version}|${workerPlatform}`;
       if (seenAppKeys.has(key)) continue;
@@ -667,6 +701,12 @@ export async function computeDeviceAppsDetail(
   // resolve a hash for this app (older agent build, or a source this
   // wasn't confidently resolvable for) or nothing's been checked yet.
   integrity: AppIntegrityInfo | null;
+  // True when the freshest contribution for this app is older than
+  // APPS_STALE_AFTER_MS above — `vuln` is deliberately left null in that
+  // case rather than reporting CVEs for software that may no longer be
+  // installed. Lets the UI show "last confirmed N days ago" instead of a
+  // misleading clean CVE check.
+  stale: boolean;
 }>> {
   if (appsEntries.length === 0) return [];
   const plugins = await getEnabledVulnSourcePlugins(workspaceSlug);
@@ -691,7 +731,7 @@ export async function computeDeviceAppsDetail(
   const out: Array<{
     identifier: string; name: string | null; version: string; sources: string[]; updateAvailable: boolean;
     productCode: string | null; enforcedByPolicy: boolean; origin?: "winget" | "msi" | "store"; installLocation: string | null;
-    vuln: AppVersionVulnInfo | null; integrity: AppIntegrityInfo | null;
+    vuln: AppVersionVulnInfo | null; integrity: AppIntegrityInfo | null; stale: boolean;
   }> = [];
   for (const [identifier, contributions] of byIdentifier) {
     // Freshest contribution wins for the headline name/version, same rule
@@ -699,9 +739,17 @@ export async function computeDeviceAppsDetail(
     const ranked = [...contributions].sort((a, b) => new Date(b.entry.fetchedAt).getTime() - new Date(a.entry.fetchedAt).getTime());
     const primary = ranked[0].app;
     const sources = Array.from(new Set(contributions.map((c) => c.entry.source)));
+    // Whether the freshest contribution is itself stale (see
+    // APPS_STALE_AFTER_MS above) — the app row is still shown either way
+    // (this is the plain inventory list, not a vuln-only view), but a stale
+    // row's `vuln` is deliberately left null rather than reporting CVEs for
+    // software that may no longer even be installed. Exposed on the row so
+    // the UI can show "last confirmed N days ago" instead of implying a
+    // clean, current CVE check.
+    const stale = !isAppsEntryFresh(ranked[0].entry);
 
     let vuln: AppVersionVulnInfo | null = null;
-    if (workerPlatform && primary.version) {
+    if (workerPlatform && primary.version && !stale) {
       const key = `${identifier.toLowerCase()}|${primary.version}|${workerPlatform}`;
       const row = vulnServiceEnabled ? await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key } } }) : null;
       const extraRows = await Promise.all(plugins.map((p) => p.getCacheRow(workspaceSlug, key)));
@@ -723,6 +771,7 @@ export async function computeDeviceAppsDetail(
       installLocation: contributions.map((c) => c.app.installLocation).find(Boolean) ?? null,
       vuln,
       integrity,
+      stale,
     });
   }
   return out;

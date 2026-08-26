@@ -201,15 +201,59 @@ async function mispSearchEventCves(base: string, apiKey: string, verifySsl: bool
   return out;
 }
 
-/** Full per-combo pipeline: guess CPE -> search MISP for that CPE -> pull CVE IDs from the matched events. Returns the same `{mapped, cve_list}` shape vulnService.ts's Worker results use, so both cache tables merge cleanly. */
+/**
+ * Most-specific-first dotted-version prefixes — "26.6.2" -> ["26.6.2",
+ * "26.6", "26"]. Used to retry a MISP CPE search at progressively coarser
+ * version granularity: a real MISP CPE attribute might record a version at
+ * a coarser precision than our own inventory does (e.g. "18.4" vs our
+ * "18.4.1"), so an exact full-string match can miss a real hit that a
+ * major.minor-level match would still find, without falling all the way
+ * back to a version-LESS search (see lookupMispForCombo's own doc comment
+ * for why that's no longer acceptable).
+ */
+function versionPrefixes(version: string): string[] {
+  const parts = version.split(/[.\-_]/).filter(Boolean);
+  const out: string[] = [];
+  for (let i = parts.length; i >= 1; i--) {
+    const p = parts.slice(0, i).join(".");
+    if (!out.includes(p)) out.push(p);
+  }
+  return out.length ? out : [version];
+}
+
+/**
+ * Full per-combo pipeline: guess CPE -> search MISP for that CPE, narrowed
+ * to this exact combo's version -> pull CVE IDs from the matched events.
+ * Returns the same `{mapped, cve_list}` shape vulnService.ts's Worker
+ * results use, so both cache tables merge cleanly.
+ *
+ * The version narrowing (added after a real report: an up-to-date, no-Adobe
+ * macOS device showed 5531 CVEs dominated by decade-old Adobe Flash/Reader
+ * entries) is the fix for what was a genuine bug, not a tuning knob —
+ * `guessed.vendor:guessed.product` alone (no version) previously matched
+ * ANY MISP CPE attribute value ever recorded for that vendor:product across
+ * MISP's entire history, e.g. "apple:mac_os_x" matching events from every
+ * macOS release since 2009, AND then pulled every "vulnerability"-typed
+ * attribute sibling in each matched event — which can include CVEs for
+ * entirely different software an event happens to also reference (a
+ * cross-platform advisory bundling Adobe Flash CVEs alongside an Apple CPE
+ * tag, for instance). Retrying at progressively coarser version prefixes
+ * (versionPrefixes above) balances real match recall against that
+ * over-matching risk; if every prefix comes back empty, this combo is
+ * correctly reported as unmapped rather than falling back to the unscoped
+ * search that caused the bug.
+ */
 async function lookupMispForCombo(
-  base: string, apiKey: string, verifySsl: boolean, cpeGuesserBase: string, keywords: string[], part: "a" | "o",
+  base: string, apiKey: string, verifySsl: boolean, cpeGuesserBase: string, keywords: string[], part: "a" | "o", version: string,
 ): Promise<{ mapped: boolean; cve_list: Array<Record<string, any>> }> {
   const guessed = await guessCpe(cpeGuesserBase, keywords, part);
   if (!guessed) return { mapped: false, cve_list: [] };
 
-  const valuePattern = `%${guessed.vendor}:${guessed.product}%`;
-  const hits = await mispSearchCpeAttributes(base, apiKey, verifySsl, valuePattern);
+  let hits: MispCpeHit[] = [];
+  for (const prefix of versionPrefixes(version)) {
+    hits = await mispSearchCpeAttributes(base, apiKey, verifySsl, `%${guessed.vendor}:${guessed.product}:${prefix}%`);
+    if (hits.length) break;
+  }
   if (!hits.length) return { mapped: false, cve_list: [] };
 
   const eventCves = await mispSearchEventCves(base, apiKey, verifySsl, hits.map((h) => h.eventId));
@@ -272,14 +316,14 @@ export async function refreshMispForWorkspace(workspaceSlug: string, bearer: str
     const p = PLATFORM_MAP[d.platform];
     if (p && d.osVersion) osCombos.set(`${p}|${d.osVersion}`, { platform: p });
   }
-  const appCombos = new Map<string, { identifier: string; name: string; platform: string }>();
+  const appCombos = new Map<string, { identifier: string; name: string; version: string; platform: string }>();
   for (const d of devices) {
     const p = PLATFORM_MAP[d.platform];
     if (!p) continue;
     for (const entry of installedAppsRecordEntries(installedAppsStore[d.id])) {
       for (const a of entry.apps ?? []) {
         if (a.identifier && a.version) {
-          appCombos.set(`${a.identifier.toLowerCase()}|${a.version}|${p}`, { identifier: a.identifier, name: a.name ?? a.identifier, platform: p });
+          appCombos.set(`${a.identifier.toLowerCase()}|${a.version}|${p}`, { identifier: a.identifier, name: a.name ?? a.identifier, version: a.version, platform: p });
         }
       }
     }
@@ -307,7 +351,12 @@ export async function refreshMispForWorkspace(workspaceSlug: string, bearer: str
     const isOs = osCombos.has(key);
     try {
       const keywords = isOs ? osKeywordsFor((combo as { platform: string }).platform) : appKeywordsFor((combo as any).name, (combo as any).identifier);
-      const result = await lookupMispForCombo(base, apiKey, cfgRow.verifySsl, cfgRow.cpeGuesserBaseUrl, keywords, isOs ? "o" : "a");
+      // OS combo keys are "${platform}|${osVersion}" (osCombos.set above) —
+      // the version isn't stored separately on the combo value for OS
+      // entries, so pull it back out of the key itself rather than
+      // threading a third shape through this Map.
+      const version = isOs ? key.split("|")[1] ?? "" : (combo as any).version;
+      const result = await lookupMispForCombo(base, apiKey, cfgRow.verifySsl, cfgRow.cpeGuesserBaseUrl, keywords, isOs ? "o" : "a", version);
       await prisma.mispVulnCache.upsert({
         where: { workspaceSlug_key: { workspaceSlug, key } },
         create: { workspaceSlug, key, result },
