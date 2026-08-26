@@ -48,6 +48,7 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
   const isLoadingMapping = ref(false);
   const isSavingMapping = ref(false);
   const mappingError = ref<string | null>(null);
+  const smartAttributesError = ref<string | null>(null);
 
   async function fetchStatus() {
     isLoading.value = true;
@@ -109,9 +110,26 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
   }
 
   async function fetchSmartAttributes() {
-    const { api } = await import("../api/http");
-    const res = await api.get("/smart-attributes");
-    smartAttributes.value = res.data.items ?? [];
+    smartAttributesError.value = null;
+    try {
+      const { api } = await import("../api/http");
+      const res = await api.get("/smart-attributes");
+      smartAttributes.value = res.data.items ?? [];
+    } catch (err: any) {
+      // GET /smart-attributes is documented elsewhere (appliveryClient.ts)
+      // as a known-flaky, occasionally-timing-out Applivery API call. This
+      // function used to have no try/catch at all, which meant a transient
+      // failure here threw out of the Promise.all in
+      // WorkspaceAutomationPanel.vue's onMounted — and since that await sat
+      // ABOVE the line that seeds `selectedAttrName` from the already-saved
+      // osPatchLevelSmartAttributeName, the whole assignment silently never
+      // ran. The dropdown was left on its initial "" (Not mapped) value even
+      // though the mapping was correctly saved and returned by the OTHER
+      // (unrelated) fetch in the same Promise.all — looking exactly like a
+      // save that "didn't stick," when the real save/read round-trip was
+      // fine and this fetch's own failure was the only thing broken.
+      smartAttributesError.value = err?.response?.data?.detail || "Failed to load the Smart Attributes list from Applivery — the OS Patch Level dropdown may be missing options. Try again.";
+    }
   }
 
   async function setOsPatchLevelMapping(smartAttributeName: string | null) {
@@ -131,7 +149,7 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
 
   return {
     status, isLoading, isSaving, error, fetchStatus, setServiceAccountToken, remove,
-    osPatchLevelSmartAttributeName, smartAttributes, isLoadingMapping, isSavingMapping, mappingError,
+    osPatchLevelSmartAttributeName, smartAttributes, isLoadingMapping, isSavingMapping, mappingError, smartAttributesError,
     fetchOsPatchLevelMapping, fetchSmartAttributes, setOsPatchLevelMapping,
   };
 });

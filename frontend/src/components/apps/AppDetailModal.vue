@@ -23,6 +23,23 @@ const store = useComplianceStore();
 
 const PLATFORM_LABELS: Record<string, string> = { apple: "iOS/iPadOS", macos: "macOS", android: "Android", windows: "Windows" };
 const SOURCE_LABELS: Record<string, string> = { self_reported: "Self-reported", server_fetch: "Applivery UEM" };
+// Software integrity (VirusTotal file-hash verdict) badge styling — mirrors
+// DeviceDetailDrawer.vue's own copy of the same map exactly (see that file's
+// doc comment for why "unknown"/"error" aren't treated as risk signals).
+// Duplicated rather than shared because these two components don't otherwise
+// share a lookup-table module; keep both in sync if verdict values change.
+const INTEGRITY_BADGE_CLASS: Record<string, string> = {
+  malicious: "bg-red-500/10 text-red-500",
+  suspicious: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  unknown: "bg-gray-500/10 text-gray-500 dark:text-gray-400",
+  error: "bg-gray-500/10 text-gray-500 dark:text-gray-400",
+};
+const INTEGRITY_BADGE_LABEL: Record<string, string> = {
+  malicious: "Malicious",
+  suspicious: "Suspicious",
+  unknown: "Not in VirusTotal",
+  error: "Check failed",
+};
 
 function formatAge(iso: string | null): string {
   if (!iso) return "—";
@@ -148,15 +165,35 @@ const windowsAppDisplay = computed(() => {
 // each path (most common first), since a fleet is more likely to want to
 // confirm "is this the expected install location" than to enumerate every
 // device individually here (that's what the table below is for).
+// deviceNames collected alongside the count — powers a hover tooltip on the
+// device-count badge below, so "which device(s) have this path" is still
+// answerable without also printing the path a second time per-row further
+// down in the per-device table (see that table's own comment for why the
+// redundant line was removed).
 const installPaths = computed(() => {
   if (!props.app) return [];
-  const counts = new Map<string, number>();
+  const byPath = new Map<string, string[]>();
   for (const d of props.app.devices) {
-    if (d.installLocation) counts.set(d.installLocation, (counts.get(d.installLocation) ?? 0) + 1);
+    if (!d.installLocation) continue;
+    let names = byPath.get(d.installLocation);
+    if (!names) {
+      names = [];
+      byPath.set(d.installLocation, names);
+    }
+    names.push(d.deviceName);
   }
-  return Array.from(counts.entries())
-    .map(([path, deviceCount]) => ({ path, deviceCount }))
+  return Array.from(byPath.entries())
+    .map(([path, deviceNames]) => ({ path, deviceCount: deviceNames.length, deviceNames }))
     .sort((a, b) => b.deviceCount - a.deviceCount);
+});
+
+// Header-level integrity summary — "is this binary flagged on ANY device,"
+// same question the per-device badges below answer individually. Only
+// "malicious"/"suspicious" count (see INTEGRITY_BADGE_CLASS's doc comment);
+// "unknown"/"error" are inconclusive, not a flag.
+const flaggedDeviceCount = computed(() => {
+  if (!props.app) return 0;
+  return props.app.devices.filter((d) => d.integrity?.checked && (d.integrity.verdict === "malicious" || d.integrity.verdict === "suspicious")).length;
 });
 
 const SEVERITY_COLOR: Record<string, string> = { CRITICAL: "#EF4444", HIGH: "#F97316", MEDIUM: "#F59E0B", LOW: "#3B82F6" };
@@ -206,6 +243,14 @@ function toggleVersion(version: string) {
           >
             <component :is="ICONS.ShieldCheck" :size="11" weight="Linear" />
             Enforced by policy on {{ app.devicesEnforcedByPolicy }} device{{ app.devicesEnforcedByPolicy === 1 ? "" : "s" }}
+          </span>
+          <span
+            v-if="flaggedDeviceCount > 0"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 text-red-500"
+            title="VirusTotal file-hash reputation check — see the Devices table below for which device(s) and verdict."
+          >
+            <component :is="ICONS.DangerTriangle" :size="11" weight="Linear" />
+            Flagged by VirusTotal on {{ flaggedDeviceCount }} device{{ flaggedDeviceCount === 1 ? "" : "s" }}
           </span>
         </div>
       </div>
@@ -262,7 +307,11 @@ function toggleVersion(version: string) {
           <div v-for="ip in installPaths" :key="ip.path" class="flex items-start gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
             <component :is="ICONS.Folder" :size="13" weight="Linear" class="shrink-0 text-gray-400 mt-0.5" />
             <span class="font-mono break-all select-all text-gray-900 dark:text-white flex-1">{{ ip.path }}</span>
-            <span v-if="ip.deviceCount > 1" class="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-500/10 text-gray-500 dark:text-gray-400">
+            <span
+              v-if="ip.deviceCount > 1"
+              class="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-500/10 text-gray-500 dark:text-gray-400 cursor-default"
+              :title="ip.deviceNames.join('\n')"
+            >
               {{ ip.deviceCount }} devices
             </span>
           </div>
@@ -400,15 +449,21 @@ function toggleVersion(version: string) {
                   <component v-if="d.lastFetchError" :is="ICONS.DangerTriangle" :size="11" weight="Linear" class="text-amber-500 shrink-0" />
                 </span>
               </div>
-              <!-- Install path — its own full-width line, never truncated
-                   (long WindowsApps paths are exactly the kind of thing an
-                   admin needs to read/copy in full, not guess at from an
-                   ellipsis) — Windows-only, purely informational; absent for
-                   platforms/apps that never report one (e.g. winget-sourced
-                   entries). -->
-              <div v-if="d.installLocation" class="mt-1 flex items-start gap-1.5 text-[10px] text-gray-400">
-                <component :is="ICONS.Folder" :size="11" weight="Linear" class="shrink-0 mt-0.5" />
-                <span class="font-mono break-all select-all">{{ d.installLocation }}</span>
+              <!-- Install path is intentionally NOT repeated here — it's
+                   already shown once, deduped, under "Installation Paths"
+                   above (with a hover tooltip on the device-count badge
+                   listing which device(s) have it), and printing it again
+                   per-row here just crowded an already-dense table once a
+                   device had many apps and/or the paths were long WindowsApps
+                   strings. -->
+              <div v-if="d.integrity?.checked && d.integrity.verdict !== 'clean'" class="mt-1 flex items-center gap-1.5 text-[10px]">
+                <span
+                  class="px-1.5 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap"
+                  :class="INTEGRITY_BADGE_CLASS[d.integrity.verdict] || 'bg-gray-500/10 text-gray-500 dark:text-gray-400'"
+                  :title="d.integrity.detail"
+                >
+                  {{ INTEGRITY_BADGE_LABEL[d.integrity.verdict] || d.integrity.verdict }}
+                </span>
               </div>
             </div>
           </div>

@@ -115,8 +115,17 @@ const appsSearchQuery = ref("");
 // matches exactly what a user would otherwise have to scan the list for by
 // eye.
 const appsRiskyOnly = ref(false);
+// integrity.verdict is "clean" | "suspicious" | "malicious" | "unknown" | "error"
+// (binaryIntegrityService.ts). Only "suspicious"/"malicious" are real risk
+// signals — "unknown" (not in VirusTotal's DB) and "error" (check failed,
+// e.g. timeout) are inconclusive, not risky. An earlier version used
+// `verdict !== "clean"`, which caught "unknown"/"error" too — since most
+// installed apps are never in VirusTotal's DB at all, that made the "Only
+// risky apps" filter match nearly everything, including rows showing "No
+// known CVEs for this version" and no integrity badge at all.
+const RISKY_INTEGRITY_VERDICTS = new Set(["malicious", "suspicious"]);
 function isRiskyApp(a: Record<string, any>): boolean {
-  return Boolean(a.vuln?.cveList?.length > 0) || Boolean(a.integrity?.checked && a.integrity.verdict !== "clean");
+  return Boolean(a.vuln?.cveList?.length > 0) || Boolean(a.integrity?.checked && RISKY_INTEGRITY_VERDICTS.has(a.integrity.verdict));
 }
 const filteredInstalledApps = computed(() => {
   let all = device.value?.installedAppsDetail || [];
@@ -671,6 +680,12 @@ function traceTitle(t: Record<string, any>): string {
                 <div v-for="row in [
                   ['Model', device.manufacturer ? `${device.manufacturer} ${device.model}`.trim() : device.model],
                   ['OS version', device.osVersion],
+                  // Only shows once Settings > Workspace Automation's OS
+                  // Patch Level Smart Attribute mapping is configured —
+                  // otherwise every CVE-matching connector and this row both
+                  // fall back to OS version alone, so there's nothing extra
+                  // to show here.
+                  ['OS patch level', (device as any).osPatchLevel],
                   ['Windows version', (device as any).windowsVersionLabel
                     ? `${(device as any).windowsVersionLabel}${(device.selfReported as any)?.attributes?.osEdition ? ` · ${(device.selfReported as any).attributes.osEdition}` : ''}`
                     : null],
@@ -1029,6 +1044,17 @@ function traceTitle(t: Record<string, any>): string {
                 </template>
                 <p v-if="(device.osVulnerabilities as any).uncertain > 0" class="text-[10px] text-gray-400">
                   {{ (device.osVulnerabilities as any).uncertain }} additional match{{ (device.osVulnerabilities as any).uncertain === 1 ? "" : "es" }} couldn't be confirmed against a fixed version.
+                </p>
+                <!-- Android (OSV.dev) only matches by major OS version, not
+                     exact patch level (a documented limitation — see
+                     osvAndroidService.ts's own doc comment), so EVERY CVE
+                     ever disclosed for that major version shows here as
+                     "pending" regardless of whether this specific device has
+                     already installed a later security patch — unless OS
+                     Patch Level is mapped, which lets filterCvesByPatchLevel
+                     narrow this down to only genuinely outstanding CVEs. -->
+                <p v-if="device.platform === 'android' && !(device as any).osPatchLevel" class="text-[10px] text-amber-500 dark:text-amber-400">
+                  This device's exact security patch level isn't mapped, so Android CVEs are matched by major OS version only and may include some already fixed by a monthly patch. Map OS Patch Level in Settings → Workspace Automation for precise results.
                 </p>
               </div>
               <p v-else class="text-xs" :style="{ color: SUCCESS }">No known pending CVEs against this device's OS version.</p>

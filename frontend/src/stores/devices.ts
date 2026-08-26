@@ -32,6 +32,12 @@ export interface NormalizedDevice {
   model: string;
   manufacturer: string;
   osVersion: string;
+  // Only populated once Settings > Workspace Automation's OS Patch Level
+  // Smart Attribute mapping is configured — see osPatchLevelMapping.service.ts.
+  // Was computed and used internally (CVE-matching precision) but never
+  // actually exposed on this frontend type, so nothing could render it even
+  // once mapped.
+  osPatchLevel?: string | null;
   battery: number | null;
   // Populated for the merged device modal (Devices view + Playground/
   // Dashboard-widget entry points) — see backend/deviceNormalize.ts's

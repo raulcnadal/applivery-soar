@@ -316,6 +316,13 @@ export interface ReportedAppDeviceRef {
   // installedApps.service.ts's ReportedAppDeviceRef doc comment. Never used
   // for identifier/matching logic.
   installLocation: string | null;
+  // VirusTotal file-hash verdict for this device's binary — mirrors the
+  // Device modal Apps tab's own per-app `integrity` field
+  // (binaryIntegrityService.ts's AppIntegrityInfo), bulk-attached here by
+  // appLists.controller.ts's reported-apps route. Absent on older cached
+  // responses; null when this device has no sha256 on file or no fresh
+  // cached verdict yet — both render the same as "not checked."
+  integrity?: { checked: boolean; verdict: "clean" | "suspicious" | "malicious" | "unknown" | "error"; score: number | null; detail: string; link: string | null; checkedAt: string | null } | null;
 }
 // Per-version CVE detail — one entry per (app, version) combo with a fresh
 // cached Vulnerability Service match. Mirrors backend/vulnService.ts's

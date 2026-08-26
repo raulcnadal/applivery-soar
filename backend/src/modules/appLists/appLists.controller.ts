@@ -19,6 +19,7 @@ import { lookupAndroidAppByPackageName, searchApps } from "./appSearch.service";
 import { fetchWindowsApplicationDetail, fetchWindowsApplications, matchWindowsApplication } from "./windowsAppCatalog.service";
 import { resolveOrgBase } from "../auth/rbac.service";
 import { computeReportedAppsVulnSummaries } from "../catalogs/vulnService";
+import { computeAppIntegrityStatusBulk } from "../catalogs/binaryIntegrityService";
 import {
   getAppleAppUpdatesStatus,
   getInstalledAppsStatus,
@@ -193,6 +194,19 @@ appListsRouter.get(
     );
     for (const app of overview.apps) {
       app.vulnSummary = vulnSummaries.get(`${app.platform}:${app.identifier}`) ?? null;
+    }
+    // Same bulk-lookup rationale as vulnSummaries above: one query across
+    // every device row in the whole overview instead of one per row. This
+    // was missing entirely before — the Device modal's Apps tab has shown a
+    // per-app VirusTotal verdict for a while (computeDeviceAppsDetail), but
+    // this fleet-wide Apps view / AppDetailModal.vue never surfaced it, so a
+    // binary flagged "malicious" on one device looked clean here.
+    const allHashes = overview.apps.flatMap((a) => a.devices.map((d) => d.sha256));
+    const integrityByHash = await computeAppIntegrityStatusBulk(workspaceSlug!, allHashes);
+    for (const app of overview.apps) {
+      for (const d of app.devices) {
+        d.integrity = d.sha256 ? integrityByHash.get(d.sha256.toLowerCase()) ?? null : null;
+      }
     }
     res.json(overview);
   }),

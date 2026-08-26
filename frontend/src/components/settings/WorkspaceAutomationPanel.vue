@@ -11,7 +11,17 @@ const isSavingMapping = ref(false);
 const mappingSaved = ref(false);
 
 onMounted(async () => {
-  await Promise.all([store.fetchStatus(), store.fetchOsPatchLevelMapping(), store.fetchSmartAttributes()]);
+  // Promise.allSettled, not Promise.all — each of these three already
+  // catches its own errors internally (see workspaceAutomation.ts), but this
+  // guarantees the line below always runs even if that ever regresses. A
+  // previous version used Promise.all with fetchSmartAttributes()
+  // (a documented-flaky Applivery API call) missing its own try/catch: one
+  // transient failure there rejected the whole Promise.all, which skipped
+  // this assignment entirely — leaving the dropdown on "Not mapped" even
+  // though the mapping was correctly saved and successfully fetched by the
+  // OTHER call in the same batch. Looked exactly like a save that silently
+  // reverted; the save/read round-trip was fine the whole time.
+  await Promise.allSettled([store.fetchStatus(), store.fetchOsPatchLevelMapping(), store.fetchSmartAttributes()]);
   selectedAttrName.value = store.osPatchLevelSmartAttributeName ?? "";
 });
 
@@ -77,6 +87,7 @@ async function saveMapping() {
       it automatically — no per-connector configuration needed.
     </p>
     <Alert v-if="store.mappingError" type="danger">{{ store.mappingError }}</Alert>
+    <Alert v-if="store.smartAttributesError" type="danger">{{ store.smartAttributesError }}</Alert>
     <Alert v-if="mappingSaved && !mappingDirty" type="success">Saved.</Alert>
 
     <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4 space-y-3">

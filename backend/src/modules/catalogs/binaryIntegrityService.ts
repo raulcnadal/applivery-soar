@@ -226,3 +226,27 @@ export async function computeAppIntegrityStatus(workspaceSlug: string, sha256: s
   if (!row || !isFresh(row.cachedAt)) return null;
   return row.result as unknown as AppIntegrityInfo;
 }
+
+/**
+ * Bulk cache-only read for many hashes at once, keyed by lowercased sha256 —
+ * used by the fleet-wide Apps view's reported-apps overview route
+ * (appLists.controller.ts) to attach an `integrity` verdict to every
+ * device row across every app in one query. computeAppIntegrityStatus above
+ * does the equivalent one-hash-at-a-time lookup, which is fine inside
+ * computeDeviceAppsDetail (bounded to a single device's own app list) but
+ * would be an N+1 query per device row here, across the whole fleet's app
+ * catalog — this was missing entirely until the Apps view's App modal had no
+ * integrity signal at all (VirusTotal "malicious" flags were only ever
+ * visible in the Device modal's Apps tab, per-device).
+ */
+export async function computeAppIntegrityStatusBulk(workspaceSlug: string, sha256s: Array<string | null | undefined>): Promise<Map<string, AppIntegrityInfo>> {
+  const unique = Array.from(new Set(sha256s.filter((h): h is string => Boolean(h)).map((h) => h.toLowerCase())));
+  const out = new Map<string, AppIntegrityInfo>();
+  if (unique.length === 0) return out;
+  const rows = await prisma.binaryHashCache.findMany({ where: { workspaceSlug, sha256: { in: unique } } });
+  for (const row of rows) {
+    if (!isFresh(row.cachedAt)) continue;
+    out.set(row.sha256, row.result as unknown as AppIntegrityInfo);
+  }
+  return out;
+}

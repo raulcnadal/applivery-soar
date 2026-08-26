@@ -472,6 +472,20 @@ export interface ReportedAppDeviceRef {
   // Windows-only, purely informational on-disk install path — see
   // InstalledAppsEntry's apps[].installLocation doc comment.
   installLocation: string | null;
+  // Feeds binaryIntegrityService.ts's VirusTotal file-hash lookup, same as
+  // InstalledAppsEntry's apps[].sha256 — carried through here (rather than
+  // resolved to a verdict in this module) so appLists.controller.ts can do
+  // one bulk computeAppIntegrityStatusBulk lookup across every device row in
+  // the whole overview, instead of this function awaiting one Prisma call
+  // per device per app. Windows/macOS self-reports only; null otherwise.
+  sha256: string | null;
+  // Populated by appLists.controller.ts after this function returns, via
+  // binaryIntegrityService.ts's computeAppIntegrityStatusBulk — same
+  // deliberately-optional/after-the-fact pattern as ReportedAppSummary's own
+  // vulnSummary field below, for the same reason (keeps this module free of
+  // VirusTotal/threat-intel concerns). Absent (not merely null) until the
+  // controller sets it.
+  integrity?: import("../catalogs/binaryIntegrityService").AppIntegrityInfo | null;
 }
 export interface ReportedAppSummary {
   identifier: string;
@@ -594,6 +608,7 @@ export async function getReportedAppsOverview(workspaceSlug: string, devices: No
         enforcedByPolicy: contributions.some((c) => Boolean(c.app.enforcedByPolicy)),
         origin: contributions.map((c) => c.app.origin).find(Boolean),
         installLocation: contributions.map((c) => c.app.installLocation).find(Boolean) ?? null,
+        sha256: contributions.map((c) => c.app.sha256).find(Boolean) ?? null,
       });
     }
   }
