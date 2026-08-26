@@ -97,6 +97,43 @@ export function mergeRawVulnResults(...sources: Array<{ mapped?: boolean; cve_li
   return { mapped: anyMapped, cve_list: Array.from(byId.values()) };
 }
 
+/**
+ * The Vulnerability Service Worker's own documented per-CVE `confirmed`
+ * field (see its README's cve_list field table): `true` when NVD's affected
+ * range for that product/CPE has an upper bound, so the fix version — and
+ * therefore whether THIS exact installed version/OS build is still actually
+ * exposed — is reliably known. `false` means the product matched but NVD
+ * gives no upper bound: "surfaced for manual review, not counted in
+ * `counts`" per the Worker's own docs, and explicitly NOT part of the
+ * Worker's own severity-count totals for exactly that reason.
+ *
+ * Found via a real report: every device (all 4 platforms) showed a run of
+ * old, clearly-irrelevant CVEs (decade-old Adobe Reader/Flash Player
+ * entries on iOS/macOS/Windows/Android devices) — root-caused to this
+ * codebase silently discarding the Worker's `confirmed` flag everywhere it
+ * consumes `cve_list`: computeVulnServiceStatus counted every entry
+ * (confirmed AND uncertain) into its severity totals/hasKev/topCves with no
+ * distinction, and separately tried to read a top-level `.uncertain` count
+ * off the ALREADY-MERGED `{mapped, cve_list}` result — a shape
+ * mergeRawVulnResults above never produces (it only returns those two
+ * keys), so that counter was silently stuck at 0 forever. Net effect: every
+ * "uncertain — matched the product, no confirmed version-scoped fix"
+ * result was displayed as an ordinary, fully-confirmed pending CVE, with no
+ * indication whatsoever that NVD couldn't actually confirm it applies to
+ * this specific version.
+ *
+ * Only ever checked against an EXPLICIT `false` — every non-Worker plugin
+ * source (MISP/VulnCheck/SOFA/OSV-Android) has no equivalent concept and
+ * never sets this field at all, so `undefined`/`true` both count as
+ * confirmed for those, which is correct: SOFA/OSV-Android are already
+ * precise point-release matches with no "uncertain" state of their own, and
+ * MISP/VulnCheck's own version-scoping (see cpeTranslate.ts/mispService.ts)
+ * is the closest equivalent they have.
+ */
+export function isConfirmedCve(c: Record<string, any>): boolean {
+  return c.confirmed !== false;
+}
+
 function versionTuple(v: string): number[] {
   return v.split(/[.\-_]/).map((p) => {
     const n = Number.parseInt(p, 10);

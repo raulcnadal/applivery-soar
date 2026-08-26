@@ -1161,9 +1161,15 @@ function traceTitle(t: Record<string, any>): string {
                         {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}
                       </span>
                     </div>
+                    <p v-if="a.vuln.uncertainCount > 0" class="text-[10px] text-gray-400">
+                      {{ a.vuln.uncertainCount }} additional match{{ a.vuln.uncertainCount === 1 ? "" : "es" }} couldn't be confirmed against a fixed version.
+                    </p>
                   </div>
                 </div>
-                <p v-else-if="a.vuln" class="mt-1 text-[10px]" :style="{ color: SUCCESS }">No known CVEs for this version.</p>
+                <p v-else-if="a.vuln" class="mt-1 text-[10px]" :style="{ color: SUCCESS }">
+                  No known CVEs for this version.
+                  <template v-if="a.vuln.uncertainCount > 0">{{ a.vuln.uncertainCount }} additional match{{ a.vuln.uncertainCount === 1 ? "" : "es" }} couldn't be confirmed against a fixed version.</template>
+                </p>
               </div>
               </div>
             </template>

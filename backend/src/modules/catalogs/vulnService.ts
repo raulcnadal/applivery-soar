@@ -4,7 +4,7 @@ import { decryptSecret, encryptSecret } from "../../utils/secretCipher";
 import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
-import { extractLeadingVersion, filterCvesByPatchLevel, getEnabledVulnSourcePlugins, mergeRawVulnResults, type VulnSourceCacheRow } from "./vulnSources";
+import { extractLeadingVersion, filterCvesByPatchLevel, getEnabledVulnSourcePlugins, isConfirmedCve, mergeRawVulnResults, type VulnSourceCacheRow } from "./vulnSources";
 import { computeAppIntegrityStatus, type AppIntegrityInfo } from "./binaryIntegrityService";
 
 /**
@@ -420,7 +420,17 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
   // is null, so this changes nothing for workspaces that haven't configured
   // the Smart Attribute mapping.
   const osMerged = osMergedRaw ? { ...osMergedRaw, cve_list: filterCvesByPatchLevel(osMergedRaw.cve_list, workerPlatform, device.osPatchLevel) } : null;
-  const osMatch: Record<string, any> | null = osMerged?.mapped ? osMerged : null;
+  // Split confirmed vs uncertain right here, at the source — every
+  // downstream consumer of `osMatch` (this function's own aggregate
+  // counting below, AND mergeOsVulnerabilities's OS-only merge for the
+  // Device modal) then only ever sees genuinely confirmed CVEs in
+  // `cve_list`, with the uncertain count exposed separately via
+  // `uncertainCount` rather than silently folded in. See isConfirmedCve's
+  // doc comment (vulnSources.ts) for why this exists.
+  const osConfirmedList = osMerged ? osMerged.cve_list.filter(isConfirmedCve) : [];
+  const osMatch: Record<string, any> | null = osMerged?.mapped
+    ? { ...osMerged, cve_list: osConfirmedList, uncertainCount: osMerged.cve_list.length - osConfirmedList.length }
+    : null;
 
   const appResults: Array<Record<string, any>> = [];
   const appTimestamps: string[] = [];
@@ -444,7 +454,10 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
       const extraMatches = extraRows.map((r, i) => (r && plugins[i].isCacheFresh(r.cachedAt) ? (r.result as any) : null));
       if (vulnMatch || extraMatches.some(Boolean)) {
         const merged = mergeRawVulnResults(...extraMatches, vulnMatch);
-        if (merged.mapped) appResults.push(merged);
+        if (merged.mapped) {
+          const confirmedList = merged.cve_list.filter(isConfirmedCve);
+          appResults.push({ ...merged, cve_list: confirmedList, uncertainCount: merged.cve_list.length - confirmedList.length });
+        }
       }
     }
   }
@@ -461,7 +474,7 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
   let maxEpss = 0.0;
   const allCves: Array<Record<string, any>> = [];
   for (const r of [...(osMatch ? [osMatch] : []), ...appResults]) {
-    totalUncertain += r.uncertain ?? 0;
+    totalUncertain += r.uncertainCount ?? 0;
     for (const c of r.cve_list ?? []) {
       allCves.push(c);
       if (c.severity && c.severity in totalCounts) totalCounts[c.severity] += 1;
@@ -528,9 +541,9 @@ export function mergeOsVulnerabilities(catalogStatus: Record<string, any> | null
         })),
       }
     : null;
-  const workerRaw = vulnServiceStatus?.os ?? null; // already OS-only and already mapped:true when present, see osMatch above
+  const workerRaw = vulnServiceStatus?.os ?? null; // already OS-only, already confirmed-only, already mapped:true when present — see osMatch above
 
-  const uncertain = (catalogStatus?.unconfirmedCount ?? 0) + (vulnServiceStatus?.uncertain ?? 0);
+  const uncertain = (catalogStatus?.unconfirmedCount ?? 0) + (vulnServiceStatus?.os?.uncertainCount ?? 0);
 
   if (!catalogRaw && !workerRaw) {
     // Neither source has a confirmed OS-version comparison to offer.
@@ -591,6 +604,14 @@ export interface AppVersionVulnInfo {
   maxEpss: number;
   cveList: Array<Record<string, any>>;
   cachedAt: string | null;
+  // Matches confirmed by product/version but with no upper-bound affected
+  // range in NVD's data, per the Worker's `confirmed` field — see
+  // isConfirmedCve's doc comment (vulnSources.ts). NOT included in
+  // counts/hasKev/maxEpss/cveList above; surfaced here only as a count so
+  // the Apps tab/Apps view can show "N additional matches unconfirmed"
+  // instead of silently dropping them or (the previous bug) silently
+  // treating them as ordinary confirmed CVEs.
+  uncertainCount: number;
 }
 
 export interface AppVulnSummary {
@@ -619,7 +640,12 @@ function isFreshCache(cachedAt: Date | undefined | null): boolean {
  */
 function toVersionVulnInfo(row: { result: unknown; cachedAt: Date } | null, extraRows: Array<VulnSourceCacheRow | null> = []): AppVersionVulnInfo {
   const merged = mergeRawVulnResults(...extraRows.map((r) => r?.result as any), row?.result as any);
-  const cveList = merged.cve_list;
+  // Confirmed-only — see isConfirmedCve's doc comment. An "uncertain" match
+  // (product matched, no NVD-confirmed upper-bound/fix version) must never
+  // count toward this app's severity counts/KEV flag/risk score, same
+  // reasoning as computeVulnServiceStatus's osMatch/appResults above.
+  const cveList = merged.cve_list.filter(isConfirmedCve);
+  const uncertainCount = merged.cve_list.length - cveList.length;
   const counts: Record<string, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
   let hasKev = false;
   let maxEpss = 0;
@@ -631,7 +657,7 @@ function toVersionVulnInfo(row: { result: unknown; cachedAt: Date } | null, extr
   const cachedTimestamps = [row?.cachedAt, ...extraRows.map((r) => r?.cachedAt)].filter(Boolean) as Date[];
   const cachedAt = cachedTimestamps.length ? new Date(Math.max(...cachedTimestamps.map((d) => d.getTime()))) : new Date();
   return {
-    checked: true, mapped: merged.mapped, counts, hasKev, maxEpss: Math.round(maxEpss * 10000) / 10000,
+    checked: true, mapped: merged.mapped, counts, hasKev, maxEpss: Math.round(maxEpss * 10000) / 10000, uncertainCount,
     cveList: cveList
       .slice()
       .sort((a, b) => (Number(Boolean(b.is_kev)) - Number(Boolean(a.is_kev))) || ((SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0)))
