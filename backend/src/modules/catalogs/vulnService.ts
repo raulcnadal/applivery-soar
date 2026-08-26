@@ -491,8 +491,11 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
   });
 
   return {
+    // Full sorted list, not capped — counts/hasKev/maxEpss above are already
+    // computed from the complete set regardless, but nothing should
+    // silently see fewer CVEs than actually confirmed here either.
     checked: true, lastCheckedAt: null, os: osMatch, appsCheckedCount: appResults.length,
-    counts: totalCounts, uncertain: totalUncertain, hasKev, maxEpss: Math.round(maxEpss * 10000) / 10000, topCves: allCves.slice(0, 15),
+    counts: totalCounts, uncertain: totalUncertain, hasKev, maxEpss: Math.round(maxEpss * 10000) / 10000, topCves: allCves,
   };
 }
 
@@ -571,15 +574,19 @@ export function mergeOsVulnerabilities(catalogStatus: Record<string, any> | null
   }
 
   const merged = mergeRawVulnResults(catalogRaw, workerRaw);
-  const cves = merged.cve_list
-    .slice()
-    .sort((a: any, b: any) => {
-      const ak = [Number(Boolean(a.is_kev)), a.epss_score ?? 0, SEVERITY_RANK[a.severity] ?? 0, a.score ?? 0];
-      const bk = [Number(Boolean(b.is_kev)), b.epss_score ?? 0, SEVERITY_RANK[b.severity] ?? 0, b.score ?? 0];
-      for (let i = 0; i < ak.length; i++) if (ak[i] !== bk[i]) return bk[i] - ak[i];
-      return 0;
-    })
-    .slice(0, 15);
+  // Full sorted list, not capped — a real report: Risk Factors ("112
+  // pending known CVEs") disagreeing with this section's old flat 15-item
+  // cap made the two numbers look unrelated/stale. pendingCount below is
+  // this array's real length now, and computeDeviceRisk reads this same
+  // field, so the two can never drift apart again. The Device modal
+  // collapses this behind a click-to-expand toggle either way, so a long
+  // list costs nothing until the user actually asks to see it.
+  const cves = merged.cve_list.sort((a: any, b: any) => {
+    const ak = [Number(Boolean(a.is_kev)), a.epss_score ?? 0, SEVERITY_RANK[a.severity] ?? 0, a.score ?? 0];
+    const bk = [Number(Boolean(b.is_kev)), b.epss_score ?? 0, SEVERITY_RANK[b.severity] ?? 0, b.score ?? 0];
+    for (let i = 0; i < ak.length; i++) if (ak[i] !== bk[i]) return bk[i] - ak[i];
+    return 0;
+  });
 
   return cves.length > 0
     ? { visible: true, state: "cves", pendingCount: cves.length, cves, uncertain }
@@ -657,11 +664,14 @@ function toVersionVulnInfo(row: { result: unknown; cachedAt: Date } | null, extr
   const cachedTimestamps = [row?.cachedAt, ...extraRows.map((r) => r?.cachedAt)].filter(Boolean) as Date[];
   const cachedAt = cachedTimestamps.length ? new Date(Math.max(...cachedTimestamps.map((d) => d.getTime()))) : new Date();
   return {
+    // Full sorted list, not capped — a real report: an app's fleet-wide
+    // Risk column total (rollUpAppSummary's totalCveCount, sums
+    // `cveList.length`) was silently capped at 15 by this same slice,
+    // understating exposure for any app with more confirmed CVEs than that.
     checked: true, mapped: merged.mapped, counts, hasKev, maxEpss: Math.round(maxEpss * 10000) / 10000, uncertainCount,
     cveList: cveList
       .slice()
-      .sort((a, b) => (Number(Boolean(b.is_kev)) - Number(Boolean(a.is_kev))) || ((SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0)))
-      .slice(0, 15),
+      .sort((a, b) => (Number(Boolean(b.is_kev)) - Number(Boolean(a.is_kev))) || ((SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0))),
     cachedAt: cachedAt.toISOString(),
   };
 }

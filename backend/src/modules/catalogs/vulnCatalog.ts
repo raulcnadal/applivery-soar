@@ -196,7 +196,17 @@ export function computeApplePendingVulns(platform: "apple" | "macos", osVersion:
   const pending = confirmed.filter((e) => cmp(versionTuple(e.fixedVersion), deviceV) > 0).sort((a, b) => cmp(versionTuple(b.fixedVersion), versionTuple(a.fixedVersion)));
   return {
     pendingCount: pending.length,
-    pendingCves: pending.slice(0, 10).map((e) => ({ cveId: e.cveId, baseScore: e.baseScore, baseSeverity: e.baseSeverity, epss: e.epss, exploited: e.exploited, fixedVersion: e.fixedVersion })),
+    // Full list, not capped — this feeds both pendingCount (a real report:
+    // Risk Factors showed "112 pending known CVEs" here while the merged
+    // Compliance tab section showed only 15, because that section's own
+    // .slice(0, 15) was applied for DISPLAY, while this array was
+    // separately truncated to 10 upstream, so vulnExploitedPending
+    // (complianceEvaluate.ts) could silently miss an exploited CVE ranked
+    // 11th+ by fixed-version) and mergeOsVulnerabilities's own dedup/sort —
+    // both need the complete set to be accurate, not a pre-truncated one.
+    // Any display-time capping happens downstream, where the merged/sorted
+    // list is actually rendered.
+    pendingCves: pending.map((e) => ({ cveId: e.cveId, baseScore: e.baseScore, baseSeverity: e.baseSeverity, epss: e.epss, exploited: e.exploited, fixedVersion: e.fixedVersion })),
     confidence: confirmed.length ? "version" : "unknown",
     unconfirmedCount: candidates.length - confirmed.length,
   };
@@ -219,7 +229,8 @@ export function computeAndroidPendingVulns(osVersion: string | null | undefined,
   pending.sort((a, b) => (b.baseScore ?? 0) - (a.baseScore ?? 0));
   return {
     pendingCount: pending.length,
-    pendingCves: pending.slice(0, 10).map((e) => ({ cveId: e.cveId, baseScore: e.baseScore, baseSeverity: e.baseSeverity, epss: e.epss, exploited: e.exploited, fixedInMajor: e.androidMajorVersion })),
+    // Full list, not capped — see computeApplePendingVulns's doc comment above.
+    pendingCves: pending.map((e) => ({ cveId: e.cveId, baseScore: e.baseScore, baseSeverity: e.baseSeverity, epss: e.epss, exploited: e.exploited, fixedInMajor: e.androidMajorVersion })),
     confidence: confirmed.length ? "version" : "unknown",
     unconfirmedCount: candidates.length - confirmed.length,
   };

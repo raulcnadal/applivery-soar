@@ -96,6 +96,11 @@ const SEVERITY_COLOR: Record<string, string> = { CRITICAL: "#EF4444", HIGH: "#F9
 // each carry their own uncapped CVE list — without collapsing, the Apps tab
 // could print far more CVE rows than the OS-level sections ever would.
 const osUpdatesCvesExpanded = ref(false);
+// Collapses the Windows OS Updates section's pending-KB list (Overview tab)
+// by default, same pattern as the Compliance tab's Vulnerabilities section —
+// both lists are now uncapped (backend no longer truncates to 10/15), so
+// collapsing keeps a device with many pending updates from dominating the tab.
+const osUpdatesPendingExpanded = ref(false);
 const complianceVulnCvesExpanded = ref(false);
 const expandedAppCves = ref<Set<string>>(new Set());
 function toggleAppCves(identifier: string) {
@@ -104,8 +109,18 @@ function toggleAppCves(identifier: string) {
 }
 
 const appsSearchQuery = ref("");
+// "Only risky apps" checkbox — an app counts as risky if it has at least one
+// confirmed CVE (vuln.cveList.length > 0) or a non-clean integrity verdict
+// (the same two signals already rendered per-row below), so the filter
+// matches exactly what a user would otherwise have to scan the list for by
+// eye.
+const appsRiskyOnly = ref(false);
+function isRiskyApp(a: Record<string, any>): boolean {
+  return Boolean(a.vuln?.cveList?.length > 0) || Boolean(a.integrity?.checked && a.integrity.verdict !== "clean");
+}
 const filteredInstalledApps = computed(() => {
-  const all = device.value?.installedAppsDetail || [];
+  let all = device.value?.installedAppsDetail || [];
+  if (appsRiskyOnly.value) all = all.filter(isRiskyApp);
   const q = appsSearchQuery.value.trim().toLowerCase();
   if (!q) return all;
   return all.filter((a: Record<string, any>) => (a.name || "").toLowerCase().includes(q) || (a.identifier || "").toLowerCase().includes(q));
@@ -261,6 +276,7 @@ watch(
     firewallState.value = null;
     resolvedDevice.value = null;
     appsSearchQuery.value = "";
+    appsRiskyOnly.value = false;
     locations.value = [];
     network.value = null;
     agentLogs.value = null;
@@ -713,25 +729,30 @@ function traceTitle(t: Record<string, any>): string {
                 No confirmed patch-level comparison available yet for this Windows build — Microsoft's catalog hasn't published a build number we could match against this feature version.
               </p>
               <div v-else-if="(device.osUpdateStatus as any).pendingCount > 0" class="space-y-1.5">
-                <p class="text-xs font-medium" :style="{ color: WARNING }">
+                <button type="button" class="flex items-center gap-1 text-xs font-medium hover:opacity-80" :style="{ color: WARNING }" @click="osUpdatesPendingExpanded = !osUpdatesPendingExpanded">
+                  <component :is="osUpdatesPendingExpanded ? ICONS.AltArrowUp : ICONS.AltArrowDown" :size="12" weight="Linear" class="shrink-0" />
                   {{ (device.osUpdateStatus as any).pendingCount }} security update{{ (device.osUpdateStatus as any).pendingCount === 1 ? "" : "s" }} behind (latest known build .{{ (device.osUpdateStatus as any).latestKnownUbr }})
-                </p>
-                <div v-for="kb in (device.osUpdateStatus as any).pendingKbs" :key="kb.kb" class="px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-gray-900 dark:text-white">KB{{ kb.kb }} <span class="text-gray-400">· {{ kb.updateType || "Security" }} update · {{ kb.releaseMonth }}</span></span>
-                    <span class="font-semibold shrink-0" :style="{ color: kb.maxSeverity?.toLowerCase() === 'critical' ? DANGER : WARNING }">
-                      {{ kb.maxSeverity || "Unknown" }}{{ kb.cveCount ? ` · ${kb.cveCount} CVE${kb.cveCount === 1 ? "" : "s"}` : "" }}
-                    </span>
+                </button>
+                <template v-if="osUpdatesPendingExpanded">
+                  <div class="space-y-1.5 max-h-64 overflow-y-auto">
+                    <div v-for="kb in (device.osUpdateStatus as any).pendingKbs" :key="kb.kb" class="px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-gray-900 dark:text-white">KB{{ kb.kb }} <span class="text-gray-400">· {{ kb.updateType || "Security" }} update · {{ kb.releaseMonth }}</span></span>
+                        <span class="font-semibold shrink-0" :style="{ color: kb.maxSeverity?.toLowerCase() === 'critical' ? DANGER : WARNING }">
+                          {{ kb.maxSeverity || "Unknown" }}{{ kb.cveCount ? ` · ${kb.cveCount} CVE${kb.cveCount === 1 ? "" : "s"}` : "" }}
+                        </span>
+                      </div>
+                      <p v-if="(kb.cveIds || []).length > 0" class="text-[10px] mt-0.5 text-gray-400" :title="kb.cveIds.join(', ')">
+                        <template v-for="(cve, idx) in kb.cveIds.slice(0, 4)" :key="cve">
+                          <a v-if="msrcUrl(cve)" :href="msrcUrl(cve)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ cve }}</a>
+                          <template v-else>{{ cve }}</template>
+                          <template v-if="(idx as number) < Math.min(kb.cveIds.length, 4) - 1">, </template>
+                        </template>
+                        {{ kb.cveIds.length > 4 ? ` +${kb.cveIds.length - 4} more` : "" }}
+                      </p>
+                    </div>
                   </div>
-                  <p v-if="(kb.cveIds || []).length > 0" class="text-[10px] mt-0.5 text-gray-400" :title="kb.cveIds.join(', ')">
-                    <template v-for="(cve, idx) in kb.cveIds.slice(0, 4)" :key="cve">
-                      <a v-if="msrcUrl(cve)" :href="msrcUrl(cve)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ cve }}</a>
-                      <template v-else>{{ cve }}</template>
-                      <template v-if="(idx as number) < Math.min(kb.cveIds.length, 4) - 1">, </template>
-                    </template>
-                    {{ kb.cveIds.length > 4 ? ` +${kb.cveIds.length - 4} more` : "" }}
-                  </p>
-                </div>
+                </template>
                 <p class="text-[10px] text-gray-400">
                   Security updates only — MSRC doesn't track Driver, Feature, or Quality-only updates, and Applivery reports no per-device driver inventory to compare against.
                 </p>
@@ -766,18 +787,20 @@ function traceTitle(t: Record<string, any>): string {
                     {{ osUpdatesCvesExpanded ? "Hide" : "Show" }} {{ (device.vulnStatus as any).pendingCves.length }} CVE{{ (device.vulnStatus as any).pendingCves.length === 1 ? "" : "s" }}
                   </button>
                   <template v-if="osUpdatesCvesExpanded">
-                    <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
-                      <span class="text-gray-900 dark:text-white">
-                        <a v-if="vulnLink(c.cveId)" :href="vulnLink(c.cveId)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.cveId }}</a>
-                        <template v-else>{{ c.cveId }}</template>
-                        <span class="text-gray-400"> · fixed in {{ c.fixedVersion }}</span>
-                      </span>
-                      <span class="font-semibold shrink-0" :style="{ color: c.exploited || c.baseSeverity === 'Critical' ? DANGER : WARNING }">
-                        {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}{{ typeof c.epss === "number" ? ` · EPSS ${(c.epss * 100).toFixed(0)}%` : "" }}
-                      </span>
+                    <div class="space-y-1.5 max-h-64 overflow-y-auto">
+                      <div v-for="c in (device.vulnStatus as any).pendingCves" :key="c.cveId" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                        <span class="text-gray-900 dark:text-white">
+                          <a v-if="vulnLink(c.cveId)" :href="vulnLink(c.cveId)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.cveId }}</a>
+                          <template v-else>{{ c.cveId }}</template>
+                          <span class="text-gray-400"> · fixed in {{ c.fixedVersion }}</span>
+                        </span>
+                        <span class="font-semibold shrink-0" :style="{ color: c.exploited || c.baseSeverity === 'Critical' ? DANGER : WARNING }">
+                          {{ c.baseSeverity || "Unknown" }}{{ c.exploited ? " · exploited" : "" }}{{ typeof c.epss === "number" ? ` · EPSS ${(c.epss * 100).toFixed(0)}%` : "" }}
+                        </span>
+                      </div>
                     </div>
                     <p class="text-[10px] text-gray-400">
-                      Showing the top {{ Math.min((device.vulnStatus as any).pendingCves.length, 10) }} of {{ (device.vulnStatus as any).pendingCount }} known CVEs fixed in a newer version, by severity.
+                      {{ (device.vulnStatus as any).pendingCount }} known CVE{{ (device.vulnStatus as any).pendingCount === 1 ? "" : "s" }} fixed in a newer version, by severity.
                     </p>
                   </template>
                 </template>
@@ -991,15 +1014,17 @@ function traceTitle(t: Record<string, any>): string {
                   {{ (device.osVulnerabilities as any).cves.some((c: any) => c.is_kev) ? " — includes a known-exploited (CISA KEV) CVE" : "" }}
                 </button>
                 <template v-if="complianceVulnCvesExpanded">
-                  <div v-for="c in (device.osVulnerabilities as any).cves" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
-                    <span class="text-gray-900 dark:text-white">
-                      <a v-if="vulnLink(c.id)" :href="vulnLink(c.id)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.id }}</a>
-                      <template v-else>{{ c.id }}</template>
-                      <span v-if="c.fixed_in" class="text-gray-400">· fixed in {{ c.fixed_in }}</span>
-                    </span>
-                    <span class="font-semibold shrink-0" :style="{ color: c.is_kev || c.severity === 'CRITICAL' ? DANGER : WARNING }">
-                      {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}{{ typeof c.epss_score === "number" ? ` · EPSS ${(c.epss_score * 100).toFixed(0)}%` : "" }}
-                    </span>
+                  <div class="space-y-1.5 max-h-64 overflow-y-auto">
+                    <div v-for="c in (device.osVulnerabilities as any).cves" :key="c.id" class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-gray-900/50">
+                      <span class="text-gray-900 dark:text-white">
+                        <a v-if="vulnLink(c.id)" :href="vulnLink(c.id)!" target="_blank" rel="noopener noreferrer" class="hover:underline" :style="{ color: PRIMARY_BLUE }">{{ c.id }}</a>
+                        <template v-else>{{ c.id }}</template>
+                        <span v-if="c.fixed_in" class="text-gray-400">· fixed in {{ c.fixed_in }}</span>
+                      </span>
+                      <span class="font-semibold shrink-0" :style="{ color: c.is_kev || c.severity === 'CRITICAL' ? DANGER : WARNING }">
+                        {{ c.severity || "Unknown" }}{{ c.is_kev ? " · known-exploited" : "" }}{{ typeof c.epss_score === "number" ? ` · EPSS ${(c.epss_score * 100).toFixed(0)}%` : "" }}
+                      </span>
+                    </div>
                   </div>
                 </template>
                 <p v-if="(device.osVulnerabilities as any).uncertain > 0" class="text-[10px] text-gray-400">
@@ -1077,7 +1102,7 @@ function traceTitle(t: Record<string, any>): string {
               No app inventory reported yet for this device — via the SOAR Agent's App Inventory Reporting, or the background refresher once a Compliance Policy references an App List.
             </div>
             <template v-else>
-              <div class="relative mb-2.5">
+              <div class="relative mb-2">
                 <component :is="ICONS.Magnifer" :size="14" weight="Linear" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input
                   v-model="appsSearchQuery"
@@ -1087,7 +1112,13 @@ function traceTitle(t: Record<string, any>): string {
                   :style="{ '--tw-ring-color': PRIMARY_BLUE } as any"
                 />
               </div>
-              <p v-if="filteredInstalledApps.length === 0" class="text-xs text-gray-400 px-3 py-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">No apps match "{{ appsSearchQuery }}".</p>
+              <label class="flex items-center gap-1.5 mb-2.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none w-fit">
+                <input v-model="appsRiskyOnly" type="checkbox" class="rounded border-gray-300 dark:border-gray-600" :style="{ accentColor: PRIMARY_BLUE } as any" />
+                Only risky apps (CVEs or flagged integrity)
+              </label>
+              <p v-if="filteredInstalledApps.length === 0" class="text-xs text-gray-400 px-3 py-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                {{ appsRiskyOnly ? "No risky apps" + (appsSearchQuery ? ` match "${appsSearchQuery}"` : " on this device") + "." : `No apps match "${appsSearchQuery}".` }}
+              </p>
               <div v-else class="space-y-2.5">
               <!-- keyed on identifier alone: computeDeviceAppsDetail (vulnService.ts)
                    now merges a self-reported + Applivery-UEM sighting of the

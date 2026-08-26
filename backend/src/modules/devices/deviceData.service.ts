@@ -18,7 +18,6 @@ async function invalidateDevicesCacheFor(workspaceSlug: string): Promise<void> {
   const { invalidateDevicesCache } = await import("./devices.service");
   invalidateDevicesCache(workspaceSlug);
 }
-import { platformPathSegment } from "./deviceNormalize";
 import type { NormalizedDevice } from "./deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
 import { normalizePushedAttributes, type DeviceAppReportPayload, type DeviceReportPayload, type EventNotifyPayload } from "./deviceData.schemas";
@@ -239,7 +238,6 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
     .sort((a, b) => a.identifier.localeCompare(b.identifier));
 
   const nowIso = new Date().toISOString();
-  const platformPath = platformPathSegment(payload.platform) ?? payload.platform;
 
   const matched = cachedDeviceBySerial(workspaceSlug, payload.serialNumber);
   const deviceId = matched?.id ?? null;
@@ -248,7 +246,20 @@ export async function reportDeviceApps(workspaceSlug: string, payload: DeviceApp
   const entry: InstalledAppsEntry = {
     identifiers,
     apps: versionedApps,
-    platform: platformPath,
+    // payload.platform (raw, e.g. "macos"), NOT platformPath — platformPath
+    // deliberately collapses "macos" into "apple" for Applivery API URL
+    // routing (see platformPathSegment's doc comment) and was wrongly reused
+    // here as the entry's stored SEMANTIC platform. Same exact bug already
+    // fixed once for the server_fetch/UEM path (see this file's own
+    // upsertInstalledAppsSlot-adjacent doc comment on `platform: device.platform`
+    // in installedApps.service.ts) — this self-reported path was missed.
+    // Symptom: a self-reported Mac's app-inventory entries got permanently
+    // tagged platform:"apple", so the Device modal Apps tab's "open in Apps
+    // view" deep link (ReportedAppsPanel.vue matches on `a.platform ===
+    // route.query.appPlatform`, which is the device's real "macos") could
+    // never find a match and silently opened the Apps view with nothing
+    // selected.
+    platform: payload.platform,
     fetchedAt: nowIso,
     error: null,
     source: "self_reported",

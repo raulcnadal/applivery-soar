@@ -405,7 +405,11 @@ export function computeWindowsPendingUpdates(osVersion: string | null | undefine
   return {
     featureLabel: deviceBuild.featureLabel, buildMajor: deviceBuild.buildMajor, ubr: deviceBuild.ubr,
     latestKnownUbr, pendingCount: pending.length, pendingCveCount: allPendingCves.length,
-    pendingKbs: pending.slice(0, 10).map((e) => ({ kb: e.kb, fixedUbr: e.fixedUbr, updateType: e.updateType ?? "Security", cveIds: e.cveIds ?? [], cveCount: e.cveCount, maxSeverity: e.maxSeverity, exploited: e.exploited, releaseMonth: e.releaseMonth })),
+    // Full list, not capped — a real report: "11 security updates behind"
+    // (pendingCount, always accurate) while the KB list itself only ever
+    // showed 10 (this used to be .slice(0, 10)). Display-side collapsing
+    // (Overview tab) handles keeping a long list out of the way by default.
+    pendingKbs: pending.map((e) => ({ kb: e.kb, fixedUbr: e.fixedUbr, updateType: e.updateType ?? "Security", cveIds: e.cveIds ?? [], cveCount: e.cveCount, maxSeverity: e.maxSeverity, exploited: e.exploited, releaseMonth: e.releaseMonth })),
     confidence: sameFamily.length ? "build" : "unknown",
   };
 }

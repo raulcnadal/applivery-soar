@@ -565,34 +565,66 @@ export function computeDeviceRisk(
     }
   }
 
-  const vulnStatus = device.vulnStatus;
-  if (vulnStatus && vulnStatus.confidence !== "unknown" && (vulnStatus.pendingCount ?? 0) > 0) {
-    const pending = vulnStatus.pendingCount;
-    const points = Math.min(pending * 5, 20);
-    score += points;
-    factors.push({ label: `${pending} pending known CVE${pending !== 1 ? "s" : ""}`, points });
-    if ((vulnStatus.pendingCves ?? []).some((c: any) => c.exploited)) {
-      score += 25;
-      factors.push({ label: "A pending CVE is exploited in the wild", points: 25 });
-    }
-  }
-
-  const vulnServiceStatus = device.vulnServiceStatus;
-  if (vulnServiceStatus && vulnServiceStatus.checked) {
-    const counts = vulnServiceStatus.counts ?? {};
-    const criticalHigh = (counts.CRITICAL ?? 0) + (counts.HIGH ?? 0);
+  // OS-level CVEs — sourced from device.osVulnerabilities (vulnService.ts's
+  // mergeOsVulnerabilities), the SAME unified, deduped, confirmed-only field
+  // the Compliance tab's Vulnerabilities section renders, not the raw
+  // vulnStatus/vulnServiceStatus inputs that feed it. Those two are left
+  // completely untouched for complianceEvaluate.ts's Compliance Policy
+  // conditions (vulnPendingCveCount, vulnServiceCriticalHighCount, etc.),
+  // which must keep reading their own original, uncombined shapes — but
+  // scoring risk off them directly was a real bug: vulnStatus.pendingCount
+  // is the EUVD catalog's own uncapped, un-deduped count (potentially 100+,
+  // spanning the OS product's entire history) and vulnServiceStatus.counts
+  // mixes OS-level AND every installed app's CVEs together — neither number
+  // has any relationship to what the Compliance tab actually displays right
+  // below Risk Factors, which is exactly the inconsistency reported live
+  // ("112 pending known CVEs" / "55 critical/high CVEs" in Risk Factors vs.
+  // "15 known CVEs" in Vulnerabilities for the same device).
+  const osVulns = device.osVulnerabilities;
+  if (osVulns?.visible && osVulns.state === "cves") {
+    const cves = (osVulns.cves ?? []) as Array<Record<string, any>>;
+    const criticalHigh = cves.filter((c) => c.severity === "CRITICAL" || c.severity === "HIGH").length;
     if (criticalHigh > 0) {
       const points = Math.min(criticalHigh * 5, 20);
       score += points;
-      factors.push({ label: `${criticalHigh} critical/high CVE${criticalHigh !== 1 ? "s" : ""} (Vulnerability Service)`, points });
+      factors.push({ label: `${criticalHigh} critical/high CVE${criticalHigh !== 1 ? "s" : ""} against this device's OS version`, points });
     }
-    if (vulnServiceStatus.hasKev) {
+    if (cves.some((c) => c.is_kev)) {
       score += 25;
-      factors.push({ label: "A known-exploited CVE (CISA KEV) is present (Vulnerability Service)", points: 25 });
-    } else if ((vulnServiceStatus.maxEpss ?? 0) >= 0.5) {
+      factors.push({ label: "A known-exploited CVE (CISA KEV) is present against this device's OS version", points: 25 });
+    } else if (Math.max(0, ...cves.map((c) => c.epss_score ?? 0)) >= 0.5) {
       score += 15;
-      factors.push({ label: "A CVE has a high exploitation-probability (EPSS) score (Vulnerability Service)", points: 15 });
+      factors.push({ label: "An OS CVE has a high exploitation-probability (EPSS) score", points: 15 });
     }
+  }
+
+  // App-level CVEs — sourced from device.installedAppsDetail (already
+  // confirmed-only per app, see vulnService.ts's toVersionVulnInfo), summed
+  // across every app on the device. This is a NEW, separate factor rather
+  // than folded into the OS one above — an app's own CVEs are a real,
+  // independent exposure, but conflating them with OS CVEs into one number
+  // (the old vulnServiceStatus.counts-based factor) is exactly what made
+  // "the reported CVEs and pending updates numbers must match" impossible:
+  // there was no single displayed number this factor actually corresponded
+  // to. This one has a direct counterpart: the sum of "Show N CVEs" across
+  // the Apps tab / the Apps view's Risk column.
+  const appsDetail = (device.installedAppsDetail ?? []) as Array<Record<string, any>>;
+  let appsCriticalHigh = 0;
+  let appsHasKev = false;
+  for (const a of appsDetail) {
+    const v = a.vuln as Record<string, any> | null | undefined;
+    if (!v) continue;
+    appsCriticalHigh += (v.counts?.CRITICAL ?? 0) + (v.counts?.HIGH ?? 0);
+    if (v.hasKev) appsHasKev = true;
+  }
+  if (appsCriticalHigh > 0) {
+    const points = Math.min(appsCriticalHigh * 5, 20);
+    score += points;
+    factors.push({ label: `${appsCriticalHigh} critical/high CVE${appsCriticalHigh !== 1 ? "s" : ""} across installed apps`, points });
+  }
+  if (appsHasKev) {
+    score += 25;
+    factors.push({ label: "A known-exploited CVE (CISA KEV) is present in an installed app", points: 25 });
   }
 
   const osLifecycleStatus = device.osLifecycleStatus;
