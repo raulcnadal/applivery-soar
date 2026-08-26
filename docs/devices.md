@@ -53,15 +53,15 @@ Click any row to open the drawer. The header shows device name, platform + hardw
 1. **Identifiers** — serial number, IMEI, UDID, EMM device ID, Windows ID (only populated fields show).
 2. **Hardware & OS** — model, OS version, battery %, storage, RAM, state, last seen.
 3. **OS Updates** (Windows) — current patch level, pending security KBs (number, type, release month, severity, CVEs), or "up to date." Security updates only — not driver/feature/quality-only updates.
-4. **OS Lifecycle** — support status, EOL date and ESU-until date if applicable, latest known signed build, whether the match is confirmed for this exact hardware, and a Rapid Security Response callout if one's available.
-5. **Vulnerabilities** (Vulnerability Catalog) — pending CVEs with fixed-in version, severity, exploited flag, EPSS score, or "no known pending CVEs."
-6. **Vulnerability Service** — only shown once configured in [Settings → Vulnerability Service](settings.md#vulnerability-service). Three states: not yet checked ("waiting on the next scheduled refresh"), stale ("check Settings → Vulnerability Service for refresh errors"), or findings (CVE count across OS + apps, KEV flag, top CVEs, EPSS scores).
-7. **Firewall Rule Sets** — **Windows only**. Shows which [Firewall Policy Library](workflows.md#firewall-policy-library) rule sets are currently believed active on this device, and when they were applied. This reflects the last Apply/Restore action dispatched from a workflow, not a live read of the device — if it looks stale, re-run the matching action.
-8. **App Updates** (Apple/macOS) — pending app updates from Apple's own App Store/VPP metadata, or "all up to date."
-9. **Smart Attributes** — any Applivery Smart Attribute values on the device.
-10. **Segment** — current segment, with a **Change** link.
-11. **Active Policies** — chips for each assigned policy, each removable; **Add** opens a picker filtered to the device's platform.
-12. **Tags** — chips of current tags; **Edit** opens the tag editor.
+4. **OS Lifecycle** — support status, EOL date and ESU-until date if applicable, latest known signed build, whether the match is confirmed for this exact hardware, and a Rapid Security Response callout if one's available. On Apple/macOS, a device that isn't on the latest signed release also shows any confirmed OS CVEs fixed by updating, reframed around "how far behind is this device" — the Compliance tab's own Vulnerabilities section (below) is the canonical, always-present OS CVE view.
+5. **Firewall Rule Sets** — **Windows only**. Shows which [Firewall Policy Library](workflows.md#firewall-policy-library) rule sets are currently believed active on this device, and when they were applied. This reflects the last Apply/Restore action dispatched from a workflow, not a live read of the device — if it looks stale, re-run the matching action.
+6. **App Updates** (Apple/macOS) — pending app updates from Apple's own App Store/VPP metadata, or "all up to date."
+7. **Smart Attributes** — any Applivery Smart Attribute values on the device.
+8. **Segment** — current segment, with a **Change** link.
+9. **Active Policies** — chips for each assigned policy, each removable; **Add** opens a picker filtered to the device's platform.
+10. **Tags** — chips of current tags; **Edit** opens the tag editor.
+
+(Vulnerabilities and Vulnerability Service live in the **Compliance tab**, not here — see below.)
 
 ### Compliance tab
 
@@ -69,15 +69,16 @@ Everything about this device's standing against your [Compliance Policies](compl
 
 1. **Compliance Status** — the same Compliance/Risk badges from the header, plus a visual risk meter (0–100, colored by tier).
 2. **Risk Factors** — each factor contributing to the risk score and its point value.
-3. **Compliance Policy Violations** — every currently-open violation against this device (regardless of review status), with its policy name and status (pending / approved / dismissed / auto-fired), or a green "no open violations" state.
-4. **Awaiting Review** — the subset of violations still sitting in the [review queue](compliance.md#violations--review-queue); clickable rows that jump to the [Audit Log](audit-logs.md) filtered to this device.
-5. **Open Cases** — clickable rows that open the linked [Case](cases.md).
+3. **Vulnerabilities** — a single, OS-only CVE view for this device, merging the Vulnerability Catalog (EUVD-sourced, Apple/Android only) with your org's [Vulnerability Service](settings.md#vulnerability-service) integration (when configured), deduplicated by CVE id. States: a confirmed clean "no known pending CVEs," an expandable list of pending CVEs (severity, known-exploited/KEV flag, EPSS score, fixed-in version) sorted worst-first, "not checked yet" when the Vulnerability Service hasn't run, or "no confirmed comparison available" when neither source has a fixed-version match yet. App-level CVEs (for apps installed on the device) are deliberately NOT part of this section — see the Apps tab below and the [Apps](apps.md) view's Risk column instead.
+4. **Compliance Policy Violations** — every currently-open violation against this device (regardless of review status), with its policy name and status (pending / approved / dismissed / auto-fired), or a green "no open violations" state.
+5. **Awaiting Review** — the subset of violations still sitting in the [review queue](compliance.md#violations--review-queue); clickable rows that jump to the [Audit Log](audit-logs.md) filtered to this device.
+6. **Open Cases** — clickable rows that open the linked [Case](cases.md).
 
 ### Apps tab
 
 Every app this specific device reports as installed — self-reported (SOAR Agent App Inventory Reporting) or Applivery-UEM-fetched — each row showing version, source, an "update available" flag (Apple/macOS only), and (Windows only) whether it's assigned/enforced via Applivery's Windows App Distribution policy. This is the same underlying data as the [Apps](apps.md) main-nav view's Reported Apps table, scoped to just this device.
 
-When [Vulnerability Service](settings.md#vulnerability-service) is enabled, each app row also shows its own CVE count/severity for the exact installed version, with a link out to each CVE's detail page — see [Apps → Vulnerability Service risk scoring](apps.md#vulnerability-service-risk-scoring) for how this differs from the Compliance tab's Vulnerability Service section (that one is a device-wide OS+apps rollup; this tab breaks it down per app). With the integration off, or no cached match yet for a given app/version, the row just shows plain inventory with no CVE badge — never an error.
+When [Vulnerability Service](settings.md#vulnerability-service) is enabled, each app row also shows its own CVE count/severity for the exact installed version, expandable inline, with a link out to each CVE's detail page — see [Apps → Vulnerability Service risk scoring](apps.md#vulnerability-service-risk-scoring) for the fleet-wide Risk column this same per-app data backs. This is the only place app-level CVEs are shown in the device drawer — the Compliance tab's Vulnerabilities section above is OS-only. With the integration off, or no cached match yet for a given app/version, the row just shows plain inventory with no CVE badge — never an error.
 
 No installed-app data yet for this device shows an empty state pointing at [App Inventory Reporting](settings.md#app-inventory-reporting--security-attestation-reporting) or the paced background refresher (only runs for devices in scope of an App List compliance condition).
 

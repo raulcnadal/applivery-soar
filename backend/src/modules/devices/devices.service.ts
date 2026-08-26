@@ -23,7 +23,7 @@ import { loadOsLifecycleCatalog, computeOsLifecycleStatus } from "../catalogs/os
 import { loadGdmfCatalog } from "../catalogs/gdmfCatalog";
 import { loadAppleDeviceIdentifiers } from "../catalogs/appleDeviceIdentifiers";
 import { loadInstalledAppsStore, installedAppsRecordEntries } from "../appLists/installedApps.service";
-import { getVulnServiceConfig, computeVulnServiceStatus, computeDeviceAppsDetail } from "../catalogs/vulnService";
+import { getVulnServiceConfig, computeVulnServiceStatus, computeDeviceAppsDetail, mergeOsVulnerabilities } from "../catalogs/vulnService";
 import { anyVulnSourceEnabled } from "../catalogs/vulnSources";
 import { loadDevicePushDataCache } from "./deviceData.service";
 import { LOCATION_CACHE_KEY } from "../analytics/locationsSync.service";
@@ -496,6 +496,16 @@ async function fetchDevicesFullUncached(
     // internally via vulnSources.ts), so the gate here only needs to skip
     // the call entirely when NEITHER the Worker nor any of them is on.
     d.vulnServiceStatus = vulnServiceCfg.enabled || anyOtherVulnSourceOn ? await computeVulnServiceStatus(slugKey, d, appsEntries) : null;
+    // Single unified OS-only "Vulnerabilities" section for the Device
+    // modal's Compliance tab — merges d.vulnStatus (EUVD catalog) with the
+    // OS-only slice of d.vulnServiceStatus (Vulnerability Service), deduped
+    // by CVE id. d.vulnStatus/d.vulnServiceStatus themselves are left as-is
+    // (unchanged shape/values) since complianceEvaluate.ts's
+    // vulnPendingCveCount/vulnExploitedPending/vulnServiceCriticalHighCount/
+    // vulnServiceHasKev/vulnServiceChecked Compliance Policy conditions read
+    // them directly and must keep working unchanged; this is purely an
+    // additional, UI-facing field. See mergeOsVulnerabilities's doc comment.
+    d.osVulnerabilities = mergeOsVulnerabilities(d.vulnStatus, d.vulnServiceStatus);
     // Backs the Device modal's Apps tab — every app this device reports,
     // each paired with its own cached CVE result when one exists. The app
     // list itself is always populated (plain installed-apps inventory);

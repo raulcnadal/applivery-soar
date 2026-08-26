@@ -483,6 +483,96 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
   };
 }
 
+/**
+ * Unifies the Vulnerability Catalog's (vulnCatalog.ts — EUVD-sourced,
+ * Apple/Android-only, global daily refresh) OS-level pending-CVE comparison
+ * with the Vulnerability Service's own OS-only slice (computeVulnServiceStatus's
+ * `.os` field above — itself already merged across the Worker plus any
+ * registered plugin: MISP/VulnCheck/SOFA/OSV-Android) into the ONE
+ * "Vulnerabilities" section the Device modal's Compliance tab shows.
+ *
+ * Previously these were two separate sections ("Vulnerabilities" and
+ * "Vulnerability Service") that could show flatly contradictory answers for
+ * the exact same device — e.g. Overview says "up to date," the
+ * "Vulnerabilities" section (this catalog) agreed with "no known pending
+ * CVEs," yet "Vulnerability Service" showed 5000+ CVEs — because that second
+ * section also mixed in APP-level CVEs for every installed app on the
+ * device, dominated in the reported case by long-EOL Adobe products that
+ * weren't even installed (stale installed-apps snapshot — see
+ * APPS_STALE_AFTER_MS above for that half of the fix). App-level CVEs are
+ * now surfaced ONLY via computeDeviceAppsDetail (Device modal Apps tab) and
+ * computeReportedAppsVulnSummaries (fleet-wide Apps view's Risk column) —
+ * this function and the section it powers never look at apps, only the OS.
+ *
+ * Dedup is by CVE id via mergeRawVulnResults (same "richer source wins a
+ * collision" rule used everywhere else in this file). The Catalog's
+ * `pendingCves` are only folded in when `confidence === "version"` — a
+ * genuine fixed-version comparison — never "unknown" confidence, which would
+ * just re-surface every catalog entry for the product as if it were
+ * pending. `vulnServiceStatus.os` is already gated the same way internally
+ * (only non-null when the Worker/a plugin actually mapped this exact OS
+ * version), so no extra check is needed on that side.
+ */
+export function mergeOsVulnerabilities(catalogStatus: Record<string, any> | null, vulnServiceStatus: Record<string, any> | null): Record<string, any> {
+  const catalogConfirmed = catalogStatus?.confidence === "version";
+  const catalogRaw = catalogConfirmed
+    ? {
+        mapped: true,
+        cve_list: (catalogStatus!.pendingCves ?? []).map((c: any) => ({
+          id: c.cveId,
+          severity: c.baseSeverity ? String(c.baseSeverity).toUpperCase() : null,
+          epss_score: typeof c.epss === "number" ? c.epss : null,
+          is_kev: Boolean(c.exploited),
+          score: typeof c.baseScore === "number" ? c.baseScore : null,
+          fixed_in: c.fixedVersion ?? c.fixedInMajor ?? null,
+        })),
+      }
+    : null;
+  const workerRaw = vulnServiceStatus?.os ?? null; // already OS-only and already mapped:true when present, see osMatch above
+
+  const uncertain = (catalogStatus?.unconfirmedCount ?? 0) + (vulnServiceStatus?.uncertain ?? 0);
+
+  if (!catalogRaw && !workerRaw) {
+    // Neither source has a confirmed OS-version comparison to offer.
+    if (vulnServiceStatus && !vulnServiceStatus.checked) {
+      return {
+        visible: true,
+        state: "not_checked",
+        pendingCount: 0,
+        cves: [],
+        uncertain,
+        notCheckedDetail: vulnServiceStatus.lastCheckedAt
+          ? `Last checked ${new Date(vulnServiceStatus.lastCheckedAt).toLocaleString()} — nothing conclusive was found then, and it hasn't been refreshed since. If this device is still active, check Settings > Vulnerability Service for refresh errors.`
+          : "Not checked yet — waiting on the next scheduled refresh (Settings > Vulnerability Service).",
+      };
+    }
+    if (catalogStatus) {
+      // Apple/Android platform, catalog exists, but no confirmed
+      // fixed-version comparison yet (confidence "unknown"), and no
+      // Vulnerability Service configured/checked either.
+      return { visible: true, state: "unconfirmed", pendingCount: 0, cves: [], uncertain };
+    }
+    // Windows (no catalog coverage) with no Vulnerability Service configured
+    // — neither source has anything to say about this device's OS.
+    return { visible: false, state: "unconfirmed", pendingCount: 0, cves: [], uncertain: 0 };
+  }
+
+  const merged = mergeRawVulnResults(catalogRaw, workerRaw);
+  const cves = merged.cve_list
+    .slice()
+    .sort((a: any, b: any) => {
+      const ak = [Number(Boolean(a.is_kev)), a.epss_score ?? 0, SEVERITY_RANK[a.severity] ?? 0, a.score ?? 0];
+      const bk = [Number(Boolean(b.is_kev)), b.epss_score ?? 0, SEVERITY_RANK[b.severity] ?? 0, b.score ?? 0];
+      for (let i = 0; i < ak.length; i++) if (ak[i] !== bk[i]) return bk[i] - ak[i];
+      return 0;
+    })
+    .slice(0, 15);
+
+  return cves.length > 0
+    ? { visible: true, state: "cves", pendingCount: cves.length, cves, uncertain }
+    : { visible: true, state: "clean", pendingCount: 0, cves: [], uncertain };
+}
+
 // ── Per-app / per-device CVE detail — added for the Apps view's "risk
 // score" column, the App detail modal's per-version breakdown, and the
 // Device modal's new Apps tab. computeVulnServiceStatus above only ever

@@ -70,6 +70,12 @@ export interface NormalizedDevice {
   osUpdateStatus: Record<string, any> | null;
   vulnStatus: Record<string, any> | null;
   vulnServiceStatus: Record<string, any> | null;
+  // Single unified, OS-only "Vulnerabilities" section for the Device modal's
+  // Compliance tab — see backend vulnService.ts's mergeOsVulnerabilities doc
+  // comment. Merges vulnStatus (EUVD catalog) with vulnServiceStatus's
+  // OS-only slice, deduped by CVE id; vulnStatus/vulnServiceStatus above are
+  // untouched and still back Compliance Policy conditions.
+  osVulnerabilities?: Record<string, any> | null;
   osLifecycleStatus: Record<string, any> | null;
   appleAppUpdateStatus: Record<string, any> | null;
   // Backs the Device modal's Apps tab — see deviceNormalize.ts's own field
