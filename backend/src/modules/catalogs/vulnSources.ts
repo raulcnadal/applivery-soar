@@ -157,6 +157,35 @@ export function extractLeadingVersion(raw: string): string | null {
 }
 
 /**
+ * Normalizes the os_version string sent to the Vulnerability Service Worker
+ * (POST /v1/vulnerabilities/os) — Windows-only, identity for every other
+ * platform. Reported by the user testing the Worker's API directly: querying
+ * with the bare 3-part build "10.0.22631" (major.minor.build) returns only
+ * genuine Windows 10/11 client CVEs, while our own request — which sent
+ * device.osVersion unmodified, e.g. "10.0.22631.2861" including the 4th UBR
+ * (Update Build Revision) segment — was coming back with Windows Server
+ * 2008/2012 CVEs mixed in. Windows Server and Windows 10/11 share the same
+ * "10.0.x" major.minor.build lineage since Windows 10, so the Worker's
+ * product-matching apparently keys off the UBR segment too, and an 8000+
+ * revision number that happens to also appear (or simply fails to match
+ * anything precise) on some old Server product's build history was enough
+ * to widen the match. This was never caught earlier because nothing else in
+ * this codebase parses that 4th segment for anything other than display
+ * (windowsDeviceBuild in osUpdateCatalog.ts extracts `ubr` for its own
+ * feature-label lookup, but never sends it anywhere external) — the bug was
+ * purely in what we handed the Worker, not in how we read osVersion
+ * ourselves. Used both when populating the Worker cache (osCombos, in
+ * refreshVulnServiceForWorkspace) and when reading it back (the cache key in
+ * computeVulnServiceStatus) — the two MUST stay in lockstep or every lookup
+ * silently misses.
+ */
+export function normalizeOsVersionForWorker(workerPlatform: string, osVersion: string): string {
+  if (workerPlatform !== "windows") return osVersion;
+  const parts = osVersion.split(".");
+  return parts.length > 3 ? parts.slice(0, 3).join(".") : osVersion;
+}
+
+/**
  * When a device has a real, precise OS Patch Level value (Settings >
  * Workspace Automation's Smart Attribute mapping —
  * osPatchLevelMapping.service.ts), narrows a merged OS-level CVE list down

@@ -6,6 +6,7 @@ import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
 import { appKeywordsFor, guessCpe, isPlausibleOsCpeGuess, osKeywordsFor } from "./cpeTranslate";
 import { PLATFORM_MAP } from "./platformMap";
+import { normalizeOsVersionForWorker } from "./vulnSources";
 
 /**
  * MISP Threat Intel connector — queries a customer-deployed MISP instance
@@ -320,7 +321,13 @@ export async function refreshMispForWorkspace(workspaceSlug: string, bearer: str
   const osCombos = new Map<string, { platform: string }>();
   for (const d of devices) {
     const p = PLATFORM_MAP[d.platform];
-    if (p && d.osVersion) osCombos.set(`${p}|${d.osVersion}`, { platform: p });
+    // normalizeOsVersionForWorker: Windows-only truncation (drops the 4th
+    // UBR/revision segment) — must match vulnService.ts's own osKey
+    // construction exactly, since computeVulnServiceStatus looks up this
+    // module's cache row via that ONE shared key (see this module's own
+    // getCacheRow wiring, and normalizeOsVersionForWorker's doc comment in
+    // vulnSources.ts for why the untruncated build number is the problem).
+    if (p && d.osVersion) osCombos.set(`${p}|${normalizeOsVersionForWorker(p, d.osVersion)}`, { platform: p });
   }
   const appCombos = new Map<string, { identifier: string; name: string; version: string; platform: string }>();
   for (const d of devices) {

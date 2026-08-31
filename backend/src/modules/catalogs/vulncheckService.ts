@@ -5,7 +5,7 @@ import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
 import { appKeywordsFor, guessCpe, isPlausibleOsCpeGuess, osKeywordsFor } from "./cpeTranslate";
 import { PLATFORM_MAP } from "./platformMap";
-import type { VulnSourcePlugin } from "./vulnSources";
+import { normalizeOsVersionForWorker, type VulnSourcePlugin } from "./vulnSources";
 
 /**
  * VulnCheck connector — third CVE source (after the Vulnerability Service
@@ -211,7 +211,12 @@ export async function refreshVulncheckForWorkspace(workspaceSlug: string, bearer
   const osCombos = new Map<string, { platform: string }>();
   for (const d of devices) {
     const p = PLATFORM_MAP[d.platform];
-    if (p && d.osVersion) osCombos.set(`${p}|${d.osVersion}`, { platform: p });
+    // normalizeOsVersionForWorker: Windows-only truncation (drops the 4th
+    // UBR/revision segment) — must match vulnService.ts's own osKey
+    // construction exactly, since computeVulnServiceStatus looks up this
+    // module's cache row via that ONE shared key. See that helper's doc
+    // comment (vulnSources.ts) for why the untruncated build number matters.
+    if (p && d.osVersion) osCombos.set(`${p}|${normalizeOsVersionForWorker(p, d.osVersion)}`, { platform: p });
   }
   const appCombos = new Map<string, { identifier: string; name: string; version: string; platform: string }>();
   for (const d of devices) {
@@ -226,11 +231,15 @@ export async function refreshVulncheckForWorkspace(workspaceSlug: string, bearer
     }
   }
   // OS combos need a version string for /search/cpe — reuse the device's
-  // own osVersion (already the map key's second segment).
+  // own osVersion (already the map key's second segment, same normalization
+  // applied above).
   const osVersionByKey = new Map<string, string>();
   for (const d of devices) {
     const p = PLATFORM_MAP[d.platform];
-    if (p && d.osVersion) osVersionByKey.set(`${p}|${d.osVersion}`, d.osVersion);
+    if (p && d.osVersion) {
+      const osVersion = normalizeOsVersionForWorker(p, d.osVersion);
+      osVersionByKey.set(`${p}|${osVersion}`, osVersion);
+    }
   }
 
   const isFresh = (cachedAt?: Date | null) => !force && Boolean(cachedAt) && Date.now() - cachedAt!.getTime() < CACHE_TTL_MS;

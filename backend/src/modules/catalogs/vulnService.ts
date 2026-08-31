@@ -4,7 +4,7 @@ import { decryptSecret, encryptSecret } from "../../utils/secretCipher";
 import { HttpError } from "../../utils/httpError";
 import type { NormalizedDevice } from "../devices/deviceNormalize";
 import type { InstalledAppsEntry } from "../appLists/installedApps.service";
-import { extractLeadingVersion, filterCvesByPatchLevel, getEnabledVulnSourcePlugins, isConfirmedCve, mergeRawVulnResults, type VulnSourceCacheRow } from "./vulnSources";
+import { extractLeadingVersion, filterCvesByPatchLevel, getEnabledVulnSourcePlugins, isConfirmedCve, mergeRawVulnResults, normalizeOsVersionForWorker, type VulnSourceCacheRow } from "./vulnSources";
 import { computeAppIntegrityStatus, type AppIntegrityInfo } from "./binaryIntegrityService";
 
 /**
@@ -210,7 +210,14 @@ export async function refreshVulnServiceForWorkspace(workspaceSlug: string, bear
   const osCombos = new Map<string, [string, string]>();
   for (const d of devices) {
     const workerPlatform = PLATFORM_MAP[d.platform];
-    if (workerPlatform && d.osVersion) osCombos.set(`${workerPlatform}|${d.osVersion}`, [workerPlatform, d.osVersion]);
+    if (workerPlatform && d.osVersion) {
+      // normalizeOsVersionForWorker: Windows-only, strips the 4th UBR/revision
+      // segment (e.g. "10.0.22631.2861" -> "10.0.22631") — see its own doc
+      // comment for why the unmodified 4-part build confused the Worker's
+      // product matching into surfacing Windows Server CVEs.
+      const osVersion = normalizeOsVersionForWorker(workerPlatform, d.osVersion);
+      osCombos.set(`${workerPlatform}|${osVersion}`, [workerPlatform, osVersion]);
+    }
   }
 
   const appCombos = new Map<string, { identifier: string; version: string; platform: string }>();
@@ -398,16 +405,18 @@ export async function computeVulnServiceStatus(workspaceSlug: string, device: No
   // benefits every OS-level source uniformly (MISP/VulnCheck's CPE version
   // match gets a more precise input; SOFA's exact-ProductVersion lookup
   // does too) without any of them needing to know about the mapping
-  // themselves. Android and Windows keep using device.osVersion here
-  // unchanged — Android's OS Patch Level is an SPL date, not a version
-  // string (used instead for the CVE-list narrowing below, via
-  // filterCvesByPatchLevel), and Windows's osVersion already carries the
-  // full build the customer's Smart Attribute would otherwise duplicate.
+  // themselves. Android keeps using device.osVersion here unchanged — its OS
+  // Patch Level is an SPL date, not a version string (used instead for the
+  // CVE-list narrowing below, via filterCvesByPatchLevel).
   const effectiveOsVersion =
     (workerPlatform === "macos" || workerPlatform === "ios") && device.osPatchLevel
       ? extractLeadingVersion(device.osPatchLevel) ?? device.osVersion
       : device.osVersion;
-  const osKey = effectiveOsVersion ? `${workerPlatform}|${effectiveOsVersion}` : null;
+  // normalizeOsVersionForWorker: must match the exact string
+  // refreshVulnServiceForWorkspace's osCombos loop used to populate the
+  // cache (Windows-only truncation) — see that helper's doc comment. Any
+  // mismatch here means every Windows OS-level lookup misses the cache.
+  const osKey = effectiveOsVersion ? `${workerPlatform}|${normalizeOsVersionForWorker(workerPlatform, effectiveOsVersion)}` : null;
   const osRow = osKey ? await prisma.vulnServiceCache.findUnique({ where: { workspaceSlug_key: { workspaceSlug, key: osKey } } }) : null;
   const isFresh = (cachedAt: Date | undefined | null) => Boolean(cachedAt) && Date.now() - cachedAt!.getTime() < CACHE_TTL_MS;
   const osVulnMatch = osRow && isFresh(osRow.cachedAt) ? (osRow.result as Record<string, any>) : null;
