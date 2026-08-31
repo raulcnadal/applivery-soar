@@ -49,6 +49,11 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
   const isSavingMapping = ref(false);
   const mappingError = ref<string | null>(null);
   const smartAttributesError = ref<string | null>(null);
+  // WorkspaceAutomationPanel.vue only calls fetchSmartAttributes() lazily
+  // (when the admin opens the picker), not on every page mount — this
+  // tracks that in-flight state for its own "Loading…" copy, separate from
+  // isLoadingMapping (the cheap, always-on-mount fetchOsPatchLevelMapping).
+  const isLoadingSmartAttributes = ref(false);
 
   async function fetchStatus() {
     isLoading.value = true;
@@ -111,6 +116,7 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
 
   async function fetchSmartAttributes() {
     smartAttributesError.value = null;
+    isLoadingSmartAttributes.value = true;
     try {
       const { api } = await import("../api/http");
       const res = await api.get("/smart-attributes");
@@ -129,6 +135,8 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
       // save that "didn't stick," when the real save/read round-trip was
       // fine and this fetch's own failure was the only thing broken.
       smartAttributesError.value = err?.response?.data?.detail || "Failed to load the Smart Attributes list from Applivery — the OS Patch Level dropdown may be missing options. Try again.";
+    } finally {
+      isLoadingSmartAttributes.value = false;
     }
   }
 
@@ -150,6 +158,6 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
   return {
     status, isLoading, isSaving, error, fetchStatus, setServiceAccountToken, remove,
     osPatchLevelSmartAttributeName, smartAttributes, isLoadingMapping, isSavingMapping, mappingError, smartAttributesError,
-    fetchOsPatchLevelMapping, fetchSmartAttributes, setOsPatchLevelMapping,
+    isLoadingSmartAttributes, fetchOsPatchLevelMapping, fetchSmartAttributes, setOsPatchLevelMapping,
   };
 });

@@ -9,45 +9,42 @@ const tokenInput = ref("");
 const selectedAttrName = ref<string>("");
 const isSavingMapping = ref(false);
 const mappingSaved = ref(false);
+// Read-only by default: the saved mapping NAME (store.osPatchLevelSmartAttributeName,
+// via the cheap, dedicated fetchOsPatchLevelMapping call) is shown directly
+// as text, with no dependency on the Smart Attributes catalog list at all —
+// see startEditingMapping's doc comment for why. Only flips to the <select>
+// once the admin explicitly clicks "Change".
+const isEditingMapping = ref(false);
+// Fetched at most once per page visit — set the first time
+// startEditingMapping's lazy fetchSmartAttributes() call resolves (success
+// OR failure; either way there's no point retrying automatically on every
+// subsequent click). A manual re-open of the editor after an error still
+// re-fetches, since `smartAttributesLoaded` only flips true, never reset
+// to false, on a completed attempt below — deliberately: retrying silently
+// on every click would defeat the "reduce load on this flaky endpoint"
+// point of making it lazy in the first place.
+const smartAttributesLoaded = ref(false);
 
-// Kept in sync via a watcher (below) rather than a one-shot assignment after
-// onMounted's fetches resolve. fetchOsPatchLevelMapping() and
-// fetchSmartAttributes() are two independent store actions, each with its
-// own internal await — even inside the same Promise.allSettled, nothing
-// guarantees store.osPatchLevelSmartAttributeName and store.smartAttributes
-// both land in the SAME reactive flush. A one-shot `selectedAttrName.value =
-// ...` set in the tick right after both settle could still race the native
-// <select>'s own DOM update: if the mapped name's <option> was added to the
-// DOM in the same patch as (or a patch after) the value assignment, some
-// browsers momentarily keep showing the closed select's PREVIOUS label
-// ("Not mapped") until the control is interacted with — even though the
-// underlying value/selectedIndex was already correct (which is exactly what
-// this looked like: opening the dropdown "suddenly" showed the right item
-// selected, and Save was already correctly disabled/non-dirty). A watcher
-// re-runs on every relevant change instead of once, so if the two fetches
-// land in separate flushes, `selectedAttrName` (and the select's rendered
-// label) gets a genuinely separate render pass for each — no same-tick race.
+// Keeps selectedAttrName in sync with the saved mapping whenever it changes
+// (initial load, or right after a successful save) — a plain watcher rather
+// than a one-shot assignment, so it's correct regardless of when
+// fetchOsPatchLevelMapping's await resolves relative to this component's
+// own mount.
 watch(
-  () => [store.osPatchLevelSmartAttributeName, store.smartAttributes.length] as const,
-  ([name]) => {
+  () => store.osPatchLevelSmartAttributeName,
+  (name) => {
     selectedAttrName.value = name ?? "";
   },
   { immediate: true },
 );
 
 onMounted(async () => {
-  // Promise.allSettled, not Promise.all — each of these three already
-  // catches its own errors internally (see workspaceAutomation.ts), so this
-  // is defense-in-depth, not the primary mechanism. A previous version used
-  // Promise.all with fetchSmartAttributes() (a documented-flaky Applivery
-  // API call) missing its own try/catch: one transient failure there
-  // rejected the whole Promise.all, which skipped the assignment that used
-  // to live directly below this — leaving the dropdown on "Not mapped" even
-  // though the mapping was correctly saved and successfully fetched by the
-  // OTHER call in the same batch. That assignment is now the watcher above,
-  // which reacts to the store's own state instead of this function's control
-  // flow, so it no longer matters whether this await ever resolves cleanly.
-  await Promise.allSettled([store.fetchStatus(), store.fetchOsPatchLevelMapping(), store.fetchSmartAttributes()]);
+  // fetchSmartAttributes() is deliberately NOT called here — see
+  // startEditingMapping's doc comment. Both of these two are cheap,
+  // dedicated, single-purpose reads (unlike the smart-attributes catalog,
+  // a bulk Applivery API call documented elsewhere as flaky), so
+  // Promise.allSettled is just defense-in-depth here, not load-bearing.
+  await Promise.allSettled([store.fetchStatus(), store.fetchOsPatchLevelMapping()]);
 });
 
 async function saveToken() {
@@ -63,12 +60,35 @@ async function removeCredential() {
 
 const mappingDirty = computed(() => selectedAttrName.value !== (store.osPatchLevelSmartAttributeName ?? ""));
 
+// Opens the picker and lazily loads the Smart Attributes catalog — the
+// currently-saved mapping is already visible without this call (see
+// isEditingMapping's doc comment), so this heavier bulk fetch only ever
+// runs when the admin is actually about to change the value, and at most
+// once per page visit rather than on every mount. Previously this ran
+// unconditionally in onMounted: a transient failure on this specific
+// documented-flaky endpoint made an already-correctly-saved mapping look
+// broken/reverted, purely because the DISPLAY depended on a fetch it never
+// actually needed to depend on.
+async function startEditingMapping() {
+  isEditingMapping.value = true;
+  mappingSaved.value = false;
+  if (!smartAttributesLoaded.value) {
+    await store.fetchSmartAttributes();
+    smartAttributesLoaded.value = true;
+  }
+}
+function cancelEditingMapping() {
+  isEditingMapping.value = false;
+  selectedAttrName.value = store.osPatchLevelSmartAttributeName ?? "";
+}
+
 async function saveMapping() {
   isSavingMapping.value = true;
   mappingSaved.value = false;
   try {
     await store.setOsPatchLevelMapping(selectedAttrName.value || null);
     mappingSaved.value = true;
+    isEditingMapping.value = false;
   } finally {
     isSavingMapping.value = false;
   }
@@ -117,17 +137,34 @@ async function saveMapping() {
 
     <div class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 p-4 space-y-3">
       <label class="block text-sm font-medium text-gray-700 dark:text-gray-200">OS Patch Level Smart Attribute</label>
-      <select
-        v-model="selectedAttrName"
-        class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-brand-500"
-      >
-        <option value="">Not mapped — falls back to OS version only</option>
-        <option v-for="a in store.smartAttributes" :key="a.id" :value="a.name">{{ a.name }}</option>
-      </select>
-      <p v-if="!store.smartAttributes.length" class="text-xs text-gray-400">No Smart Attributes found on this Applivery workspace yet.</p>
-      <div class="flex items-center gap-2 pt-1">
-        <Button :loading="isSavingMapping" :disabled="!mappingDirty" @click="saveMapping">Save</Button>
+
+      <!-- Read-only view — the saved mapping name shown directly, no
+           dependency on the Smart Attributes catalog having loaded. -->
+      <div v-if="!isEditingMapping" class="flex items-center justify-between gap-3">
+        <p class="text-sm">
+          <span v-if="store.osPatchLevelSmartAttributeName" class="font-mono text-gray-900 dark:text-white">{{ store.osPatchLevelSmartAttributeName }}</span>
+          <span v-else class="text-gray-400">Not mapped — falls back to OS version only</span>
+        </p>
+        <Button variant="ghost" @click="startEditingMapping">Change</Button>
       </div>
+
+      <!-- Edit view — only reached (and only fetches the catalog) once the
+           admin clicks "Change" above. -->
+      <template v-else>
+        <select
+          v-model="selectedAttrName"
+          class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">Not mapped — falls back to OS version only</option>
+          <option v-for="a in store.smartAttributes" :key="a.id" :value="a.name">{{ a.name }}</option>
+        </select>
+        <p v-if="store.isLoadingSmartAttributes" class="text-xs text-gray-400">Loading Smart Attributes…</p>
+        <p v-else-if="!store.smartAttributes.length" class="text-xs text-gray-400">No Smart Attributes found on this Applivery workspace yet.</p>
+        <div class="flex items-center gap-2 pt-1">
+          <Button :loading="isSavingMapping" :disabled="!mappingDirty" @click="saveMapping">Save</Button>
+          <Button variant="ghost" :disabled="isSavingMapping" @click="cancelEditingMapping">Cancel</Button>
+        </div>
+      </template>
     </div>
   </div>
 </template>

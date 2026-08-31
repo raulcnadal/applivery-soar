@@ -650,17 +650,26 @@ function traceTitle(t: Record<string, any>): string {
             <div class="mb-6">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Identifiers</p>
               <div class="sm:grid sm:grid-cols-2 sm:gap-x-8">
+                <!-- .filter(...) BEFORE the v-for, not a v-if inside it: the
+                     v-for div itself is the grid cell in this 2-column CSS
+                     grid, so a row hidden via an inner v-if used to still
+                     render as an EMPTY grid item — occupying its slot in the
+                     row/column auto-flow with nothing in it, which is what
+                     showed up as dead blank space next to an unrelated field
+                     whenever a row was absent (e.g. OS patch level not
+                     mapped). Filtering the array first means the v-for only
+                     ever sees rows that will actually render, so the grid's
+                     auto-placement naturally closes the gap instead of
+                     leaving a hole. -->
                 <div v-for="row in [
                   ['Serial number', device.serialNumber],
                   ['IMEI', device.imei],
                   ['UDID', device.identifiers?.udid],
                   ['EMM device ID', device.identifiers?.emmDeviceId],
                   ['Windows ID', device.identifiers?.winId],
-                ]" :key="row[0] as string">
-                  <div v-if="row[1]" class="flex items-center justify-between gap-3 py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
-                    <span class="text-gray-400 shrink-0">{{ row[0] }}</span>
-                    <span class="font-mono text-xs text-right truncate text-gray-900 dark:text-white">{{ row[1] }}</span>
-                  </div>
+                ].filter((row) => row[1])" :key="row[0] as string" class="flex items-center justify-between gap-3 py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+                  <span class="text-gray-400 shrink-0">{{ row[0] }}</span>
+                  <span class="font-mono text-xs text-right truncate text-gray-900 dark:text-white">{{ row[1] }}</span>
                 </div>
               </div>
             </div>
@@ -677,6 +686,11 @@ function traceTitle(t: Record<string, any>): string {
                    (selfReported.attributes.osEdition), so this row degrades
                    gracefully to just the version name until then. -->
               <div class="sm:grid sm:grid-cols-2 sm:gap-x-8">
+                <!-- .filter(...) BEFORE the v-for — see the Identifiers
+                     section above for why (dead grid cells from a hidden
+                     row, most visible here since this list has the most
+                     conditionally-absent rows: OS patch level, Windows
+                     version, Storage, RAM...). -->
                 <div v-for="row in [
                   ['Model', device.manufacturer ? `${device.manufacturer} ${device.model}`.trim() : device.model],
                   ['OS version', device.osVersion],
@@ -698,11 +712,9 @@ function traceTitle(t: Record<string, any>): string {
                   ['State', device.state],
                   ['Enrolled', device.enrolledAt ? formatDate(device.enrolledAt) : null],
                   ['Last seen', device.lastSeen ? formatDate(device.lastSeen) : null],
-                ]" :key="row[0] as string">
-                  <div v-if="row[1]" class="flex items-center justify-between gap-3 py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
-                    <span class="text-gray-400 shrink-0">{{ row[0] }}</span>
-                    <span class="text-right truncate text-gray-900 dark:text-white">{{ row[1] }}</span>
-                  </div>
+                ].filter((row) => row[1])" :key="row[0] as string" class="flex items-center justify-between gap-3 py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+                  <span class="text-gray-400 shrink-0">{{ row[0] }}</span>
+                  <span class="text-right truncate text-gray-900 dark:text-white">{{ row[1] }}</span>
                 </div>
               </div>
             </div>
