@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // "Workspace Automation" tab (docs/settings.md#workspace-automation).
 import { Alert, Button, Input, StatusPill } from "@applivery/bluesky-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useWorkspaceAutomationStore } from "../../stores/workspaceAutomation";
 
 const store = useWorkspaceAutomationStore();
@@ -10,19 +10,44 @@ const selectedAttrName = ref<string>("");
 const isSavingMapping = ref(false);
 const mappingSaved = ref(false);
 
+// Kept in sync via a watcher (below) rather than a one-shot assignment after
+// onMounted's fetches resolve. fetchOsPatchLevelMapping() and
+// fetchSmartAttributes() are two independent store actions, each with its
+// own internal await — even inside the same Promise.allSettled, nothing
+// guarantees store.osPatchLevelSmartAttributeName and store.smartAttributes
+// both land in the SAME reactive flush. A one-shot `selectedAttrName.value =
+// ...` set in the tick right after both settle could still race the native
+// <select>'s own DOM update: if the mapped name's <option> was added to the
+// DOM in the same patch as (or a patch after) the value assignment, some
+// browsers momentarily keep showing the closed select's PREVIOUS label
+// ("Not mapped") until the control is interacted with — even though the
+// underlying value/selectedIndex was already correct (which is exactly what
+// this looked like: opening the dropdown "suddenly" showed the right item
+// selected, and Save was already correctly disabled/non-dirty). A watcher
+// re-runs on every relevant change instead of once, so if the two fetches
+// land in separate flushes, `selectedAttrName` (and the select's rendered
+// label) gets a genuinely separate render pass for each — no same-tick race.
+watch(
+  () => [store.osPatchLevelSmartAttributeName, store.smartAttributes.length] as const,
+  ([name]) => {
+    selectedAttrName.value = name ?? "";
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   // Promise.allSettled, not Promise.all — each of these three already
-  // catches its own errors internally (see workspaceAutomation.ts), but this
-  // guarantees the line below always runs even if that ever regresses. A
-  // previous version used Promise.all with fetchSmartAttributes()
-  // (a documented-flaky Applivery API call) missing its own try/catch: one
-  // transient failure there rejected the whole Promise.all, which skipped
-  // this assignment entirely — leaving the dropdown on "Not mapped" even
+  // catches its own errors internally (see workspaceAutomation.ts), so this
+  // is defense-in-depth, not the primary mechanism. A previous version used
+  // Promise.all with fetchSmartAttributes() (a documented-flaky Applivery
+  // API call) missing its own try/catch: one transient failure there
+  // rejected the whole Promise.all, which skipped the assignment that used
+  // to live directly below this — leaving the dropdown on "Not mapped" even
   // though the mapping was correctly saved and successfully fetched by the
-  // OTHER call in the same batch. Looked exactly like a save that silently
-  // reverted; the save/read round-trip was fine the whole time.
+  // OTHER call in the same batch. That assignment is now the watcher above,
+  // which reacts to the store's own state instead of this function's control
+  // flow, so it no longer matters whether this await ever resolves cleanly.
   await Promise.allSettled([store.fetchStatus(), store.fetchOsPatchLevelMapping(), store.fetchSmartAttributes()]);
-  selectedAttrName.value = store.osPatchLevelSmartAttributeName ?? "";
 });
 
 async function saveToken() {

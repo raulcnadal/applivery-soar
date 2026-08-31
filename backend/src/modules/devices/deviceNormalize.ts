@@ -337,7 +337,21 @@ export function normalizeDeviceFull(
   if (Array.isArray(smartAttrsRaw)) {
     for (const attr of smartAttrsRaw) {
       if (attr && typeof attr === "object") {
-        const name = attr.name ?? attr.key;
+        // Per Applivery's own get-devices API schema, each entry here is
+        // { id, type, label, value, updatedAt } — the display name lives
+        // under `label`, NOT `name`/`key`. This was previously reading
+        // `attr.name ?? attr.key`, neither of which the real API ever
+        // returns, so `name` was always undefined and the `if (name)` guard
+        // below silently dropped every real device's smart attributes —
+        // this array has been empty for every device, on every platform,
+        // regardless of what was actually configured on Applivery's side.
+        // That's a bigger bug than it looks: it broke not just the Overview
+        // tab's "Smart Attributes" section and OS Patch Level (osPatchLevel
+        // below, and osPatchLevelMapping.service.ts's whole feature), but
+        // also silently made every Compliance Policy's "Smart Attribute"
+        // condition (complianceEvaluate.ts, matches by this same `.name`)
+        // impossible to ever satisfy.
+        const name = attr.label ?? attr.name ?? attr.key;
         const value = attr.value ?? attr.val;
         if (name) smartAttributes.push({ name: String(name), value: value === null || value === undefined || value === "" ? "—" : String(value) });
       }
