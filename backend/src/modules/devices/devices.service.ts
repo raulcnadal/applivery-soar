@@ -324,9 +324,11 @@ async function fetchDevicesFullUncached(
   // — osPatchLevelMapping.service.ts), loaded once per fleet-wide call, not
   // per device.
   let osPatchLevelAttrName: string | null = null;
+  let osPatchLevelAttrId: string | null = null;
   try {
     const stateRow = await prisma.workspaceState.findUnique({ where: { workspaceSlug: slugKey } });
     osPatchLevelAttrName = stateRow?.osPatchLevelSmartAttributeName ?? null;
+    osPatchLevelAttrId = stateRow?.osPatchLevelSmartAttributeId ?? null;
   } catch (e) {
     console.warn(`[Devices] osPatchLevel mapping lookup failed: ${e}`);
   }
@@ -348,7 +350,7 @@ async function fetchDevicesFullUncached(
     console.warn(`[Devices] triggerFireState lookup failed: ${e}`);
   }
 
-  const normalized = itemsAll.map((d) => normalizeDeviceFull(d, compIds, locCache, audienceMap, pushdataCache, osPatchLevelAttrName, triggerFiresCache));
+  const normalized = itemsAll.map((d) => normalizeDeviceFull(d, compIds, locCache, audienceMap, pushdataCache, osPatchLevelAttrName, triggerFiresCache, osPatchLevelAttrId));
 
   // Cases/Compliance-violations/Compliance-state lookups, loaded once per
   // fleet-wide call — same batching philosophy as everything else here,

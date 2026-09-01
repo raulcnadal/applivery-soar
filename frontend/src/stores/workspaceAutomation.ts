@@ -38,12 +38,17 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
   const error = ref<string | null>(null);
 
   // OS Patch Level Smart Attribute mapping (osPatchLevelMapping.service.ts)
-  // — which Applivery Smart Attribute (by name) to surface as every
-  // device's osPatchLevel, feeding CVE-matching precision and a Compliance
-  // Policy condition. `smartAttributes` reuses the same GET
-  // /api/smart-attributes catalog the Compliance Policy Builder's own
-  // Smart Attribute picker uses (compliance.ts's fetchSmartAttributes).
+  // — which Applivery Smart Attribute to surface as every device's
+  // osPatchLevel, feeding CVE-matching precision and a Compliance Policy
+  // condition. `smartAttributes` reuses the same GET /api/smart-attributes
+  // catalog the Compliance Policy Builder's own Smart Attribute picker uses
+  // (compliance.ts's fetchSmartAttributes). Matching is by id
+  // (osPatchLevelSmartAttributeId) — see deviceNormalize.ts's doc comment
+  // for why name/label matching wasn't reliable; Name is kept only for the
+  // read-only "currently mapped" display text, which shouldn't need the
+  // catalog loaded just to show what's already saved.
   const osPatchLevelSmartAttributeName = ref<string | null>(null);
+  const osPatchLevelSmartAttributeId = ref<string | null>(null);
   const smartAttributes = ref<SmartAttributeOption[]>([]);
   const isLoadingMapping = ref(false);
   const isSavingMapping = ref(false);
@@ -107,6 +112,7 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
       const { api } = await import("../api/http");
       const res = await api.get("/settings/os-patch-level-mapping");
       osPatchLevelSmartAttributeName.value = res.data.smartAttributeName ?? null;
+      osPatchLevelSmartAttributeId.value = res.data.smartAttributeId ?? null;
     } catch (err: any) {
       mappingError.value = err?.response?.data?.detail || "Failed to load the OS Patch Level mapping.";
     } finally {
@@ -140,13 +146,14 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
     }
   }
 
-  async function setOsPatchLevelMapping(smartAttributeName: string | null) {
+  async function setOsPatchLevelMapping(smartAttributeName: string | null, smartAttributeId: string | null) {
     isSavingMapping.value = true;
     mappingError.value = null;
     try {
       const { api } = await import("../api/http");
-      const res = await api.put("/settings/os-patch-level-mapping", { smartAttributeName });
+      const res = await api.put("/settings/os-patch-level-mapping", { smartAttributeName, smartAttributeId });
       osPatchLevelSmartAttributeName.value = res.data.smartAttributeName ?? null;
+      osPatchLevelSmartAttributeId.value = res.data.smartAttributeId ?? null;
     } catch (err: any) {
       mappingError.value = err?.response?.data?.detail || "Failed to save the OS Patch Level mapping.";
       throw err;
@@ -157,7 +164,7 @@ export const useWorkspaceAutomationStore = defineStore("workspaceAutomation", ()
 
   return {
     status, isLoading, isSaving, error, fetchStatus, setServiceAccountToken, remove,
-    osPatchLevelSmartAttributeName, smartAttributes, isLoadingMapping, isSavingMapping, mappingError, smartAttributesError,
+    osPatchLevelSmartAttributeName, osPatchLevelSmartAttributeId, smartAttributes, isLoadingMapping, isSavingMapping, mappingError, smartAttributesError,
     isLoadingSmartAttributes, fetchOsPatchLevelMapping, fetchSmartAttributes, setOsPatchLevelMapping,
   };
 });

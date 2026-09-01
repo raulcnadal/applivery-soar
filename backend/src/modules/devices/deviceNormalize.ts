@@ -211,7 +211,7 @@ export interface NormalizedDevice {
   triggerFires: Record<string, { status: "active" | "resolved"; lastFiredAt: string; resolvedAt: string | null; fireCount: number }> | null;
   nativeSecurity: Record<string, any> | null;
   identifiers: { udid: string; emmDeviceId: string; winId: string };
-  smartAttributes: Array<{ name: string; value: string }>;
+  smartAttributes: Array<{ id: string; name: string; value: string }>;
   smartAttributeAssignmentIds: string[];
   totalStorageGb: number | null;
   availableStorageGb: number | null;
@@ -282,7 +282,16 @@ export interface NormalizedDevice {
  *   Automation has mapped as the OS Patch Level source (see
  *   osPatchLevelMapping.service.ts) — looked up ONCE per fleet-wide call by
  *   the caller (devices.service.ts), not per device. Null/undefined means
- *   no mapping configured.
+ *   no mapping configured. Legacy/display-only fallback — see
+ *   osPatchLevelAttrId, the authoritative match key.
+ * @param osPatchLevelAttrId The Smart Attribute ID Settings > Workspace
+ *   Automation has mapped — matched against this device's own
+ *   smartAttributes[].id below. Preferred over osPatchLevelAttrName because
+ *   Applivery's get-devices API only guarantees {id, value, updatedAt} on
+ *   each per-device smart-attribute entry; the display label/name is
+ *   optional and can be absent even when the attribute has a real value.
+ *   Falls back to name-matching only when this is null (mappings saved
+ *   before this field existed).
  * @param triggerFiresCache Per-device Inbound Webhook (Trigger) firing
  *   state, keyed by device id (not serial number, unlike pushdataCache —
  *   TriggerFireState.deviceId is the SOAR/Applivery device id
@@ -300,6 +309,7 @@ export function normalizeDeviceFull(
   pushdataCache: Record<string, unknown> = {},
   osPatchLevelAttrName: string | null = null,
   triggerFiresCache: Record<string, Record<string, { status: "active" | "resolved"; lastFiredAt: string; resolvedAt: string | null; fireCount: number }>> = {},
+  osPatchLevelAttrId: string | null = null,
 ): NormalizedDevice {
   const devId = String(raw.id ?? raw._id ?? "");
   const rawPlatform = String(raw.type ?? raw.platform ?? "");
@@ -333,32 +343,42 @@ export function normalizeDeviceFull(
   const ramGb = parseCapacityGb(summary.totalMemory);
 
   const smartAttrsRaw = raw.smartAttributes ?? raw.customAttributes ?? summary.customAttributes;
-  const smartAttributes: Array<{ name: string; value: string }> = [];
+  const smartAttributes: Array<{ id: string; name: string; value: string }> = [];
   if (Array.isArray(smartAttrsRaw)) {
     for (const attr of smartAttrsRaw) {
       if (attr && typeof attr === "object") {
         // Per Applivery's own get-devices API schema, each entry here is
-        // { id, type, label, value, updatedAt } — the display name lives
-        // under `label`, NOT `name`/`key`. This was previously reading
-        // `attr.name ?? attr.key`, neither of which the real API ever
-        // returns, so `name` was always undefined and the `if (name)` guard
-        // below silently dropped every real device's smart attributes —
-        // this array has been empty for every device, on every platform,
-        // regardless of what was actually configured on Applivery's side.
-        // That's a bigger bug than it looks: it broke not just the Overview
-        // tab's "Smart Attributes" section and OS Patch Level (osPatchLevel
-        // below, and osPatchLevelMapping.service.ts's whole feature), but
-        // also silently made every Compliance Policy's "Smart Attribute"
-        // condition (complianceEvaluate.ts, matches by this same `.name`)
-        // impossible to ever satisfy.
+        // { id, type, label, value, updatedAt } — id/value/updatedAt are the
+        // only REQUIRED fields; label (the display name) is optional and, in
+        // practice, can be entirely absent even when the attribute has a
+        // real value (confirmed against a real customer's own
+        // "os_patch_level" attribute). An earlier version of this loop read
+        // `attr.name ?? attr.key` (neither of which the real API ever
+        // returns) and then DROPPED the whole entry when that came back
+        // falsy — so an attribute with no label was silently discarded here,
+        // not just displayed with a blank name. That's why id-based matching
+        // (osPatchLevelAttrId below) needs its own path: pushing every
+        // entry that has an id, independent of whether it also has a name.
+        const id = attr.id ?? attr._id;
         const name = attr.label ?? attr.name ?? attr.key;
         const value = attr.value ?? attr.val;
-        if (name) smartAttributes.push({ name: String(name), value: value === null || value === undefined || value === "" ? "—" : String(value) });
+        if (id || name) {
+          smartAttributes.push({
+            id: id ? String(id) : "",
+            name: name ? String(name) : "",
+            value: value === null || value === undefined || value === "" ? "—" : String(value),
+          });
+        }
       }
     }
   } else if (smartAttrsRaw && typeof smartAttrsRaw === "object") {
+    // Legacy/alternate shape fallback (a plain {name: value} map rather than
+    // Applivery's real array-of-objects) — no genuine `id` exists here, so
+    // the key itself is reused as a best-effort id purely so this branch's
+    // entries have the same shape as the array branch above; real Applivery
+    // devices never hit this path.
     for (const [k, v] of Object.entries(smartAttrsRaw)) {
-      smartAttributes.push({ name: k, value: v === null || v === undefined || v === "" ? "—" : String(v) });
+      smartAttributes.push({ id: k, name: k, value: v === null || v === undefined || v === "" ? "—" : String(v) });
     }
   }
 
@@ -367,7 +387,16 @@ export function normalizeDeviceFull(
     if (a && typeof a === "object" && a.smartAttributeId) smartAttributeAssignmentIds.push(String(a.smartAttributeId));
   }
 
-  const osPatchLevelRaw = osPatchLevelAttrName ? smartAttributes.find((a) => a.name === osPatchLevelAttrName)?.value ?? null : null;
+  // Id-based match is authoritative (see osPatchLevelAttrId's own doc
+  // comment above); name-matching is a fallback only for mappings saved
+  // before the Id column existed, or entries whose id came back empty for
+  // some reason.
+  const osPatchLevelEntry = osPatchLevelAttrId
+    ? smartAttributes.find((a) => a.id === osPatchLevelAttrId)
+    : osPatchLevelAttrName
+      ? smartAttributes.find((a) => a.name === osPatchLevelAttrName)
+      : undefined;
+  const osPatchLevelRaw = osPatchLevelEntry?.value ?? null;
   const osPatchLevel = osPatchLevelRaw && osPatchLevelRaw !== "—" ? osPatchLevelRaw : null;
 
   const serialNumber = summary.serialNumber ?? raw.serialNumber ?? "";

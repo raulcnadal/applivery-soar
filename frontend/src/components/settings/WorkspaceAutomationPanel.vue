@@ -6,7 +6,14 @@ import { useWorkspaceAutomationStore } from "../../stores/workspaceAutomation";
 
 const store = useWorkspaceAutomationStore();
 const tokenInput = ref("");
-const selectedAttrName = ref<string>("");
+// The <select>'s v-model is the Smart Attribute's ID, not its name — see
+// deviceNormalize.ts's doc comment on osPatchLevelAttrId for why matching
+// (and therefore selection) needs to be id-based: Applivery's own API only
+// guarantees {id, value, updatedAt} on each per-device smart-attribute
+// entry, and a real customer's own "os_patch_level" attribute came back
+// with no label at all, which is exactly why name-matching silently matched
+// nothing even though the mapping display showed the right name.
+const selectedAttrId = ref<string>("");
 const isSavingMapping = ref(false);
 const mappingSaved = ref(false);
 // Read-only by default: the saved mapping NAME (store.osPatchLevelSmartAttributeName,
@@ -25,15 +32,15 @@ const isEditingMapping = ref(false);
 // point of making it lazy in the first place.
 const smartAttributesLoaded = ref(false);
 
-// Keeps selectedAttrName in sync with the saved mapping whenever it changes
+// Keeps selectedAttrId in sync with the saved mapping whenever it changes
 // (initial load, or right after a successful save) — a plain watcher rather
 // than a one-shot assignment, so it's correct regardless of when
 // fetchOsPatchLevelMapping's await resolves relative to this component's
 // own mount.
 watch(
-  () => store.osPatchLevelSmartAttributeName,
-  (name) => {
-    selectedAttrName.value = name ?? "";
+  () => store.osPatchLevelSmartAttributeId,
+  (id) => {
+    selectedAttrId.value = id ?? "";
   },
   { immediate: true },
 );
@@ -58,7 +65,7 @@ async function removeCredential() {
   await store.remove();
 }
 
-const mappingDirty = computed(() => selectedAttrName.value !== (store.osPatchLevelSmartAttributeName ?? ""));
+const mappingDirty = computed(() => selectedAttrId.value !== (store.osPatchLevelSmartAttributeId ?? ""));
 
 // Opens the picker and lazily loads the Smart Attributes catalog — the
 // currently-saved mapping is already visible without this call (see
@@ -79,14 +86,20 @@ async function startEditingMapping() {
 }
 function cancelEditingMapping() {
   isEditingMapping.value = false;
-  selectedAttrName.value = store.osPatchLevelSmartAttributeName ?? "";
+  selectedAttrId.value = store.osPatchLevelSmartAttributeId ?? "";
 }
 
 async function saveMapping() {
   isSavingMapping.value = true;
   mappingSaved.value = false;
   try {
-    await store.setOsPatchLevelMapping(selectedAttrName.value || null);
+    // The catalog entry matching the selected id supplies the display name
+    // saved alongside it (see osPatchLevelMapping.service.ts's doc comment
+    // on why both are stored together) — falls back to null (no name) if
+    // somehow selected without the catalog loaded, which the read-only view
+    // then just shows as "Not mapped" until the catalog IS loaded once.
+    const selected = store.smartAttributes.find((a) => a.id === selectedAttrId.value);
+    await store.setOsPatchLevelMapping(selected?.name ?? null, selectedAttrId.value || null);
     mappingSaved.value = true;
     isEditingMapping.value = false;
   } finally {
@@ -152,11 +165,11 @@ async function saveMapping() {
            admin clicks "Change" above. -->
       <template v-else>
         <select
-          v-model="selectedAttrName"
+          v-model="selectedAttrId"
           class="w-full px-3 py-2 rounded-lg text-sm outline-none border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-brand-500"
         >
           <option value="">Not mapped — falls back to OS version only</option>
-          <option v-for="a in store.smartAttributes" :key="a.id" :value="a.name">{{ a.name }}</option>
+          <option v-for="a in store.smartAttributes" :key="a.id" :value="a.id">{{ a.name }}</option>
         </select>
         <p v-if="store.isLoadingSmartAttributes" class="text-xs text-gray-400">Loading Smart Attributes…</p>
         <p v-else-if="!store.smartAttributes.length" class="text-xs text-gray-400">No Smart Attributes found on this Applivery workspace yet.</p>

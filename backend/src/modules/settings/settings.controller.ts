@@ -65,6 +65,9 @@ settingsRouter.delete("/api/settings/automation-credential", ...manageSettings, 
 
 const osPatchLevelMappingPayloadSchema = z.object({
   smartAttributeName: z.string().nullable(),
+  // Optional (not just nullable) so an older frontend build that only ever
+  // sent smartAttributeName doesn't fail schema validation mid-rollout.
+  smartAttributeId: z.string().nullable().optional(),
 });
 
 settingsRouter.get("/api/settings/os-patch-level-mapping", ...readSettings, asyncHandler(async (req, res) => {
@@ -73,7 +76,7 @@ settingsRouter.get("/api/settings/os-patch-level-mapping", ...readSettings, asyn
 
 settingsRouter.put("/api/settings/os-patch-level-mapping", ...manageSettings, asyncHandler(async (req, res) => {
   const payload = osPatchLevelMappingPayloadSchema.parse(req.body);
-  res.json(await setOsPatchLevelMapping(workspaceOf(req), actorOf(req), payload.smartAttributeName));
+  res.json(await setOsPatchLevelMapping(workspaceOf(req), actorOf(req), payload.smartAttributeName, payload.smartAttributeId ?? null));
 }));
 
 // ── Device-report webhook secret (main.py:7799-7843) ──

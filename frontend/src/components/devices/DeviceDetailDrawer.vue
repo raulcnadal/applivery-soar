@@ -921,9 +921,17 @@ function traceTitle(t: Record<string, any>): string {
               <p v-else class="text-xs" :style="{ color: SUCCESS }">All {{ (device.appleAppUpdateStatus as any).totalApps }} tracked app{{ (device.appleAppUpdateStatus as any).totalApps === 1 ? "" : "s" }} up to date.</p>
             </div>
 
-            <div v-if="(device.smartAttributes || []).length > 0" class="mb-6">
+            <!-- Nameless entries (Applivery's own schema only requires
+                 {id, value, updatedAt} — the display label is optional and
+                 sometimes genuinely absent, e.g. the OS Patch Level source
+                 attribute on some workspaces) are filtered out of this
+                 general list — a blank-label row isn't useful to browse
+                 here, but the same entry is still available for id-based
+                 matching (OS patch level row above, Compliance Policy's
+                 Smart Attribute condition). -->
+            <div v-if="(device.smartAttributes || []).filter((a) => a.name).length > 0" class="mb-6">
               <p class="text-[10px] font-semibold uppercase tracking-wider mb-2 text-gray-400">Smart Attributes</p>
-              <div v-for="a in device.smartAttributes" :key="a.name" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
+              <div v-for="a in device.smartAttributes.filter((a) => a.name)" :key="a.id || a.name" class="flex items-center justify-between py-1.5 text-sm border-b border-gray-100 dark:border-gray-800">
                 <span class="text-gray-400">{{ a.name }}</span>
                 <span class="text-gray-900 dark:text-white">{{ a.value }}</span>
               </div>

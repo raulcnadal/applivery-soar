@@ -57,7 +57,7 @@ export interface NormalizedDevice {
   selfReported: unknown;
   nativeSecurity: Record<string, any> | null;
   identifiers: { udid: string; emmDeviceId: string; winId: string };
-  smartAttributes: Array<{ name: string; value: string }>;
+  smartAttributes: Array<{ id: string; name: string; value: string }>;
   totalStorageGb: number | null;
   availableStorageGb: number | null;
   ramGb: number | null;
