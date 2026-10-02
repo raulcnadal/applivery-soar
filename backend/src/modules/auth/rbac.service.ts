@@ -66,15 +66,22 @@ export async function fetchCollaboratorGroups(orgBase: string, headers: Record<s
 /**
  * Finds the authenticated user's own Collaborator record by email.
  *
- * Paginated (page=1,2,3... following the response's own hasNextPage) rather
- * than a single `limit: 500` call — an earlier version only ever fetched the
+ * Primary strategy: ask Applivery's own `GET .../collaborators` for that
+ * exact email server-side (the endpoint's documented `email` query param —
+ * confirmed via the Applivery Docs MCP against get-collaborators' OpenAPI
+ * schema). This sidesteps pagination/ordering entirely: wherever a match
+ * would have landed, the server finds it directly, in one call.
+ *
+ * Fallback: if the email-filtered call comes back empty (defensive — in
+ * case that filter turns out to be case-sensitive, or doesn't match the way
+ * `user.email` does for some account types), fall back to a full paginated
+ * scan (page=1,2,3... following the response's own hasNextPage) rather than
+ * a single `limit: 500` call. An earlier version only ever fetched the
  * first 500 collaborators, so a match past that point (alphabetically or by
  * whatever order Applivery's API returns, which isn't documented as
  * email/role-sorted) was silently invisible to this function, surfacing as
  * a misleading "No Applivery Collaborator record found" for an account that
- * genuinely has one. Unlikely to bite most workspaces, but a real
- * correctness gap worth closing outright rather than bumping the limit
- * further — any fixed limit has the same failure mode at a different size.
+ * genuinely has one.
  */
 export async function findSelfCollaborator(
   orgBase: string,
@@ -83,6 +90,18 @@ export async function findSelfCollaborator(
 ): Promise<Record<string, any> | null> {
   const emailLower = (email || "").toLowerCase();
   if (!emailLower) return null;
+
+  const filtered = await appliveryClient.get(`${orgBase}/collaborators/`, { headers, params: { limit: 10, email: emailLower } });
+  if (filtered.status === 401 || filtered.status === 403) {
+    throw new HttpError(401, "Applivery session expired — please sign in again.");
+  }
+  if (filtered.status === 200) {
+    const items = extractItems(filtered.data);
+    for (const i of items) {
+      const candidateEmail = (i.email ?? i.user?.email ?? "").toLowerCase();
+      if (candidateEmail === emailLower) return i;
+    }
+  }
 
   for (let page = 1; ; page++) {
     const res = await appliveryClient.get(`${orgBase}/collaborators/`, { headers, params: { limit: 500, page } });
