@@ -64,7 +64,29 @@ export async function fetchCollaboratorGroups(orgBase: string, headers: Record<s
 }
 
 /**
- * Finds the authenticated user's own Collaborator record by email.
+ * Collaborator.role values ranked by privilege, highest first. Used to pick
+ * a winner when one email resolves to more than one Collaborator record in
+ * the same org (see findSelfCollaborator's doc comment) — an org can have
+ * duplicate collaborator rows for the same address (e.g. a traditional
+ * login account plus a separate SSO-auto-provisioned account that happens
+ * to share the same email), and the real person's effective access is
+ * whichever row grants them the most, never the lesser one.
+ */
+const ROLE_PRIVILEGE_ORDER = ["owner", "admin", "editor", "viewer", "unassigned"];
+
+function rolePrivilegeRank(role: unknown): number {
+  const idx = ROLE_PRIVILEGE_ORDER.indexOf(String(role ?? "").toLowerCase());
+  return idx === -1 ? ROLE_PRIVILEGE_ORDER.length : idx;
+}
+
+/** Picks the highest-privilege collaborator among candidates matching the same email (see ROLE_PRIVILEGE_ORDER). */
+function pickBestCollaborator(candidates: Record<string, any>[]): Record<string, any> | null {
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, cur) => (rolePrivilegeRank(cur.role) < rolePrivilegeRank(best.role) ? cur : best));
+}
+
+/**
+ * Finds the authenticated user's own Collaborator record(s) by email.
  *
  * Primary strategy: ask Applivery's own `GET .../collaborators` for that
  * exact email server-side (the endpoint's documented `email` query param —
@@ -72,16 +94,26 @@ export async function fetchCollaboratorGroups(orgBase: string, headers: Record<s
  * schema). This sidesteps pagination/ordering entirely: wherever a match
  * would have landed, the server finds it directly, in one call.
  *
+ * One email can legitimately resolve to MORE THAN ONE Collaborator record
+ * in the same org — confirmed directly against a live, affected account:
+ * a traditional-login account (role "owner") and a separate, later,
+ * SSO-auto-provisioned account for the exact same address (role
+ * "unassigned", `user.ssoUser: true`), each with its own distinct
+ * `user.id`. Taking "whichever comes first in the array" is unsafe here:
+ * Applivery's default (unsorted) list order isn't documented as
+ * email/role-stable, and in the case that surfaced this, the newer
+ * "unassigned" duplicate had the most recently updated `updatedAt` of any
+ * collaborator in the org, which is exactly the kind of record a
+ * recency-biased default sort would place first — silently downgrading a
+ * genuine Owner to "No SOAR Role mapped". Collecting every match and
+ * picking the highest-privilege role (pickBestCollaborator) makes the
+ * result correct regardless of array order.
+ *
  * Fallback: if the email-filtered call comes back empty (defensive — in
  * case that filter turns out to be case-sensitive, or doesn't match the way
  * `user.email` does for some account types), fall back to a full paginated
  * scan (page=1,2,3... following the response's own hasNextPage) rather than
- * a single `limit: 500` call. An earlier version only ever fetched the
- * first 500 collaborators, so a match past that point (alphabetically or by
- * whatever order Applivery's API returns, which isn't documented as
- * email/role-sorted) was silently invisible to this function, surfacing as
- * a misleading "No Applivery Collaborator record found" for an account that
- * genuinely has one.
+ * a single `limit: 500` call, collecting every match the same way.
  */
 export async function findSelfCollaborator(
   orgBase: string,
@@ -91,18 +123,17 @@ export async function findSelfCollaborator(
   const emailLower = (email || "").toLowerCase();
   if (!emailLower) return null;
 
-  const filtered = await appliveryClient.get(`${orgBase}/collaborators/`, { headers, params: { limit: 10, email: emailLower } });
+  const filtered = await appliveryClient.get(`${orgBase}/collaborators/`, { headers, params: { limit: 50, email: emailLower } });
   if (filtered.status === 401 || filtered.status === 403) {
     throw new HttpError(401, "Applivery session expired — please sign in again.");
   }
   if (filtered.status === 200) {
     const items = extractItems(filtered.data);
-    for (const i of items) {
-      const candidateEmail = (i.email ?? i.user?.email ?? "").toLowerCase();
-      if (candidateEmail === emailLower) return i;
-    }
+    const matches = items.filter((i) => (i.email ?? i.user?.email ?? "").toLowerCase() === emailLower);
+    if (matches.length > 0) return pickBestCollaborator(matches);
   }
 
+  const matches: Record<string, any>[] = [];
   for (let page = 1; ; page++) {
     const res = await appliveryClient.get(`${orgBase}/collaborators/`, { headers, params: { limit: 500, page } });
     // A 401/403 here means the *forwarded Applivery bearer token* is
@@ -121,7 +152,7 @@ export async function findSelfCollaborator(
     if (res.status === 401 || res.status === 403) {
       throw new HttpError(401, "Applivery session expired — please sign in again.");
     }
-    if (res.status !== 200) return null;
+    if (res.status !== 200) break;
 
     const items = extractItems(res.data);
     for (const i of items) {
@@ -130,12 +161,13 @@ export async function findSelfCollaborator(
       // is checked first purely as a defensive fallback for any older/
       // alternate response shape; real data only ever has `i.user.email`.
       const candidateEmail = (i.email ?? i.user?.email ?? "").toLowerCase();
-      if (candidateEmail === emailLower) return i;
+      if (candidateEmail === emailLower) matches.push(i);
     }
 
     const container = res.data && typeof res.data === "object" ? ((res.data as any).data ?? res.data) : res.data;
-    if (!container?.hasNextPage) return null;
+    if (!container?.hasNextPage) break;
   }
+  return pickBestCollaborator(matches);
 }
 
 /**
