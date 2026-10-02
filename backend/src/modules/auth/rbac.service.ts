@@ -63,37 +63,60 @@ export async function fetchCollaboratorGroups(orgBase: string, headers: Record<s
   return out;
 }
 
-/** Finds the authenticated user's own Collaborator record by email. */
+/**
+ * Finds the authenticated user's own Collaborator record by email.
+ *
+ * Paginated (page=1,2,3... following the response's own hasNextPage) rather
+ * than a single `limit: 500` call — an earlier version only ever fetched the
+ * first 500 collaborators, so a match past that point (alphabetically or by
+ * whatever order Applivery's API returns, which isn't documented as
+ * email/role-sorted) was silently invisible to this function, surfacing as
+ * a misleading "No Applivery Collaborator record found" for an account that
+ * genuinely has one. Unlikely to bite most workspaces, but a real
+ * correctness gap worth closing outright rather than bumping the limit
+ * further — any fixed limit has the same failure mode at a different size.
+ */
 export async function findSelfCollaborator(
   orgBase: string,
   headers: Record<string, string>,
   email: string,
 ): Promise<Record<string, any> | null> {
-  const res = await appliveryClient.get(`${orgBase}/collaborators/`, { headers, params: { limit: 500 } });
-  // A 401/403 here means the *forwarded Applivery bearer token* is
-  // invalid/expired -- not that this account genuinely has no Collaborator
-  // record. appliveryClient deliberately never throws on non-2xx (callers
-  // inspect .status themselves, see its class doc), so without this check
-  // an expired-but-otherwise-valid session silently fell through to the
-  // same `return null` as a real "no such collaborator" case below, which
-  // resolveSoarAccess then reported as allowed:false with a misleading
-  // "No Applivery Collaborator record found" reason -- a 200 OK from our
-  // own /auth/resolve-access, not an error the frontend could recognize as
-  // "your session expired, please sign in again" (router/index.ts and
-  // http.ts's response interceptor both only react to a real 401). Throwing
-  // here instead makes that distinction explicit and correctly surfaces as
-  // an actual 401 from /auth/resolve-access.
-  if (res.status === 401 || res.status === 403) {
-    throw new HttpError(401, "Applivery session expired — please sign in again.");
-  }
-  if (res.status !== 200) return null;
-  const items = extractItems(res.data);
   const emailLower = (email || "").toLowerCase();
-  for (const i of items) {
-    const candidateEmail = (i.email ?? i.user?.email ?? "").toLowerCase();
-    if (candidateEmail === emailLower) return i;
+  if (!emailLower) return null;
+
+  for (let page = 1; ; page++) {
+    const res = await appliveryClient.get(`${orgBase}/collaborators/`, { headers, params: { limit: 500, page } });
+    // A 401/403 here means the *forwarded Applivery bearer token* is
+    // invalid/expired -- not that this account genuinely has no Collaborator
+    // record. appliveryClient deliberately never throws on non-2xx (callers
+    // inspect .status themselves, see its class doc), so without this check
+    // an expired-but-otherwise-valid session silently fell through to the
+    // same `return null` as a real "no such collaborator" case below, which
+    // resolveSoarAccess then reported as allowed:false with a misleading
+    // "No Applivery Collaborator record found" reason -- a 200 OK from our
+    // own /auth/resolve-access, not an error the frontend could recognize as
+    // "your session expired, please sign in again" (router/index.ts and
+    // http.ts's response interceptor both only react to a real 401). Throwing
+    // here instead makes that distinction explicit and correctly surfaces as
+    // an actual 401 from /auth/resolve-access.
+    if (res.status === 401 || res.status === 403) {
+      throw new HttpError(401, "Applivery session expired — please sign in again.");
+    }
+    if (res.status !== 200) return null;
+
+    const items = extractItems(res.data);
+    for (const i of items) {
+      // Per Applivery's own get-collaborators API schema, a collaborator
+      // item has NO top-level `email` — only a nested `user.email`. `i.email`
+      // is checked first purely as a defensive fallback for any older/
+      // alternate response shape; real data only ever has `i.user.email`.
+      const candidateEmail = (i.email ?? i.user?.email ?? "").toLowerCase();
+      if (candidateEmail === emailLower) return i;
+    }
+
+    const container = res.data && typeof res.data === "object" ? ((res.data as any).data ?? res.data) : res.data;
+    if (!container?.hasNextPage) return null;
   }
-  return null;
 }
 
 /**
